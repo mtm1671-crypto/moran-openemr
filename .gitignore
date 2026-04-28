@@ -6,11 +6,25 @@
 
 # vendor and assets
 node_modules
+.next
+.venv
+.pytest_cache
+pytest-cache-files-*
+__pycache__
+*.pyc
+*.egg-info
 /vendor/*
 /public/assets/*
 /public/themes/*
 !/public/assets/modified
 /.docs/.out/*
+
+# AgentForge Co-Pilot local artifacts
+copilot/.logs
+copilot/api/.tmp
+.runtime
+.mypy_cache
+.ruff_cache
 
 # ccda service build
 ccdaservice/node_modules
