@@ -1,3 +1,93 @@
+# AgentForge Clinical Co-Pilot
+
+This repository is a fork of [OpenEMR](https://github.com/openemr/openemr) with added planning documentation and a separate Clinical Co-Pilot scaffold under `copilot/`. The Co-Pilot is a standalone Next.js + FastAPI application that delegates authentication to OpenEMR via SMART-on-FHIR/OAuth2 and consumes patient data through OpenEMR's FHIR API.
+
+## Deployed Application
+
+| Environment | URL |
+|---|---|
+| OpenEMR fork (Railway) | _pending — recorded after first deploy_ |
+| Local OpenEMR | `http://localhost:8300/` (see [DOCKER_README.md](DOCKER_README.md)) |
+| Local Co-Pilot API | `http://127.0.0.1:8001/` |
+| Local Co-Pilot Web | `http://127.0.0.1:3001/` |
+
+## Project Documents
+
+| Document | Purpose |
+|---|---|
+| [PRESEARCH.md](PRESEARCH.md) | Pre-code planning, constraints, and discovery notes |
+| [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality, and compliance audit of the OpenEMR fork |
+| [USERS.md](USERS.md) | Target user, workflow, and use cases ([USER.md](USER.md) is a compatibility pointer) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Standalone agent architecture, verification strategy, tradeoffs |
+| [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Local and Railway deployment plan |
+| [DEMO_PLAN.md](DEMO_PLAN.md) | 3-5 minute demo script |
+| [EVAL_PLAN.md](EVAL_PLAN.md) | Deterministic eval plan and fixtures |
+| [MVP_AUTH_SCOPE.md](MVP_AUTH_SCOPE.md) | MVP-night auth scope and explicit production-auth exclusions |
+| [MVP_STATUS.md](MVP_STATUS.md) | Live build status |
+| [OPENEMR_VERSION_PIN.md](OPENEMR_VERSION_PIN.md) | OpenEMR version and commit verified for planning |
+| [eli5.md](eli5.md) | OpenEMR codebase orientation |
+
+## Quickstart
+
+### Local OpenEMR
+
+```bash
+cd docker/development-easy
+docker compose up --detach --wait
+```
+
+Login: `admin` / `pass` at `http://localhost:8300/`.
+
+### Local Co-Pilot
+
+```bash
+cd copilot/api
+python -m venv .venv && . .venv/bin/activate
+pip install -e .
+uvicorn app.main:app --reload --port 8001
+```
+
+```bash
+cd copilot/web
+npm install
+npm run dev -- --port 3001
+```
+
+### Railway deploy of the OpenEMR fork
+
+This repository ships with a Railway-ready [`Dockerfile`](Dockerfile), [`railway.toml`](railway.toml), and [`.dockerignore`](.dockerignore). The Dockerfile inherits the official `openemr/openemr:flex` image and identifies this build as the AgentForge fork.
+
+End-to-end deploy from a clean machine:
+
+```bash
+npm install -g @railway/cli
+railway login
+railway init                          # create a new project linked to this repo
+railway add --database mariadb        # provision managed MariaDB
+railway link --service openemr        # or accept the prompt
+# Set OpenEMR env vars (see DEPLOYMENT_RUNBOOK.md for the full list)
+railway variables --set "MYSQL_HOST=${{MariaDB.MARIADB_PRIVATE_HOST}}" \
+                  --set "MYSQL_ROOT_PASS=${{MariaDB.MARIADB_ROOT_PASSWORD}}" \
+                  --set "MYSQL_USER=openemr" \
+                  --set "MYSQL_PASS=$(openssl rand -hex 24)" \
+                  --set "OE_USER=admin" \
+                  --set "OE_PASS=$(openssl rand -hex 24)"
+railway up                            # build and deploy from this Dockerfile
+railway domain                        # generate a public URL
+```
+
+The first boot runs OpenEMR's `setup.php` against the empty MariaDB and takes 2-3 minutes. The readiness endpoint is `/meta/health/readyz` (HTTPS).
+
+## License
+
+This fork preserves OpenEMR's [GNU GPL v3](LICENSE) license. New files added by the AgentForge work are released under the same terms.
+
+## Upstream OpenEMR
+
+The remainder of this README is unchanged from the upstream OpenEMR project.
+
+---
+
 [![Syntax Status](https://github.com/openemr/openemr/actions/workflows/syntax.yml/badge.svg)](https://github.com/openemr/openemr/actions/workflows/syntax.yml)
 [![Styling Status](https://github.com/openemr/openemr/actions/workflows/styling.yml/badge.svg)](https://github.com/openemr/openemr/actions/workflows/styling.yml)
 [![Testing Status](https://github.com/openemr/openemr/actions/workflows/test.yml/badge.svg)](https://github.com/openemr/openemr/actions/workflows/test.yml)

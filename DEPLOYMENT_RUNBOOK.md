@@ -61,7 +61,57 @@ cd copilot
 
 The script prints the environment variables needed by `copilot/api/.env`. This uses the OpenEMR password grant for local development only.
 
-## Railway Services
+## OpenEMR Fork — Railway Deploy
+
+The repository root ships with `Dockerfile`, `railway.toml`, and `.dockerignore` so the OpenEMR fork itself can be deployed to Railway with one CLI flow. The Dockerfile inherits the official `openemr/openemr:flex` image at a pinned digest and identifies this build as the AgentForge fork via an `agentforge/` marker directory in the webroot. OpenEMR's PHP/Apache runtime is unchanged.
+
+### One-time prerequisites
+
+- A Railway account.
+- Railway CLI installed locally: `npm install -g @railway/cli`.
+- Authenticated: `railway login`.
+
+### Deploy steps
+
+```bash
+# From the fork's repo root.
+railway init                                         # create a new Railway project
+railway add --database mariadb                        # provision managed MariaDB
+
+# Set the env vars OpenEMR's official image consumes during first boot.
+# Replace generated values with your own if you want stable known passwords.
+OPENEMR_DB_PASS="$(openssl rand -hex 24)"
+OPENEMR_OE_PASS="$(openssl rand -hex 24)"
+
+railway variables \
+  --set "MYSQL_HOST=\${{MariaDB.MARIADB_PRIVATE_HOST}}" \
+  --set "MYSQL_ROOT_PASS=\${{MariaDB.MARIADB_ROOT_PASSWORD}}" \
+  --set "MYSQL_USER=openemr" \
+  --set "MYSQL_PASS=${OPENEMR_DB_PASS}" \
+  --set "OE_USER=admin" \
+  --set "OE_PASS=${OPENEMR_OE_PASS}"
+
+railway up                                            # build the Dockerfile, deploy
+railway domain                                        # generate a public URL
+```
+
+### First-boot expectations
+
+- The official OpenEMR image runs `setup.php` against the empty MariaDB on first start. Expect 2-3 minutes before the app is ready.
+- Readiness endpoint: `GET /meta/health/readyz` over HTTPS (set as the healthcheck path in `railway.toml`).
+- Login at the generated URL with `admin` / `<OE_PASS value>`.
+
+### After first deploy
+
+- Record the public URL in the README "Deployed Application" table.
+- Set OpenEMR's `api_log_option` global to `1` (Minimal Logging) before any non-synthetic data — see [AUDIT.md](AUDIT.md) finding S-1.
+- Rotate `OE_PASS` from the demo value before any user-facing demo at scale.
+
+### Why this Dockerfile shape
+
+OpenEMR's official image is large but well-maintained and matches the local development setup. Building from scratch would re-implement Apache/PHP/MariaDB plumbing for no clinical benefit. The fork's only material differences from upstream are planning docs and a separate Co-Pilot scaffold (`copilot/`) that runs as its own services. The Dockerfile copies the planning docs into `/var/www/localhost/htdocs/openemr/agentforge/` so the deployed image carries fork-identifying content; it does not modify OpenEMR's PHP source.
+
+## Railway Services (Co-Pilot stack — Thursday Early Submission)
 
 MVP service shape:
 

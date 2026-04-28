@@ -1,0 +1,38 @@
+# AgentForge Clinical Co-Pilot — Docker build exclusions for the
+# OpenEMR fork image. Keeps the build context small and prevents
+# host-only artifacts (caches, venvs, runtime copies) from being
+# uploaded to the registry.
+
+# VCS
+.git
+.gitattributes
+
+# Runtime / staging copies
+.runtime
+
+# Co-Pilot scaffold runs as separate services and is not part of the
+# OpenEMR fork image. Exclude its source AND its local build artifacts.
+copilot/
+
+# Python / Node caches and venvs (defense in depth even if filtered above)
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+**/pytest-cache-files-*
+**/*.egg-info
+**/node_modules
+**/.next
+
+# OS / editor noise
+.DS_Store
+.idea
+.vscode
+.vscode-oss
+nbproject
+
+# Logs
+*.log
+/logs

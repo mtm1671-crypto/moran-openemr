@@ -1,0 +1,18 @@
+# Railway service configuration for the AgentForge OpenEMR fork.
+# The MariaDB service is added separately via `railway add --database
+# mariadb` (or the dashboard) and exposes its connection details to
+# this service through reference variables.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# OpenEMR's first boot runs `setup.php` against the empty database
+# and can take 2-3 minutes; healthchecks are intentionally generous.
+# The readiness endpoint is served at /meta/health/readyz.
+healthcheckPath = "/meta/health/readyz"
+healthcheckTimeout = 300
