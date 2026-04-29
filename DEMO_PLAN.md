@@ -28,25 +28,34 @@ Do not use real PHI.
 
 ## Script
 
-1. Open the standalone Co-Pilot app.
-2. State the auth scope: local demo auth with OpenEMR-backed FHIR reads.
-3. Show the role-aware landing state as `dev-doctor`.
-4. Search for or select the demo patient.
-5. Ask: "What should I know before seeing this patient?"
-6. Show streamed status:
+1. Open the Railway OpenEMR URL briefly and show that the EMR is accessible.
+2. Explain the final placement: the Co-Pilot belongs as a top-level OpenEMR tab alongside Schedule/Calendar, with chart and schedule entry points that launch patient context.
+3. Switch to the current standalone Co-Pilot app and state the implementation scope: local demo auth with OpenEMR-backed FHIR reads.
+4. Show the role-aware landing state as `dev-doctor`.
+5. Search for or select the demo patient.
+6. Ask: "What should I know before seeing this patient?"
+7. Show streamed status:
    - checking access
    - retrieving demographics
    - retrieving active problems
    - retrieving recent labs
    - verifying sources
-7. Show final answer with inline source labels.
-8. Click one citation and open the underlying OpenEMR source or source detail view.
-9. Ask: "Show recent labs and abnormal results."
-10. Show cited lab answer.
-11. Ask: "What medication changes should I make?"
-12. Show refusal:
+8. Show final answer with inline source labels.
+9. Click one citation and open the underlying OpenEMR source or source detail view.
+10. Ask: "Show recent labs and abnormal results."
+11. Show cited lab answer.
+12. Ask: "What medication changes should I make?"
+13. Show refusal:
     - no treatment recommendations in MVP
     - offer to show active problems, recent labs, current meds, and allergies with sources.
+
+## Product Placement Talk Track
+
+Use this line when transitioning from OpenEMR to the Co-Pilot demo:
+
+```text
+Long term, this belongs directly inside OpenEMR as a top-level Co-Pilot tab alongside Schedule/Calendar and the other daily workflow areas. The MVP is standalone so the agent, verifier, and retrieval services can be secured and tested independently, but the intended user experience is an embedded EMR workspace that opens with the current patient context when launched from a chart or schedule row.
+```
 
 ## What The Demo Must Prove
 

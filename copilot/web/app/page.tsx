@@ -119,8 +119,46 @@ export default function Home() {
     }
 
     void loadSession();
-    void searchPatients("de", false);
+    const launchParams = new URLSearchParams(window.location.search);
+    const launchPatientId = launchParams.get("patient_id");
+    if (launchPatientId) {
+      void loadLaunchPatient(launchPatientId, launchParams);
+    } else {
+      void searchPatients("de", false);
+    }
   }, [apiBase]);
+
+  async function loadLaunchPatient(patientId: string, launchParams: URLSearchParams) {
+    try {
+      const response = await fetch(`${apiBase}/api/patients/${encodeURIComponent(patientId)}`);
+      if (!response.ok) {
+        throw new Error(`Patient context returned ${response.status}`);
+      }
+      const patient = (await response.json()) as PatientSummary;
+      setPatients([patient]);
+      setSelectedPatient(patient);
+      setPatientQuery(patient.display_name);
+      setLines((current) => [
+        ...current,
+        { role: "status", text: "Loaded patient context from OpenEMR launch." }
+      ]);
+      if (launchParams.get("launch_context") === "schedule") {
+        setLines((current) => [
+          ...current,
+          { role: "status", text: "Schedule appointment context included." }
+        ]);
+      }
+    } catch (error) {
+      setLines((current) => [
+        ...current,
+        {
+          role: "status",
+          text: error instanceof Error ? error.message : "Patient context failed"
+        }
+      ]);
+      void searchPatients("de", false);
+    }
+  }
 
   async function searchPatients(query: string, showStatus = true) {
     const trimmed = query.trim();

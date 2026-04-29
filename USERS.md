@@ -2,7 +2,9 @@
 
 ## Summary
 
-The MVP is designed for a primary care clinic workflow where clinicians have very little time to recover patient context between visits. The primary user is a primary care physician with a packed clinic day. The supporting users are nurses and medical assistants who prepare charts and room patients. The product is a standalone chat-first Clinical Co-Pilot connected to OpenEMR: the user authenticates through OpenEMR SMART/OAuth, role-based access control determines which patients and data categories they can access, the user searches for or selects an authorized patient, and then asks patient-scoped questions in a chat window.
+The MVP is designed for a primary care clinic workflow where clinicians have very little time to recover patient context between visits. The primary user is a primary care physician with a packed clinic day. The supporting users are nurses and medical assistants who prepare charts and room patients. The current product implementation is a standalone chat-first Clinical Co-Pilot connected to OpenEMR: the user authenticates through OpenEMR SMART/OAuth, role-based access control determines which patients and data categories they can access, the user searches for or selects an authorized patient, and then asks patient-scoped questions in a chat window.
+
+The final clinician experience should live inside OpenEMR as a top-level `Co-Pilot` tab alongside major workflow areas such as Schedule/Calendar. Opening the tab globally should show patient search and today's schedule context. Opening it from a chart or schedule row should carry the selected patient into the Co-Pilot automatically. The assistant can remain a separate Next.js/FastAPI service behind that tab, but the user should experience it as part of the EMR workspace.
 
 The agent is information-only and read-only. It retrieves and summarizes facts from the selected patient's OpenEMR record, but it does not diagnose, recommend treatment, prescribe, draft notes, place orders, or write back to the chart. Every factual claim in the answer must have an inline clickable source label that links back to the underlying OpenEMR record, document, lab result, or source detail view when available.
 
@@ -38,7 +40,7 @@ For MVP, supporting users should not receive the same depth of clinical detail a
 
 The core moment is the 1-2 minute window between patient rooms.
 
-The user opens the Clinical Co-Pilot from a patient chart, schedule entry, or Co-Pilot launcher. The user is already authenticated through OpenEMR. The chat shows a permission-filtered patient search/selector across patients the user is authorized to access. The user selects one patient, then asks either a custom question or one of the common quick questions.
+The user opens the Clinical Co-Pilot from the top-level OpenEMR `Co-Pilot` tab, a patient chart, a schedule entry, or a Co-Pilot launcher. The user is already authenticated through OpenEMR. The chat shows a permission-filtered patient search/selector across patients the user is authorized to access. The user selects one patient, or arrives with a patient already selected from chart/schedule context, then asks either a custom question or one of the common quick questions.
 
 The default answer should be a concise clinical brief: short sections or bullets, factual claims cited inline, and no broad explanation unless the user asks for more. Citation labels should be clickable. While the agent is working, the UI can show status updates such as "Checking demographics," "Checking active problems," "Checking recent labs," and "Verifying sources." It should not show factual answer text until verification is complete.
 

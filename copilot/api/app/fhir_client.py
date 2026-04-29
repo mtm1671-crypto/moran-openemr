@@ -34,6 +34,9 @@ class OpenEMRFhirClient:
     async def get_patient(self, patient_id: str) -> dict[str, Any]:
         return await self.read_resource("Patient", patient_id)
 
+    async def get_patient_summary(self, patient_id: str) -> PatientSummary:
+        return _patient_from_fhir(await self.get_patient(patient_id))
+
     async def search_patients(self, query: str, count: int = 20) -> list[PatientSummary]:
         params = {"name": query, "_count": str(count)}
         bundle = await self.search_bundle("Patient", params=params)

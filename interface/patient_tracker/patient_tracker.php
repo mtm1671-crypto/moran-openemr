@@ -423,6 +423,9 @@ if (!($_REQUEST['flb_table'] ?? null)) {
                         <td class="dehead text-center text-ovr-dark" style="max-width: 150px;">
                             <?php echo xlt('Patient'); ?>
                         </td>
+                        <td class="dehead text-center text-ovr-dark" name="kiosk_hide">
+                            <?php echo xlt('Co-Pilot'); ?>
+                        </td>
                         <?php if (OEGlobalsBag::getInstance()->getBoolean('ptkr_visit_reason')) { ?>
                             <td class="dehead text-center text-ovr-dark" name="kiosk_hide">
                                 <?php echo xlt('Appt Comment'); ?>
@@ -659,6 +662,11 @@ if (!($_REQUEST['flb_table'] ?? null)) {
                         <td class="detail text-center" style="white-space: normal;" name="kiosk_show">
                             <a href="#" onclick="return topatient(<?php echo attr_js($appt_pid); ?>,<?php echo attr_js($appt_enc); ?>)">
                                 <?php echo text($ptname_short); ?></a>
+                        </td>
+                        <td class="detail text-center" name="kiosk_hide">
+                            <a class="btn btn-secondary btn-sm" href="#" onclick="return openCopilotFromSchedule(<?php echo attr_js($appt_pid); ?>, <?php echo attr_js($appt_eid); ?>)">
+                                <?php echo xlt('Co-Pilot'); ?>
+                            </a>
                         </td>
 
                         <!-- reason -->
@@ -1018,6 +1026,21 @@ function myLocalJS(SessionInterface $session): void
                     top.RTop.location = "<?php echo OEGlobalsBag::getInstance()->getWebRoot(); ?>/interface/patient_file/summary/demographics.php?set_pid=" + encodeURIComponent(newpid);
                 }
             }
+        }
+
+        function openCopilotFromSchedule(pid, appointmentEid) {
+            top.restoreSession();
+            const params = new URLSearchParams({
+                context: 'schedule',
+                pid: pid,
+                appointment_eid: appointmentEid
+            });
+            if (top.left_nav && top.left_nav.loadFrame) {
+                top.left_nav.loadFrame('copilot0', 'copilot', 'agentforge/copilot.php?' + params.toString());
+            } else {
+                window.location.href = "<?php echo OEGlobalsBag::getInstance()->getWebRoot(); ?>/interface/agentforge/copilot.php?" + params.toString();
+            }
+            return false;
         }
 
         // opens the demographic and encounter screens in a new window

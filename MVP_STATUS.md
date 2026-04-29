@@ -29,11 +29,21 @@ The MVP direction is now the standalone AgentForge Clinical Co-Pilot:
 - Postgres with `pgvector` and `pgcrypto` for derived indexes, encrypted conversations, audit metadata, and eval support.
 - Railway deployment target.
 
+The intended final product placement is a top-level OpenEMR `Co-Pilot` tab alongside daily workflow areas such as Schedule/Calendar. Opening the tab globally should show authorized patient search and schedule context. Opening it from a patient chart or schedule row should launch the same Co-Pilot workspace with that patient already selected. The standalone Next.js/FastAPI services remain the implementation boundary, while OpenEMR owns navigation, identity, permissions, and source-of-truth chart records.
+
 The first standalone scaffold has been started under `copilot/`:
 
 - `copilot/api`: FastAPI app with health, capabilities, OpenEMR FHIR patient search, JWKS-backed bearer validation, deterministic evidence tools, chat SSE endpoint, source-link endpoint, mock provider, and verifier tests.
 - `copilot/web`: Next.js chat shell with dev session display, patient search/select, quick questions, message composer, SSE stream parsing, citations, trace display, and Playwright smoke coverage.
 - `copilot/worker`: worker placeholder for ETL, prefetch, and reindex jobs.
+
+Step 1 of the final-product roadmap has started in OpenEMR itself:
+
+- Main menu roles now expose a top-level `Co-Pilot` tab.
+- The patient chart menu includes a patient-scoped `Co-Pilot` launch.
+- Flow Board schedule rows include a `Co-Pilot` action that passes patient and appointment context.
+- `interface/agentforge/copilot.php` bridges OpenEMR navigation to the standalone Co-Pilot web app, using the `AgentForge Clinical Co-Pilot URL` Connectors global or `AGENTFORGE_COPILOT_URL`.
+- The Co-Pilot web/API can accept an incoming `patient_id` launch context and preselect that patient.
 
 ## Completed Planning Artifacts
 
@@ -136,10 +146,15 @@ previous live OpenEMR smoke: 5 passed
 3. Should on-demand patient reindex be available to nurses/MAs, or only clinicians/admins?
 4. What exact OpenEMR role claim/role mapping should be used for the deployed SMART tokens?
 
-## Next Build Milestones
+## Final Product Roadmap
 
-1. Wire the frontend SMART/OAuth authorization-code login and callback flow.
-2. Add Postgres schema for encrypted conversations, audit events, and evidence index.
-3. Add Anthropic/OpenRouter/local provider adapters behind PHI gates.
-4. Add deterministic eval fixtures for the serious demo patient scenario.
-5. Deploy Railway `web`, `api`, `worker`, and `postgres` services.
+There are 8 major steps from the current MVP scaffold to the final product:
+
+1. Initial implementation complete: add the OpenEMR product entry points with a top-level `Co-Pilot` tab, chart launch, and schedule-row launch.
+2. Wire production SMART/OAuth authorization-code login in the frontend, including callback handling and token handoff to the API.
+3. Finalize OpenEMR role, scope, and patient-access mapping for doctor, NP/PA, nurse, MA, and admin users.
+4. Deploy the full Co-Pilot stack on Railway: `web`, `api`, `worker`, and `postgres`, connected to the deployed OpenEMR service.
+5. Add Postgres persistence: encrypted conversations, messages, audit events, source metadata, and evidence/index tables with `pgcrypto` and `pgvector`.
+6. Expand retrieval coverage beyond the current demo set: schedule context, encounters, vitals, notes/documents, source links, and on-demand patient reindex.
+7. Add real model provider adapters behind PHI gates, then keep deterministic claim verification, treatment-refusal behavior, and citation checks as release blockers.
+8. Harden for release: CI eval suite, PHI-safe logging, retention/deletion controls, monitoring, backup/restore, deployment runbooks, and final demo walkthrough.

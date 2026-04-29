@@ -224,9 +224,10 @@ Patient scope decision: one selected patient at a time. Cross-patient comparison
 
 Likely UI location:
 
-- Primary product surface: a Co-Pilot chat window with patient selector, quick questions, free-text prompts, and source-backed answers.
+- Final product surface: a top-level OpenEMR `Co-Pilot` tab alongside major workflow areas such as Schedule/Calendar, Patients, and Reports.
+- Current MVP surface: a standalone Next.js chat application with patient selector, quick questions, free-text prompts, and source-backed answers.
 - Patient selector scope: all patients the user is authorized to access, with search. Today's schedule can provide shortcuts and prefetch but should not be the only patient list.
-- Primary app surface: standalone Next.js chat application.
+- Chart and schedule launch paths: opening the Co-Pilot from a patient chart or schedule row should carry selected-patient context into the assistant automatically.
 - Secondary MVP shortcut: today's schedule can open the chat for a scheduled patient and trigger scheduled-patient prefetch.
 - The patient list must be permission-filtered. Doctors and nurses/MAs may see different patients or data categories based on OpenEMR role, scopes, and configured capability checks.
 

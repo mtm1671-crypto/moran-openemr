@@ -11,10 +11,13 @@ This repository is a fork of [OpenEMR](https://github.com/openemr/openemr) with 
 | Local Co-Pilot API | `http://127.0.0.1:8001/` |
 | Local Co-Pilot Web | `http://127.0.0.1:3001/` |
 
-## Project Documents
+## Root Planning Documents
+
+The planning Markdown set is kept at the repository root and indexed in [PLANNING.md](PLANNING.md). Implementation READMEs stay beside the code they describe.
 
 | Document | Purpose |
 |---|---|
+| [PLANNING.md](PLANNING.md) | Index of root planning artifacts and implementation-doc boundaries |
 | [PRESEARCH.md](PRESEARCH.md) | Pre-code planning, constraints, and discovery notes |
 | [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality, and compliance audit of the OpenEMR fork |
 | [USERS.md](USERS.md) | Target user, workflow, and use cases ([USER.md](USER.md) is a compatibility pointer) |

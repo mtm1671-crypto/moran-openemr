@@ -67,6 +67,32 @@ async def test_get_patient_reads_patient_resource() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_patient_summary_maps_patient_resource() -> None:
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Patient",
+                "id": "p1",
+                "name": [{"given": ["Jane"], "family": "Moran"}],
+                "birthDate": "1975-04-12",
+                "gender": "female",
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    patient = await client.get_patient_summary("p1")
+
+    assert patient.patient_id == "p1"
+    assert patient.display_name == "Jane Moran"
+    assert patient.birth_date == "1975-04-12"
+    assert patient.gender == "female"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_search_active_conditions_filters_bundle_resources() -> None:
     route = respx.get("http://openemr.test/apis/default/fhir/Condition").mock(
         return_value=Response(

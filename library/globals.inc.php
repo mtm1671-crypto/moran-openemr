@@ -3332,6 +3332,12 @@ $GLOBALS_METADATA = [
             '8.0.0',
             xl('Set the maximum compatibility version of US Core IG to support.  If a resource profile has breaking changes it will not exceed the given profile. If a profile has backwards breaking changes it will skip that profile version if a later version is supported.')
         ],
+        GlobalConnectorsEnum::AGENTFORGE_COPILOT_URL->value => [
+            xl('AgentForge Clinical Co-Pilot URL'),
+            'text',
+            '',
+            xl('Base URL for the AgentForge Clinical Co-Pilot web app. Leave blank to use the AGENTFORGE_COPILOT_URL environment variable or the local demo default.')
+        ],
         'cc_front_payments' => [
             xl('Accept Credit Card transactions from Front Payments'),
             'bool',

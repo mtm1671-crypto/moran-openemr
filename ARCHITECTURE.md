@@ -8,6 +8,8 @@ The backend is a Python FastAPI service. It validates OpenEMR-issued identity, e
 
 OpenEMR remains authoritative. The Co-Pilot database stores derived indexes, encrypted conversations, evidence metadata, audit events, and evaluation fixtures. It does not become the clinical system of record.
 
+Long term, the clinician-facing product should appear inside OpenEMR as a top-level `Co-Pilot` tab alongside core workflow areas such as Schedule/Calendar, Patients, and Reports. The standalone Next.js/FastAPI architecture remains the service boundary, but OpenEMR should provide the navigation entry point, authenticated launch context, and patient/schedule shortcuts so the assistant feels like part of the normal EMR workspace.
+
 ## Architecture Diagram
 
 ```text
@@ -93,6 +95,18 @@ Railway Cron / ETL Worker
 The core product is a chat window. A clinician authenticates, selects one patient, asks natural-language questions, and receives cited chart information. The MVP stays read-only and informational. It should not generate treatment plans, diagnoses, orders, prescriptions, or care recommendations.
 
 The first workflow is optimized for a primary care clinician with 1-2 minutes between rooms. Nurses, MAs, NPs, and PAs are supported through role-specific access rules, but the doctor/APP chart review workflow drives the first version.
+
+### OpenEMR Product Placement
+
+The intended final placement is a first-class OpenEMR workspace tab:
+
+- Add a top-level `Co-Pilot` item near Schedule/Calendar and other daily workflow navigation.
+- When opened from the global top nav, show the Co-Pilot patient selector and authorized patient search.
+- When opened from a patient chart, load the Co-Pilot with that patient already selected.
+- When opened from a schedule row, launch the same patient-scoped Co-Pilot view and optionally prefetch that patient's evidence.
+- Keep all chart reads and source links tied back to OpenEMR authorization, FHIR records, and source views.
+
+This is a product integration decision, not a reason to collapse the assistant into OpenEMR PHP internals. For the final product, OpenEMR should host the entry points and context handoff while the Co-Pilot web/API/worker services continue to own the agent workflow, verification, conversation storage, and retrieval infrastructure.
 
 ### Relationship To OpenEMR
 

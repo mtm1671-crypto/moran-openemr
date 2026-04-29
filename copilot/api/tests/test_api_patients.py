@@ -118,3 +118,68 @@ def test_me_does_not_echo_bearer_token() -> None:
 
     assert response.status_code == 200
     assert "access_token" not in response.json()
+
+
+def test_demo_patient_context_returns_summary_without_fhir() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/patients/demo-diabetes-001")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "patient_id": "demo-diabetes-001",
+        "display_name": "Demo Patient",
+        "birth_date": "1975-04-12",
+        "gender": "female",
+        "source_system": "openemr",
+    }
+
+
+@respx.mock
+def test_patient_context_reads_fhir_patient_with_user_bearer_token() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    route = respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Patient",
+                "id": "p1",
+                "name": [{"given": ["Jane"], "family": "Moran"}],
+                "birthDate": "1975-04-12",
+                "gender": "female",
+            },
+        )
+    )
+
+    response = TestClient(app).get(
+        "/api/patients/p1",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Jane Moran"
+    assert route.calls[0].request.headers["authorization"] == "Bearer user-token"
+
+
+@respx.mock
+def test_patient_context_returns_not_found_when_fhir_patient_missing() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/Patient/missing").mock(
+        return_value=Response(404, json={"resourceType": "OperationOutcome"})
+    )
+
+    response = TestClient(app).get("/api/patients/missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "OpenEMR patient was not found"

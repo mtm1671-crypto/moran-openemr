@@ -96,6 +96,44 @@ async def patients(
         raise HTTPException(status_code=502, detail="OpenEMR patient search failed") from exc
 
 
+@router.get("/api/patients/{patient_id}", response_model=PatientSummary)
+async def patient(
+    patient_id: str,
+    user: Annotated[RequestUser, Depends(get_request_user)],
+    settings: Settings = Depends(get_settings),
+) -> PatientSummary:
+    if settings.openemr_fhir_base_url is None:
+        if patient_id == "demo-diabetes-001":
+            return PatientSummary(
+                patient_id="demo-diabetes-001",
+                display_name="Demo Patient",
+                birth_date="1975-04-12",
+                gender="female",
+            )
+        return PatientSummary(
+            patient_id=patient_id,
+            display_name="Selected OpenEMR patient",
+            birth_date=None,
+            gender=None,
+        )
+
+    bearer_token = await resolve_fhir_bearer_token(user, settings)
+    client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
+    try:
+        return await client.get_patient_summary(patient_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="OpenEMR FHIR access denied",
+            ) from exc
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="OpenEMR patient was not found") from exc
+        raise HTTPException(status_code=502, detail="OpenEMR patient retrieval failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="OpenEMR patient retrieval failed") from exc
+
+
 @router.get("/api/source/openemr/{resource_type}/{resource_id}")
 async def openemr_source(
     resource_type: str,
