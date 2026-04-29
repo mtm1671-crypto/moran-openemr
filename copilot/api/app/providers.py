@@ -71,6 +71,10 @@ class MockProviderAdapter:
         )
         wants_labs = any(term in text for term in ["lab", "a1c", "result", "abnormal", "creatinine", "egfr"])
         wants_problems = any(term in text for term in ["problem", "history", "condition", "diagnosis"])
+        wants_medications = any(
+            term in text for term in ["medication", "medicine", "meds", "prescription", "drug"]
+        )
+        wants_allergies = any(term in text for term in ["allergy", "allergies", "intolerance"])
 
         if wants_broad_brief:
             ordered = [
@@ -91,6 +95,20 @@ class MockProviderAdapter:
             ordered = [
                 *self._by_type(evidence, "patient_demographics", limit=1),
                 *self._by_type(evidence, "active_problem", limit=4),
+            ]
+            return self._fill_selection(ordered, evidence)
+
+        if wants_medications:
+            ordered = [
+                *self._by_type(evidence, "patient_demographics", limit=1),
+                *self._by_type(evidence, "medication", limit=4),
+            ]
+            return self._fill_selection(ordered, evidence)
+
+        if wants_allergies:
+            ordered = [
+                *self._by_type(evidence, "patient_demographics", limit=1),
+                *self._by_type(evidence, "allergy", limit=4),
             ]
             return self._fill_selection(ordered, evidence)
 

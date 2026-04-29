@@ -177,6 +177,50 @@ def test_openemr_source_rejects_unsupported_resource_type() -> None:
     assert response.json()["detail"] == "Unsupported OpenEMR source resource type"
 
 
+@respx.mock
+def test_openemr_source_supports_medication_and_allergy_resources() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    medication_route = respx.get("http://openemr.test/apis/default/fhir/MedicationRequest/m1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "MedicationRequest",
+                "id": "m1",
+                "subject": {"reference": "Patient/p1"},
+            },
+        )
+    )
+    allergy_route = respx.get("http://openemr.test/apis/default/fhir/AllergyIntolerance/a1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "AllergyIntolerance",
+                "id": "a1",
+                "patient": {"reference": "Patient/p1"},
+            },
+        )
+    )
+
+    medication_response = TestClient(app).get(
+        "/api/source/openemr/MedicationRequest/m1?patient_id=p1"
+    )
+    allergy_response = TestClient(app).get(
+        "/api/source/openemr/AllergyIntolerance/a1?patient_id=p1"
+    )
+
+    assert medication_response.status_code == 200
+    assert medication_response.json()["resourceType"] == "MedicationRequest"
+    assert allergy_response.status_code == 200
+    assert allergy_response.json()["resourceType"] == "AllergyIntolerance"
+    assert medication_route.called
+    assert allergy_route.called
+
+
 def test_demo_source_returns_demo_observation() -> None:
     response = TestClient(app).get("/api/source/demo-lab-a1c")
 

@@ -32,9 +32,10 @@ OpenEMR local/demo instance
 1. `/healthz` returns service status.
 2. `/api/capabilities` returns enabled roles, tools, and provider safety flags.
 3. `/api/patients?query=` proxies OpenEMR FHIR patient search.
-4. `/api/chat` retrieves demographics, active problems, and recent labs from FHIR, then streams a verified final answer.
-5. `/api/source/openemr/{resourceType}/{id}` re-reads cited source records from OpenEMR FHIR.
-6. Worker can run an idempotent patient reindex job.
+4. `/api/chat` retrieves demographics, active problems, recent labs, active medications, and allergies from FHIR, then streams a verified final answer.
+5. `/api/chat` refuses treatment recommendation requests in the read-only MVP.
+6. `/api/source/openemr/{resourceType}/{id}` re-reads cited source records from OpenEMR FHIR.
+7. Worker can run an idempotent patient reindex job.
 
 ## Local OpenEMR Wiring
 
@@ -96,6 +97,8 @@ cd copilot/api
 cd copilot/web
 npm audit --audit-level=moderate
 npm run build
+$env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:3001'
+npm run test:e2e -- --project=chromium
 ```
 
 Optional live OpenEMR smoke test:
@@ -116,11 +119,13 @@ $env:OPENEMR_TLS_VERIFY='false'
 Latest local verification:
 
 ```text
-api pytest: 26 passed, 5 skipped
+api pytest: 37 passed, 5 skipped
 api ruff: all checks passed
 api mypy: success
 web build: success
-live OpenEMR smoke: 5 passed
+web npm audit: 0 vulnerabilities
+Playwright smoke: 1 passed
+previous live OpenEMR smoke: 5 passed
 ```
 
 Current verified demo URLs:

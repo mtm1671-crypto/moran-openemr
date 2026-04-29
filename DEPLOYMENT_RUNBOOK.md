@@ -63,7 +63,7 @@ The script prints the environment variables needed by `copilot/api/.env`. This u
 
 ## OpenEMR Fork — Railway Deploy
 
-The repository root ships with `Dockerfile`, `railway.toml`, and `.dockerignore` so the OpenEMR fork itself can be deployed to Railway with one CLI flow. The Dockerfile inherits the official `openemr/openemr:flex` image at a pinned digest and identifies this build as the AgentForge fork via an `agentforge/` marker directory in the webroot. OpenEMR's PHP/Apache runtime is unchanged.
+The repository root ships with `Dockerfile`, `railway.toml`, `.dockerignore`, and `.railwayignore` so the OpenEMR fork itself can be deployed to Railway with one CLI flow. The Dockerfile inherits the official `openemr/openemr:flex` image at a pinned digest and identifies this build as the AgentForge fork via an `agentforge/` marker directory in the webroot. OpenEMR's PHP/Apache runtime is unchanged. The ignore files intentionally upload only the Dockerfile and fork-identifying docs because the full OpenEMR source tree is already inside the official base image.
 
 ### One-time prerequisites
 
@@ -89,7 +89,8 @@ railway variables \
   --set "MYSQL_USER=openemr" \
   --set "MYSQL_PASS=${OPENEMR_DB_PASS}" \
   --set "OE_USER=admin" \
-  --set "OE_PASS=${OPENEMR_OE_PASS}"
+  --set "OE_PASS=${OPENEMR_OE_PASS}" \
+  --set "PORT=80"
 
 railway up                                            # build the Dockerfile, deploy
 railway domain                                        # generate a public URL
@@ -97,7 +98,7 @@ railway domain                                        # generate a public URL
 
 ### First-boot expectations
 
-- The official OpenEMR image runs `setup.php` against the empty MariaDB on first start. Expect 2-3 minutes before the app is ready.
+- The official OpenEMR image runs `setup.php` against the empty MariaDB/MySQL service on first start and may compile assets. Expect several minutes before the app is ready.
 - Readiness endpoint: `GET /meta/health/readyz` over HTTPS (set as the healthcheck path in `railway.toml`).
 - Login at the generated URL with `admin` / `<OE_PASS value>`.
 

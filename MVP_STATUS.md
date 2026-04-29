@@ -1,5 +1,22 @@
 # Clinical Co-Pilot MVP Status
 
+## Deployed URL (Stage 2 hard gate)
+
+| Environment | URL |
+|---|---|
+| OpenEMR fork on Railway | https://openemr-production-f5ed.up.railway.app |
+
+Login: `admin` / `<OE_PASS>` (set via `railway variables` on the openemr service; not committed). The first boot runs OpenEMR's `setup.php` against an empty MySQL and can take several minutes while assets are compiled; the readiness endpoint is `/meta/health/readyz`.
+
+Latest verified Railway deployment:
+
+```text
+Service: openemr
+Deployment: 2ef7363d-6a3d-40f5-bfc6-39c45ccec499
+Status: SUCCESS
+Verified: OpenEMR login page, admin login, and FHIR metadata return successfully.
+```
+
 ## Current State
 
 The MVP direction is now the standalone AgentForge Clinical Co-Pilot:
@@ -14,8 +31,8 @@ The MVP direction is now the standalone AgentForge Clinical Co-Pilot:
 
 The first standalone scaffold has been started under `copilot/`:
 
-- `copilot/api`: FastAPI app with health, capabilities, OpenEMR FHIR patient search, deterministic evidence tools, chat SSE endpoint, source-link endpoint, mock provider, and verifier tests.
-- `copilot/web`: Next.js chat shell with dev session display, patient search/select, quick questions, message composer, SSE stream parsing, citations, and trace display.
+- `copilot/api`: FastAPI app with health, capabilities, OpenEMR FHIR patient search, JWKS-backed bearer validation, deterministic evidence tools, chat SSE endpoint, source-link endpoint, mock provider, and verifier tests.
+- `copilot/web`: Next.js chat shell with dev session display, patient search/select, quick questions, message composer, SSE stream parsing, citations, trace display, and Playwright smoke coverage.
 - `copilot/worker`: worker placeholder for ETL, prefetch, and reindex jobs.
 
 ## Completed Planning Artifacts
@@ -91,23 +108,25 @@ GET  /api/patients?query=
 GET  /api/source/openemr/{resourceType}/{id}
 ```
 
-The patient search, chat evidence, and source endpoints now support real OpenEMR FHIR calls with either a user bearer token or a local-only dev password-grant token. Chat currently uses deterministic FHIR retrieval plus a mock provider, not an external LLM. The retrieval layer supports patient demographics, active problems, and recent labs, then verifies that final citations belong to the selected patient.
+The patient search, chat evidence, and source endpoints now support real OpenEMR FHIR calls with either a user bearer token or a local-only dev password-grant token. Production-style bearer validation against OpenEMR JWKS is implemented on the API side; the browser SMART authorization-code login still needs to be wired. Chat currently uses deterministic FHIR retrieval plus a mock provider, not an external LLM. The retrieval layer supports patient demographics, active problems, recent labs, active medications, and allergies, then verifies that final citations belong to the selected patient. Treatment recommendation requests are refused by policy before answer generation.
 
 Tonight's auth scope is intentionally local-demo only:
 
 - FastAPI identifies the request as `dev-doctor`.
 - The API uses OpenEMR's local password grant to obtain a dev FHIR token.
-- Full SMART/JWT validation is explicitly deferred.
+- Full browser SMART login and deployed-role mapping are explicitly deferred.
 - All chart access remains read-only.
 
-Current backend verification:
+Current verification:
 
 ```text
-pytest: 26 passed, 5 skipped
+pytest: 37 passed, 5 skipped
 ruff: all checks passed
 mypy: success
 web build: success
-live OpenEMR smoke: 5 passed
+web npm audit: 0 vulnerabilities
+Playwright smoke: 1 passed
+previous live OpenEMR smoke: 5 passed
 ```
 
 ## Open Questions To Close
@@ -115,13 +134,12 @@ live OpenEMR smoke: 5 passed
 1. Which OpenEMR roles and SMART scopes map to doctor, NP/PA, nurse, and MA in the test environment?
 2. Which provider is PHI-approved for the first real deployment: Anthropic, OpenRouter, or local model only?
 3. Should on-demand patient reindex be available to nurses/MAs, or only clinicians/admins?
-4. Should the MVP expose meds/allergies as secondary context after demographics/problems/labs are stable?
+4. What exact OpenEMR role claim/role mapping should be used for the deployed SMART tokens?
 
 ## Next Build Milestones
 
-1. Implement OpenEMR SMART/OAuth token validation for production-style bearer tokens.
+1. Wire the frontend SMART/OAuth authorization-code login and callback flow.
 2. Add Postgres schema for encrypted conversations, audit events, and evidence index.
 3. Add Anthropic/OpenRouter/local provider adapters behind PHI gates.
 4. Add deterministic eval fixtures for the serious demo patient scenario.
-5. Implement meds/allergies as secondary context after the main question is addressed.
-6. Deploy Railway `web`, `api`, `worker`, and `postgres` services.
+5. Deploy Railway `web`, `api`, `worker`, and `postgres` services.

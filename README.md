@@ -6,7 +6,7 @@ This repository is a fork of [OpenEMR](https://github.com/openemr/openemr) with 
 
 | Environment | URL |
 |---|---|
-| OpenEMR fork (Railway) | _pending — recorded after first deploy_ |
+| OpenEMR fork (Railway) | https://openemr-production-f5ed.up.railway.app |
 | Local OpenEMR | `http://localhost:8300/` (see [DOCKER_README.md](DOCKER_README.md)) |
 | Local Co-Pilot API | `http://127.0.0.1:8001/` |
 | Local Co-Pilot Web | `http://127.0.0.1:3001/` |
@@ -71,12 +71,13 @@ railway variables --set "MYSQL_HOST=${{MariaDB.MARIADB_PRIVATE_HOST}}" \
                   --set "MYSQL_USER=openemr" \
                   --set "MYSQL_PASS=$(openssl rand -hex 24)" \
                   --set "OE_USER=admin" \
-                  --set "OE_PASS=$(openssl rand -hex 24)"
+                  --set "OE_PASS=$(openssl rand -hex 24)" \
+                  --set "PORT=80"
 railway up                            # build and deploy from this Dockerfile
 railway domain                        # generate a public URL
 ```
 
-The first boot runs OpenEMR's `setup.php` against the empty MariaDB and takes 2-3 minutes. The readiness endpoint is `/meta/health/readyz` (HTTPS).
+The first boot runs OpenEMR's `setup.php` against the empty MariaDB/MySQL service and can take several minutes while assets are compiled. The readiness endpoint is `/meta/health/readyz` (HTTPS).
 
 ## License
 

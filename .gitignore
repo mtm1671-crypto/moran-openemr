@@ -20,6 +20,7 @@ __pycache__
 /.docs/.out/*
 
 # AgentForge Co-Pilot local artifacts
+.logs
 copilot/.logs
 copilot/api/.tmp
 .runtime
@@ -41,6 +42,8 @@ ccdaservice/node_modules
 
 # testing
 .phpunit.result.cache
+playwright-report
+test-results
 
 # dev tool local overrides
 phpcs.xml

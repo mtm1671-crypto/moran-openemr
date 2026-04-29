@@ -67,12 +67,17 @@ const quickQuestions = [
     id: "recent_labs",
     label: "Recent labs",
     prompt: "Show recent labs and abnormal results."
+  },
+  {
+    id: "meds_allergies",
+    label: "Meds + allergies",
+    prompt: "Show current medications and allergies."
   }
 ];
 
 export default function Home() {
   const apiBase = useMemo(
-    () => process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000",
+    () => process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001",
     []
   );
   const [session, setSession] = useState<RequestUser | null>(null);
@@ -217,9 +222,9 @@ export default function Home() {
 
     const parsed = JSON.parse(data) as SsePayload;
     if (event === "status") {
-      const toolText = parsed.tools?.length ? ` · ${parsed.tools.join(", ")}` : "";
+      const toolText = parsed.tools?.length ? ` - ${parsed.tools.join(", ")}` : "";
       const countText =
-        typeof parsed.evidence_count === "number" ? ` · ${parsed.evidence_count} evidence` : "";
+        typeof parsed.evidence_count === "number" ? ` - ${parsed.evidence_count} evidence` : "";
       setLines((current) => [
         ...current,
         { role: "status", text: `${parsed.message ?? "working"}${toolText}${countText}` }
@@ -261,7 +266,7 @@ export default function Home() {
           <p className="eyebrow">Clinical Co-Pilot</p>
           <h1>Patient-scoped chat</h1>
           <p className="sessionLine">
-            {session ? `Local demo auth · ${session.role} · ${session.user_id}` : "Checking auth"}
+            {session ? `Local demo auth - ${session.role} - ${session.user_id}` : "Checking auth"}
           </p>
         </div>
 
@@ -282,7 +287,7 @@ export default function Home() {
         <div className="patientList" aria-label="Patient results">
           {patients.map((patient) => (
             <button
-          className={
+              className={
                 patient.patient_id === selectedPatient?.patient_id
                   ? "patientButton selected"
                   : "patientButton"
@@ -293,7 +298,7 @@ export default function Home() {
             >
               <strong>{patient.display_name}</strong>
               <span>
-                {patient.birth_date ?? "DOB unknown"} · {patient.gender ?? "gender unknown"}
+                {patient.birth_date ?? "DOB unknown"} - {patient.gender ?? "gender unknown"}
               </span>
             </button>
           ))}

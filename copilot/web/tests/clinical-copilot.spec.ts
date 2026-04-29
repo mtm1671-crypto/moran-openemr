@@ -1,0 +1,20 @@
+import { expect, test } from "@playwright/test";
+
+test("local demo chat streams cited evidence and refuses treatment advice", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("Local demo auth - doctor - dev-doctor")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Demo Patient/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Meds \+ allergies/ })).toBeVisible();
+
+  await page.getByRole("button", { name: /Recent labs/ }).click();
+  await expect(page.getByText(/Demo A1c was 8\.6%/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Demo A1c" })).toBeVisible();
+  await expect(page.getByText("passed")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Message" }).fill("What medication changes should I make?");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  await expect(page.getByText(/can't recommend medication changes/)).toBeVisible();
+  await expect(page.getByText("refused_treatment_recommendation")).toBeVisible();
+});

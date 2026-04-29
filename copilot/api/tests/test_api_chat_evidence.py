@@ -134,6 +134,101 @@ def test_chat_returns_safe_failure_when_openemr_denies_evidence_access() -> None
     assert final["audit"]["status_code"] == 403
 
 
+@respx.mock
+def test_chat_returns_medication_and_allergy_evidence_when_requested() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Patient",
+                "id": "p1",
+                "name": [{"given": ["Jane"], "family": "Moran"}],
+            },
+        )
+    )
+    medication_route = respx.get("http://openemr.test/apis/default/fhir/MedicationRequest").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "MedicationRequest",
+                            "id": "m1",
+                            "status": "active",
+                            "medicationCodeableConcept": {"text": "Metformin 1000 mg tablet"},
+                            "dosageInstruction": [{"text": "Take one tablet twice daily."}],
+                        }
+                    }
+                ],
+            },
+        )
+    )
+    allergy_route = respx.get("http://openemr.test/apis/default/fhir/AllergyIntolerance").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "AllergyIntolerance",
+                            "id": "a1",
+                            "code": {"text": "Penicillin"},
+                            "reaction": [{"manifestation": [{"text": "Rash"}]}],
+                        }
+                    }
+                ],
+            },
+        )
+    )
+
+    response = TestClient(app).post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "Show current medications and allergies."},
+    )
+    final = _final_event(response.text)
+
+    assert response.status_code == 200
+    assert "Metformin 1000 mg tablet" in final["answer"]
+    assert "Penicillin" in final["answer"]
+    assert final["audit"]["verification"] == "passed"
+    assert final["audit"]["tools"] == [
+        "get_patient_demographics",
+        "get_medications",
+        "get_allergies",
+    ]
+    assert medication_route.calls[0].request.url.params["status"] == "active"
+    assert allergy_route.calls[0].request.url.params["patient"] == "p1"
+
+
+def test_chat_refuses_treatment_recommendation_requests() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).post(
+        "/api/chat",
+        json={
+            "patient_id": "demo-diabetes-001",
+            "message": "What medication changes should I make?",
+        },
+    )
+    final = _final_event(response.text)
+
+    assert response.status_code == 200
+    assert "can't recommend medication changes" in final["answer"]
+    assert final["citations"] == []
+    assert final["audit"]["verification"] == "refused_treatment_recommendation"
+
+
 def test_chat_uses_demo_fallback_when_openemr_fhir_is_not_configured() -> None:
     settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
     app.dependency_overrides[get_settings] = lambda: settings

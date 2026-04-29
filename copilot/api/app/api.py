@@ -104,7 +104,7 @@ async def openemr_source(
     settings: Settings = Depends(get_settings),
     patient_id: str | None = Query(default=None, min_length=1, max_length=100),
 ) -> dict[str, Any]:
-    allowed_resource_types = {"Patient", "Condition", "Observation"}
+    allowed_resource_types = {"Patient", "Condition", "Observation", "MedicationRequest", "AllergyIntolerance"}
     if resource_type not in allowed_resource_types:
         raise HTTPException(status_code=400, detail="Unsupported OpenEMR source resource type")
     if settings.openemr_fhir_base_url is None:
@@ -218,6 +218,27 @@ async def chat(
 
 async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settings) -> AsyncIterator[str]:
     yield _sse("status", {"message": "checking access", "role": user.role})
+
+    if _is_treatment_advice_request(request.message):
+        yield _sse("status", {"message": "enforcing read-only MVP policy"})
+        yield _sse(
+            "final",
+            {
+                "answer": (
+                    "I can't recommend medication changes, diagnoses, orders, or treatment plans "
+                    "in this MVP. I can show source-backed current medications, allergies, active "
+                    "problems, and recent labs to support clinician review."
+                ),
+                "citations": [],
+                "audit": {
+                    "verification": "refused_treatment_recommendation",
+                    "policy": "read_only_clinical_information",
+                    "patient_id": request.patient_id,
+                },
+            },
+        )
+        return
+
     yield _sse("status", {"message": "retrieving evidence", "patient_id": request.patient_id})
 
     try:
@@ -345,6 +366,42 @@ def _demo_evidence(patient_id: str) -> list[EvidenceObject]:
             source_url="/api/source/demo-lab-a1c",
         )
     ]
+
+
+def _is_treatment_advice_request(message: str) -> bool:
+    text = message.lower()
+    direct_terms = [
+        "should i",
+        "should we",
+        "recommend",
+        "prescribe",
+        "order",
+        "diagnose",
+        "treat",
+        "treatment plan",
+        "medication changes",
+        "med changes",
+        "change medication",
+        "adjust medication",
+        "adjust dose",
+        "increase dose",
+        "decrease dose",
+        "stop medication",
+        "start medication",
+    ]
+    clinical_terms = [
+        "medication",
+        "medicine",
+        "meds",
+        "dose",
+        "dosage",
+        "treatment",
+        "therapy",
+        "plan",
+        "diagnosis",
+        "lab",
+    ]
+    return any(term in text for term in direct_terms) and any(term in text for term in clinical_terms)
 
 
 def _sse(event: str, payload: object) -> str:

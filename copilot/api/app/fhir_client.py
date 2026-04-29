@@ -65,6 +65,20 @@ class OpenEMRFhirClient:
         )
         return _resources_from_bundle(bundle, "Observation")
 
+    async def search_medication_requests(self, patient_id: str, count: int = 20) -> list[dict[str, Any]]:
+        bundle = await self.search_bundle(
+            "MedicationRequest",
+            params={"patient": patient_id, "status": "active", "_count": str(count)},
+        )
+        return _resources_from_bundle(bundle, "MedicationRequest")
+
+    async def search_allergy_intolerances(self, patient_id: str, count: int = 20) -> list[dict[str, Any]]:
+        bundle = await self.search_bundle(
+            "AllergyIntolerance",
+            params={"patient": patient_id, "_count": str(count)},
+        )
+        return _resources_from_bundle(bundle, "AllergyIntolerance")
+
     async def search_bundle(self, resource_type: str, params: dict[str, str]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(

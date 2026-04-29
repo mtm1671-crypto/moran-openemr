@@ -1,5 +1,5 @@
-# The Railway/OpenEMR image inherits the official OpenEMR runtime and only
-# copies fork-identifying docs into /agentforge. Keep the Docker context tiny.
+# Match .dockerignore so `railway up` uploads only the files needed by
+# the OpenEMR fork Dockerfile.
 
 *
 

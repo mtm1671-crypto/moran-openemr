@@ -48,6 +48,20 @@ class FhirEvidenceService:
                 limitations.append("No recent laboratory observations were returned by OpenEMR FHIR.")
             evidence.extend(labs)
 
+        if "get_medications" in requested_tools:
+            completed_tools.append("get_medications")
+            medications = await self.get_medications(patient_id)
+            if not medications:
+                limitations.append("No active medications were returned by OpenEMR FHIR.")
+            evidence.extend(medications)
+
+        if "get_allergies" in requested_tools:
+            completed_tools.append("get_allergies")
+            allergies = await self.get_allergies(patient_id)
+            if not allergies:
+                limitations.append("No allergies were returned by OpenEMR FHIR.")
+            evidence.extend(allergies)
+
         return EvidenceRetrievalResult(
             evidence=evidence,
             tools=completed_tools,
@@ -65,6 +79,17 @@ class FhirEvidenceService:
     async def get_recent_labs(self, patient_id: str) -> list[EvidenceObject]:
         observations = await self._client.search_lab_observations(patient_id)
         return [lab_observation_evidence(observation, patient_id) for observation in observations]
+
+    async def get_medications(self, patient_id: str) -> list[EvidenceObject]:
+        medication_requests = await self._client.search_medication_requests(patient_id)
+        return [
+            medication_request_evidence(medication_request, patient_id)
+            for medication_request in medication_requests
+        ]
+
+    async def get_allergies(self, patient_id: str) -> list[EvidenceObject]:
+        allergies = await self._client.search_allergy_intolerances(patient_id)
+        return [allergy_intolerance_evidence(allergy, patient_id) for allergy in allergies]
 
 
 def patient_demographics_evidence(patient: dict[str, Any]) -> list[EvidenceObject]:
@@ -198,6 +223,79 @@ def lab_observation_evidence(observation: dict[str, Any], patient_id: str) -> Ev
     )
 
 
+def medication_request_evidence(medication_request: dict[str, Any], patient_id: str) -> EvidenceObject:
+    medication_request_id = _resource_id(medication_request, "unknown-medication-request")
+    display = (
+        _codeable_concept_display(medication_request.get("medicationCodeableConcept"))
+        or _reference_display(medication_request.get("medicationReference"))
+        or medication_request_id
+    )
+    status_value = medication_request.get("status")
+    status_text = status_value if isinstance(status_value, str) and status_value else "unknown status"
+    authored_on = medication_request.get("authoredOn")
+    dosage_text = _first_dosage_text(medication_request)
+
+    fact = f"Medication request ({status_text}): {display}."
+    if dosage_text:
+        fact = f"{fact} Sig: {dosage_text.rstrip('.')}."
+    if isinstance(authored_on, str) and authored_on:
+        fact = f"{fact} Authored on {authored_on}."
+
+    return EvidenceObject(
+        evidence_id=_evidence_id("medication_request", patient_id, medication_request_id),
+        patient_id=patient_id,
+        source_type="medication",
+        source_id=medication_request_id,
+        display_name=display,
+        fact=fact,
+        effective_at=_parse_fhir_datetime(authored_on),
+        source_updated_at=_parse_fhir_datetime(authored_on),
+        retrieved_at=datetime.now(tz=UTC),
+        source_url=_source_url("MedicationRequest", medication_request_id, patient_id),
+        metadata={
+            "status": status_text,
+            "dosage": dosage_text,
+        },
+    )
+
+
+def allergy_intolerance_evidence(allergy: dict[str, Any], patient_id: str) -> EvidenceObject:
+    allergy_id = _resource_id(allergy, "unknown-allergy")
+    display = _codeable_concept_display(allergy.get("code")) or allergy_id
+    clinical_status = _codeable_concept_display(allergy.get("clinicalStatus"))
+    verification_status = _codeable_concept_display(allergy.get("verificationStatus"))
+    recorded_date = allergy.get("recordedDate")
+    reaction = _first_reaction_display(allergy)
+
+    fact = f"Allergy/intolerance: {display}."
+    if clinical_status:
+        fact = f"{fact} Clinical status: {clinical_status}."
+    if verification_status:
+        fact = f"{fact} Verification: {verification_status}."
+    if reaction:
+        fact = f"{fact} Reaction: {reaction}."
+    if isinstance(recorded_date, str) and recorded_date:
+        fact = f"{fact} Recorded on {recorded_date}."
+
+    return EvidenceObject(
+        evidence_id=_evidence_id("allergy_intolerance", patient_id, allergy_id),
+        patient_id=patient_id,
+        source_type="allergy",
+        source_id=allergy_id,
+        display_name=display,
+        fact=fact,
+        effective_at=_parse_fhir_datetime(recorded_date),
+        source_updated_at=_parse_fhir_datetime(recorded_date),
+        retrieved_at=datetime.now(tz=UTC),
+        source_url=_source_url("AllergyIntolerance", allergy_id, patient_id),
+        metadata={
+            "clinical_status": clinical_status,
+            "verification_status": verification_status,
+            "reaction": reaction,
+        },
+    )
+
+
 def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]:
     text = f"{message} {quick_question_id or ''}".lower()
     tools = ["get_patient_demographics"]
@@ -211,13 +309,23 @@ def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]
     )
     wants_problems = any(term in text for term in ["problem", "history", "condition", "diagnosis"])
     wants_labs = any(term in text for term in ["lab", "a1c", "result", "abnormal", "creatinine", "egfr"])
+    wants_medications = any(
+        term in text for term in ["medication", "medicine", "meds", "prescription", "drug"]
+    )
+    wants_allergies = any(term in text for term in ["allergy", "allergies", "intolerance"])
 
     if wants_broad_brief or wants_problems:
         tools.append("get_active_problems")
     if wants_broad_brief or wants_labs:
         tools.append("get_recent_labs")
+    if wants_medications:
+        tools.append("get_medications")
+    if wants_allergies:
+        tools.append("get_allergies")
 
-    if len(tools) == 1 and not any([wants_demographics, wants_broad_brief, wants_problems, wants_labs]):
+    if len(tools) == 1 and not any(
+        [wants_demographics, wants_broad_brief, wants_problems, wants_labs, wants_medications, wants_allergies]
+    ):
         tools.extend(["get_active_problems", "get_recent_labs"])
 
     return tools
@@ -261,6 +369,16 @@ def _codeable_concept_display(value: Any) -> str | None:
     return None
 
 
+def _reference_display(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    display = value.get("display")
+    if isinstance(display, str) and display:
+        return display
+    reference = value.get("reference")
+    return reference if isinstance(reference, str) and reference else None
+
+
 def _interpretation_display(observation: dict[str, Any]) -> str | None:
     interpretation = observation.get("interpretation")
     if not isinstance(interpretation, list) or not interpretation:
@@ -292,6 +410,36 @@ def _observation_value(observation: dict[str, Any]) -> str | None:
     if value_concept:
         return value_concept
 
+    return None
+
+
+def _first_dosage_text(medication_request: dict[str, Any]) -> str | None:
+    instructions = medication_request.get("dosageInstruction")
+    if not isinstance(instructions, list):
+        return None
+    for instruction in instructions:
+        if not isinstance(instruction, dict):
+            continue
+        text = instruction.get("text")
+        if isinstance(text, str) and text:
+            return text
+    return None
+
+
+def _first_reaction_display(allergy: dict[str, Any]) -> str | None:
+    reactions = allergy.get("reaction")
+    if not isinstance(reactions, list):
+        return None
+    for reaction in reactions:
+        if not isinstance(reaction, dict):
+            continue
+        manifestations = reaction.get("manifestation")
+        if not isinstance(manifestations, list):
+            continue
+        for manifestation in manifestations:
+            display = _codeable_concept_display(manifestation)
+            if display:
+                return display
     return None
 
 

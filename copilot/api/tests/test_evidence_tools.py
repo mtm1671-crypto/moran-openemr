@@ -4,8 +4,10 @@ import pytest
 
 from app.evidence_tools import (
     FhirEvidenceService,
+    allergy_intolerance_evidence,
     condition_evidence,
     lab_observation_evidence,
+    medication_request_evidence,
     patient_demographics_evidence,
 )
 from app.fhir_client import OpenEMRFhirClient
@@ -77,6 +79,52 @@ def test_lab_observation_evidence_extracts_value_and_abnormal_interpretation() -
     assert evidence.source_url == "/api/source/openemr/Observation/o1?patient_id=p1"
 
 
+def test_medication_request_evidence_extracts_medication_and_sig() -> None:
+    evidence = medication_request_evidence(
+        {
+            "resourceType": "MedicationRequest",
+            "id": "m1",
+            "status": "active",
+            "medicationCodeableConcept": {"text": "Metformin 1000 mg tablet"},
+            "authoredOn": "2026-01-10T00:00:00Z",
+            "dosageInstruction": [{"text": "Take one tablet twice daily."}],
+        },
+        patient_id="p1",
+    )
+
+    assert evidence.evidence_id == "ev_medication_request_p1_m1"
+    assert evidence.source_type == "medication"
+    assert evidence.display_name == "Metformin 1000 mg tablet"
+    assert evidence.fact == (
+        "Medication request (active): Metformin 1000 mg tablet. "
+        "Sig: Take one tablet twice daily. Authored on 2026-01-10T00:00:00Z."
+    )
+    assert evidence.source_url == "/api/source/openemr/MedicationRequest/m1?patient_id=p1"
+
+
+def test_allergy_intolerance_evidence_extracts_reaction_and_status() -> None:
+    evidence = allergy_intolerance_evidence(
+        {
+            "resourceType": "AllergyIntolerance",
+            "id": "a1",
+            "clinicalStatus": {"coding": [{"display": "Active"}]},
+            "verificationStatus": {"coding": [{"display": "Confirmed"}]},
+            "code": {"text": "Penicillin"},
+            "recordedDate": "2026-02-02",
+            "reaction": [{"manifestation": [{"text": "Rash"}]}],
+        },
+        patient_id="p1",
+    )
+
+    assert evidence.evidence_id == "ev_allergy_intolerance_p1_a1"
+    assert evidence.source_type == "allergy"
+    assert evidence.fact == (
+        "Allergy/intolerance: Penicillin. Clinical status: Active. "
+        "Verification: Confirmed. Reaction: Rash. Recorded on 2026-02-02."
+    )
+    assert evidence.source_url == "/api/source/openemr/AllergyIntolerance/a1?patient_id=p1"
+
+
 @pytest.mark.asyncio
 async def test_collect_for_question_runs_only_demographics_for_demographics_question() -> None:
     client = _FakeFhirClient()
@@ -116,6 +164,30 @@ async def test_collect_for_question_runs_all_core_tools_for_broad_brief() -> Non
     assert client.calls == ["get_patient", "search_active_conditions", "search_lab_observations"]
 
 
+@pytest.mark.asyncio
+async def test_collect_for_question_runs_medication_and_allergy_tools_when_requested() -> None:
+    client = _FakeFhirClient()
+    service = FhirEvidenceService(cast(OpenEMRFhirClient, client))
+
+    result = await service.collect_for_question(
+        patient_id="p1",
+        message="Show current medications and allergies.",
+    )
+
+    assert result.tools == ["get_patient_demographics", "get_medications", "get_allergies"]
+    assert [item.source_type for item in result.evidence] == [
+        "patient_demographics",
+        "patient_demographics",
+        "medication",
+        "allergy",
+    ]
+    assert client.calls == [
+        "get_patient",
+        "search_medication_requests",
+        "search_allergy_intolerances",
+    ]
+
+
 class _FakeFhirClient:
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -149,5 +221,26 @@ class _FakeFhirClient:
                 "code": {"text": "Hemoglobin A1c"},
                 "valueQuantity": {"value": 8.6, "unit": "%"},
                 "effectiveDateTime": "2026-03-12T00:00:00Z",
+            }
+        ]
+
+    async def search_medication_requests(self, patient_id: str) -> list[dict[str, Any]]:
+        self.calls.append("search_medication_requests")
+        return [
+            {
+                "resourceType": "MedicationRequest",
+                "id": "m1",
+                "status": "active",
+                "medicationCodeableConcept": {"text": "Metformin 1000 mg tablet"},
+            }
+        ]
+
+    async def search_allergy_intolerances(self, patient_id: str) -> list[dict[str, Any]]:
+        self.calls.append("search_allergy_intolerances")
+        return [
+            {
+                "resourceType": "AllergyIntolerance",
+                "id": "a1",
+                "code": {"text": "Penicillin"},
             }
         ]

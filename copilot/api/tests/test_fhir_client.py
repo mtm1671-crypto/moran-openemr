@@ -117,3 +117,56 @@ async def test_search_lab_observations_filters_and_sorts_recent_labs() -> None:
     assert request.url.params["category"] == "laboratory"
     assert request.url.params["_sort"] == "-date"
     assert request.url.params["_count"] == "4"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_medication_requests_filters_active_medications() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/MedicationRequest").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {"resource": {"resourceType": "MedicationRequest", "id": "m1"}},
+                    {"resource": {"resourceType": "Observation", "id": "ignored"}},
+                ],
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    medications = await client.search_medication_requests("p1", count=2)
+
+    assert medications == [{"resourceType": "MedicationRequest", "id": "m1"}]
+    request = route.calls[0].request
+    assert request.url.params["patient"] == "p1"
+    assert request.url.params["status"] == "active"
+    assert request.url.params["_count"] == "2"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_allergy_intolerances_filters_bundle_resources() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/AllergyIntolerance").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {"resource": {"resourceType": "AllergyIntolerance", "id": "a1"}},
+                    {"resource": {"resourceType": "Condition", "id": "ignored"}},
+                ],
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    allergies = await client.search_allergy_intolerances("p1", count=3)
+
+    assert allergies == [{"resourceType": "AllergyIntolerance", "id": "a1"}]
+    request = route.calls[0].request
+    assert request.url.params["patient"] == "p1"
+    assert request.url.params["_count"] == "3"

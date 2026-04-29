@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.models import Role
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -17,6 +19,10 @@ class Settings(BaseSettings):
     openemr_fhir_base_url: AnyHttpUrl | None = None
     openemr_oauth_token_url: AnyHttpUrl | None = None
     openemr_jwks_url: AnyHttpUrl | None = None
+    openemr_jwt_issuer: str | None = None
+    openemr_jwt_audience: str | None = None
+    openemr_role_claim: str = "role"
+    openemr_default_role: Role | None = None
     openemr_client_id: str | None = None
     openemr_client_secret: SecretStr | None = None
     openemr_tls_verify: bool = True
@@ -25,7 +31,8 @@ class Settings(BaseSettings):
     openemr_dev_password: SecretStr | None = None
     openemr_dev_scopes: str = (
         "openid offline_access api:oemr api:fhir "
-        "user/Patient.read user/Practitioner.read user/Observation.read user/Condition.read"
+        "user/Patient.read user/Practitioner.read user/Observation.read user/Condition.read "
+        "user/MedicationRequest.read user/AllergyIntolerance.read"
     )
 
     llm_provider: str = "mock"
