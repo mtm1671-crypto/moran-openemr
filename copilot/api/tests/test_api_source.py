@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 import pytest
 import respx
 from fastapi.testclient import TestClient
@@ -9,7 +11,7 @@ from app.openemr_auth import clear_dev_password_token_cache
 
 
 @pytest.fixture(autouse=True)
-def reset_app_overrides() -> None:
+def reset_app_overrides() -> Generator[None]:
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
     yield
@@ -31,19 +33,59 @@ def test_openemr_source_returns_raw_fhir_resource_with_user_bearer_token() -> No
             json={
                 "resourceType": "Observation",
                 "id": "o1",
+                "subject": {"reference": "Patient/p1"},
                 "code": {"text": "Hemoglobin A1c"},
             },
         )
     )
 
     response = TestClient(app).get(
-        "/api/source/openemr/Observation/o1",
+        "/api/source/openemr/Observation/o1?patient_id=p1",
         headers={"Authorization": "Bearer user-token"},
     )
 
     assert response.status_code == 200
     assert response.json()["resourceType"] == "Observation"
     assert route.calls[0].request.headers["authorization"] == "Bearer user-token"
+
+
+def test_openemr_source_requires_patient_context() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/source/openemr/Observation/o1")
+
+    assert response.status_code == 422
+
+
+@respx.mock
+def test_openemr_source_allows_patient_resource_without_patient_context() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    route = respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Patient",
+                "id": "p1",
+                "name": [{"family": "Morrison", "given": ["Elena"]}],
+            },
+        )
+    )
+
+    response = TestClient(app).get("/api/source/openemr/Patient/p1")
+
+    assert response.status_code == 200
+    assert response.json()["resourceType"] == "Patient"
+    assert route.called
 
 
 @respx.mock
@@ -67,6 +109,7 @@ def test_openemr_source_falls_back_to_id_search_when_direct_read_is_not_found() 
                         "resource": {
                             "resourceType": "Observation",
                             "id": "o1",
+                            "subject": {"reference": "Patient/p1"},
                             "code": {"text": "Hemoglobin A1c"},
                         }
                     }
@@ -75,7 +118,7 @@ def test_openemr_source_falls_back_to_id_search_when_direct_read_is_not_found() 
         )
     )
 
-    response = TestClient(app).get("/api/source/openemr/Observation/o1")
+    response = TestClient(app).get("/api/source/openemr/Observation/o1?patient_id=p1")
 
     assert response.status_code == 200
     assert response.json()["id"] == "o1"
@@ -171,7 +214,7 @@ def test_openemr_source_rejects_unsupported_resource_type() -> None:
     )
     app.dependency_overrides[get_settings] = lambda: settings
 
-    response = TestClient(app).get("/api/source/openemr/Medication/m1")
+    response = TestClient(app).get("/api/source/openemr/Medication/m1?patient_id=p1")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported OpenEMR source resource type"
@@ -219,6 +262,33 @@ def test_openemr_source_supports_medication_and_allergy_resources() -> None:
     assert allergy_response.json()["resourceType"] == "AllergyIntolerance"
     assert medication_route.called
     assert allergy_route.called
+
+
+@respx.mock
+def test_openemr_source_supports_document_reference_resources() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    document_route = respx.get("http://openemr.test/apis/default/fhir/DocumentReference/d1").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "DocumentReference",
+                "id": "d1",
+                "subject": {"reference": "Patient/p1"},
+                "type": {"text": "Progress Note"},
+            },
+        )
+    )
+
+    response = TestClient(app).get("/api/source/openemr/DocumentReference/d1?patient_id=p1")
+
+    assert response.status_code == 200
+    assert response.json()["resourceType"] == "DocumentReference"
+    assert document_route.called
 
 
 def test_demo_source_returns_demo_observation() -> None:

@@ -34,7 +34,7 @@ The intended final product placement is a top-level OpenEMR `Co-Pilot` tab along
 The first standalone scaffold has been started under `copilot/`:
 
 - `copilot/api`: FastAPI app with health, capabilities, OpenEMR FHIR patient search, JWKS-backed bearer validation, deterministic evidence tools, chat SSE endpoint, source-link endpoint, mock provider, and verifier tests.
-- `copilot/web`: Next.js chat shell with dev session display, patient search/select, quick questions, message composer, SSE stream parsing, citations, trace display, and Playwright smoke coverage.
+- `copilot/web`: Next.js chat shell with SMART auth start/callback routes, encrypted HttpOnly session cookies, same-origin bearer-token proxying, patient search/select, quick questions, message composer, SSE stream parsing, citations, trace display, and Playwright smoke coverage.
 - `copilot/worker`: worker placeholder for ETL, prefetch, and reindex jobs.
 
 Step 1 of the final-product roadmap has started in OpenEMR itself:
@@ -43,6 +43,7 @@ Step 1 of the final-product roadmap has started in OpenEMR itself:
 - The patient chart menu includes a patient-scoped `Co-Pilot` launch.
 - Flow Board schedule rows include a `Co-Pilot` action that passes patient and appointment context.
 - `interface/agentforge/copilot.php` bridges OpenEMR navigation to the standalone Co-Pilot web app, using the `AgentForge Clinical Co-Pilot URL` Connectors global or `AGENTFORGE_COPILOT_URL`.
+- Patient and schedule launches include SMART `iss`, `aud`, and `launch` parameters when patient context is available.
 - The Co-Pilot web/API can accept an incoming `patient_id` launch context and preselect that patient.
 
 ## Completed Planning Artifacts
@@ -73,20 +74,54 @@ Login: admin / pass
 
 The FHIR metadata endpoint returns a `CapabilityStatement`.
 
-Seeded serious demo patient:
+Seeded serious demo patients:
 
 ```text
 Name: Elena Morrison
 OpenEMR public id: AF-MVP-001
 Search term: mo
 FHIR patient id: c3888c9f-432d-11f1-a700-7a0f44501ceb
-Data: demographics, 3 active problems, 3 recent labs
+Data: demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent labs, 4 clinical notes
+
+Name: Marcus Chen
+OpenEMR public id: AF-MVP-002
+Search term: chen
+FHIR patient id: 5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02
+Data: demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent labs, 4 clinical notes
+
+Name: Priya Shah
+OpenEMR public id: AF-MVP-003
+Search term: priya
+FHIR patient id: f0d8bb04-8d8f-4e66-8f59-ecf2d8d98f34
+Data: demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent labs, 4 clinical notes
+
+Additional expanded synthetic test panel:
+AF-MVP-004 Rosa Alvarez, search rosa
+AF-MVP-005 Daniel Okafor, search okafor
+AF-MVP-006 Mei Tanaka, search tanaka
+AF-MVP-007 Andre Williams, search andre
+AF-MVP-008 Nadia Petrova, search nadia
+AF-MVP-009 Samuel Brooks, search brooks
+AF-MVP-010 Leah Kim, search leah
+AF-MVP-011 Jamal Price, search jamal
+AF-MVP-012 Owen Gallagher, search owen
+AF-MVP-013 Aisha Rahman, search aisha
+AF-MVP-014 Victor Nguyen, search victor
+AF-MVP-015 Grace Bennett, search grace
+
+Each expanded patient has demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent labs, and 4 clinical notes exposed through FHIR `DocumentReference`.
 ```
 
 Recreate or refresh the seed with:
 
 ```powershell
 .\copilot\scripts\seed-openemr-demo-patient.ps1
+```
+
+Refresh the same synthetic patient in the deployed Railway OpenEMR service after `railway login`:
+
+```powershell
+.\copilot\scripts\seed-openemr-railway-demo-patient.ps1
 ```
 
 Because generated Co-Pilot dependency/temp folders under `copilot/` caused OpenEMR's dev rsync to fail, the local OpenEMR stack is mounted from a clean tracked-file copy:
@@ -118,31 +153,34 @@ GET  /api/patients?query=
 GET  /api/source/openemr/{resourceType}/{id}
 ```
 
-The patient search, chat evidence, and source endpoints now support real OpenEMR FHIR calls with either a user bearer token or a local-only dev password-grant token. Production-style bearer validation against OpenEMR JWKS is implemented on the API side; the browser SMART authorization-code login still needs to be wired. Chat currently uses deterministic FHIR retrieval plus a mock provider, not an external LLM. The retrieval layer supports patient demographics, active problems, recent labs, active medications, and allergies, then verifies that final citations belong to the selected patient. Treatment recommendation requests are refused by policy before answer generation.
+The patient search, chat evidence, and source endpoints now support real OpenEMR FHIR calls with either a user bearer token or a local-only dev password-grant token. Production-style bearer validation against OpenEMR JWKS is implemented on the API side. The browser SMART authorization-code flow is now wired in the web service: `/api/auth/start` redirects to OpenEMR, `/api/auth/callback` exchanges the code server-side, and the same-origin proxy injects the OpenEMR bearer token into API requests without forwarding browser cookies. Chat currently uses deterministic FHIR retrieval plus a mock provider, not an external LLM. The retrieval layer supports patient demographics, active problems, recent labs, active medications, and allergies, then verifies that final citations belong to the selected patient. Treatment recommendation requests are refused by policy before answer generation.
 
-Tonight's auth scope is intentionally local-demo only:
+Local-demo mode still exists only for development:
 
-- FastAPI identifies the request as `dev-doctor`.
-- The API uses OpenEMR's local password grant to obtain a dev FHIR token.
-- Full browser SMART login and deployed-role mapping are explicitly deferred.
+- FastAPI identifies the request as `dev-doctor` only when `APP_ENV=local` and `DEV_AUTH_BYPASS=true`.
+- The API can use OpenEMR's local password grant only when `OPENEMR_DEV_PASSWORD_GRANT=true`.
+- PHI mode rejects both local auth shortcuts.
 - All chart access remains read-only.
 
 Current verification:
 
 ```text
-pytest: 37 passed, 5 skipped
+pytest: 54 passed, 5 skipped
 ruff: all checks passed
 mypy: success
+pip-audit: no known vulnerabilities
 web build: success
 web npm audit: 0 vulnerabilities
-Playwright smoke: 1 passed
+Playwright smoke: 5 passed
+Docker builds: api, web, OpenEMR overlay passed
+Container smoke: API /readyz, web /, web /api/me proxy passed
 previous live OpenEMR smoke: 5 passed
 ```
 
 ## Open Questions To Close
 
 1. Which OpenEMR roles and SMART scopes map to doctor, NP/PA, nurse, and MA in the test environment?
-2. Which provider is PHI-approved for the first real deployment: Anthropic, OpenRouter, or local model only?
+2. Which provider is PHI-approved after the first PHI-mode mock deployment? Current gate is `LLM_PROVIDER=mock` and all `ALLOW_PHI_TO_*` flags false.
 3. Should on-demand patient reindex be available to nurses/MAs, or only clinicians/admins?
 4. What exact OpenEMR role claim/role mapping should be used for the deployed SMART tokens?
 
@@ -151,10 +189,10 @@ previous live OpenEMR smoke: 5 passed
 There are 8 major steps from the current MVP scaffold to the final product:
 
 1. Initial implementation complete: add the OpenEMR product entry points with a top-level `Co-Pilot` tab, chart launch, and schedule-row launch.
-2. Wire production SMART/OAuth authorization-code login in the frontend, including callback handling and token handoff to the API.
+2. Production SMART/OAuth authorization-code login is wired in the frontend; next is live OpenEMR client registration and deployed callback verification.
 3. Finalize OpenEMR role, scope, and patient-access mapping for doctor, NP/PA, nurse, MA, and admin users.
 4. Deploy the full Co-Pilot stack on Railway: `web`, `api`, `worker`, and `postgres`, connected to the deployed OpenEMR service.
-5. Add Postgres persistence: encrypted conversations, messages, audit events, source metadata, and evidence/index tables with `pgcrypto` and `pgvector`.
+5. Add Postgres persistence: encrypted metadata/audit and evidence cache primitives are in place; full encrypted conversations/messages and vector indexes remain next.
 6. Expand retrieval coverage beyond the current demo set: schedule context, encounters, vitals, notes/documents, source links, and on-demand patient reindex.
 7. Add real model provider adapters behind PHI gates, then keep deterministic claim verification, treatment-refusal behavior, and citation checks as release blockers.
 8. Harden for release: CI eval suite, PHI-safe logging, retention/deletion controls, monitoring, backup/restore, deployment runbooks, and final demo walkthrough.

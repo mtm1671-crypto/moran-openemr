@@ -16,6 +16,8 @@ use OpenEMR\Common\Session\SessionWrapperFactory;
 use OpenEMR\Common\Uuid\UuidRegistry;
 use OpenEMR\Core\Header;
 use OpenEMR\Core\OEGlobalsBag;
+use OpenEMR\FHIR\Config\ServerConfig;
+use OpenEMR\FHIR\SMART\SMARTLaunchToken;
 use OpenEMR\Services\AppointmentService;
 use OpenEMR\Services\Globals\GlobalConnectorsEnum;
 use OpenEMR\Services\PatientService;
@@ -33,6 +35,9 @@ $launchParams = [
     'launch_context' => is_string($context) && $context !== '' ? $context : 'global',
     'openemr_site' => (string) $session->get('site_id'),
 ];
+$fhirUrl = (new ServerConfig())->getFhirUrl();
+$launchParams['iss'] = $fhirUrl;
+$launchParams['aud'] = $fhirUrl;
 
 if ($appointmentEid !== null) {
     if (!AclMain::aclCheckCore('patients', 'appt')) {
@@ -62,6 +67,16 @@ if ($appointmentEid !== null) {
 if ($pid !== null) {
     $patientContext = getPatientLaunchContext($pid);
     $launchParams = array_merge($launchParams, $patientContext);
+    $smartLaunch = new SMARTLaunchToken($patientContext['patient_id']);
+    $smartLaunch->setIntent(
+        $launchParams['launch_context'] === 'schedule'
+            ? SMARTLaunchToken::INTENT_APPOINTMENT_DIALOG
+            : SMARTLaunchToken::INTENT_MAIN_TAB
+    );
+    if (!empty($launchParams['appointment_id'])) {
+        $smartLaunch->setAppointmentUuid($launchParams['appointment_id']);
+    }
+    $launchParams['launch'] = (string) $smartLaunch->serialize();
 }
 
 $launchUrl = buildCopilotLaunchUrl($launchParams);

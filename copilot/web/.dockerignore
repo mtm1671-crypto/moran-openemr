@@ -1,0 +1,14 @@
+*
+
+!Dockerfile
+!railway.toml
+!package.json
+!package-lock.json
+!next.config.ts
+!middleware.ts
+!tsconfig.json
+!next-env.d.ts
+!app
+!app/**
+!public
+!public/**

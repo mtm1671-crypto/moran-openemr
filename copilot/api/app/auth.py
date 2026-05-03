@@ -1,12 +1,14 @@
 from typing import Annotated
 from typing import Any
 from typing import cast
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt  # type: ignore[import-untyped]
 
 from app.config import Settings, get_settings
+from app.http_retry import RetryPolicy, request_with_retries
 from app.models import RequestUser, Role
 
 _ALLOWED_JWT_ALGORITHMS = {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}
@@ -60,7 +62,6 @@ async def validate_openemr_jwt(token: str, settings: Settings) -> RequestUser:
 
     jwks = await _fetch_jwks(settings)
     key = _matching_jwk(header, jwks)
-    options = {"verify_aud": settings.openemr_jwt_audience is not None}
 
     try:
         claims = cast(
@@ -69,9 +70,7 @@ async def validate_openemr_jwt(token: str, settings: Settings) -> RequestUser:
                 token,
                 key,
                 algorithms=[algorithm],
-                audience=settings.openemr_jwt_audience,
-                issuer=settings.openemr_jwt_issuer,
-                options=options,
+                options={"verify_aud": False, "verify_iss": False},
             ),
         )
     except JWTError as exc:
@@ -79,6 +78,9 @@ async def validate_openemr_jwt(token: str, settings: Settings) -> RequestUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid OpenEMR bearer token",
         ) from exc
+
+    _verify_issuer(claims, settings)
+    _verify_audience(claims, settings)
 
     return RequestUser(
         user_id=_claim_string(claims, "sub") or _claim_string(claims, "preferred_username") or "unknown",
@@ -110,9 +112,19 @@ def _unverified_header(token: str) -> dict[str, Any]:
 async def _fetch_jwks(settings: Settings) -> dict[str, Any]:
     assert settings.openemr_jwks_url is not None
     try:
-        async with httpx.AsyncClient(timeout=15.0, verify=settings.openemr_tls_verify) as client:
-            response = await client.get(str(settings.openemr_jwks_url))
-            response.raise_for_status()
+        async with httpx.AsyncClient(
+            timeout=settings.openemr_request_timeout_seconds,
+            verify=settings.openemr_tls_verify,
+        ) as client:
+            response = await request_with_retries(
+                client,
+                "GET",
+                str(settings.openemr_jwks_url),
+                policy=RetryPolicy(
+                    attempts=settings.openemr_retry_attempts,
+                    backoff_seconds=settings.openemr_retry_backoff_seconds,
+                ),
+            )
             return cast(dict[str, Any], response.json())
     except httpx.HTTPError as exc:
         raise HTTPException(
@@ -182,6 +194,10 @@ def _role_from_claims(claims: dict[str, Any], settings: Settings) -> Role:
     if settings.openemr_default_role is not None:
         return settings.openemr_default_role
 
+    scopes = _scopes_from_claims(claims)
+    if any(scope.startswith("user/") for scope in scopes):
+        return Role.doctor
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="OpenEMR token role is not mapped to a Co-Pilot role",
@@ -190,7 +206,7 @@ def _role_from_claims(claims: dict[str, Any], settings: Settings) -> Role:
 
 def _scopes_from_claims(claims: dict[str, Any]) -> list[str]:
     scopes: list[str] = []
-    for claim_name in ["scope", "scp"]:
+    for claim_name in ["scope", "scp", "scopes"]:
         scopes.extend(_claim_values(claims.get(claim_name)))
     return scopes
 
@@ -208,6 +224,64 @@ def _claim_values(value: Any) -> list[str]:
 def _claim_string(claims: dict[str, Any], claim_name: str) -> str | None:
     value = claims.get(claim_name)
     return value if isinstance(value, str) and value else None
+
+
+def _verify_issuer(claims: dict[str, Any], settings: Settings) -> None:
+    allowed = _allowed_issuers(settings)
+    if not allowed:
+        return
+
+    issuer = _claim_string(claims, "iss")
+    if issuer not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid OpenEMR bearer token",
+        )
+
+
+def _verify_audience(claims: dict[str, Any], settings: Settings) -> None:
+    allowed = _allowed_audiences(settings)
+    if not allowed:
+        return
+
+    audiences = set(_claim_values(claims.get("aud")))
+    if not audiences.intersection(allowed):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid OpenEMR bearer token",
+        )
+
+
+def _allowed_issuers(settings: Settings) -> set[str]:
+    issuers: set[str] = set()
+    if settings.openemr_jwt_issuer:
+        issuers.add(settings.openemr_jwt_issuer.rstrip("/"))
+    if settings.openemr_base_url is not None:
+        issuers.add(f"{str(settings.openemr_base_url).rstrip('/')}/oauth2/{settings.openemr_site}")
+    if settings.openemr_oauth_token_url is not None:
+        issuer = _url_parent(str(settings.openemr_oauth_token_url), "token")
+        if issuer:
+            issuers.add(issuer)
+    return issuers
+
+
+def _allowed_audiences(settings: Settings) -> set[str]:
+    audiences: set[str] = set()
+    if settings.openemr_jwt_audience:
+        audiences.add(settings.openemr_jwt_audience)
+    if settings.openemr_client_id:
+        audiences.add(settings.openemr_client_id)
+    return audiences
+
+
+def _url_parent(value: str, expected_leaf: str) -> str | None:
+    parsed = urlparse(value)
+    path = parsed.path.rstrip("/")
+    leaf = f"/{expected_leaf}"
+    if not path.endswith(leaf):
+        return None
+    parent_path = path[: -len(leaf)]
+    return urlunparse((parsed.scheme, parsed.netloc, parent_path, "", "", "")).rstrip("/")
 
 
 def _practitioner_id_from_claims(claims: dict[str, Any]) -> str | None:

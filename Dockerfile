@@ -21,6 +21,27 @@
 FROM openemr/openemr:flex@sha256:e4562b0c7d3f222ec8f72122ce00d10ffa93f559c38c00ab12c1355394c35d1c
 
 # Mark the deployed image as the AgentForge fork build.
+RUN mkdir -p /var/www/localhost/htdocs/openemr/interface/agentforge
+
+COPY interface/agentforge/copilot.php \
+     /var/www/localhost/htdocs/openemr/interface/agentforge/copilot.php
+COPY interface/main/tabs/menu/menus/standard.json \
+     /var/www/localhost/htdocs/openemr/interface/main/tabs/menu/menus/standard.json
+COPY interface/main/tabs/menu/menus/front_office.json \
+     /var/www/localhost/htdocs/openemr/interface/main/tabs/menu/menus/front_office.json
+COPY interface/main/tabs/menu/menus/chart_review.json \
+     /var/www/localhost/htdocs/openemr/interface/main/tabs/menu/menus/chart_review.json
+COPY interface/main/tabs/menu/menus/answering_service.json \
+     /var/www/localhost/htdocs/openemr/interface/main/tabs/menu/menus/answering_service.json
+COPY interface/main/tabs/menu/menus/patient_menus/standard.json \
+     /var/www/localhost/htdocs/openemr/interface/main/tabs/menu/menus/patient_menus/standard.json
+COPY interface/patient_tracker/patient_tracker.php \
+     /var/www/localhost/htdocs/openemr/interface/patient_tracker/patient_tracker.php
+COPY library/globals.inc.php \
+     /var/www/localhost/htdocs/openemr/library/globals.inc.php
+COPY src/Services/Globals/GlobalConnectorsEnum.php \
+     /var/www/localhost/htdocs/openemr/src/Services/Globals/GlobalConnectorsEnum.php
+
 COPY AUDIT.md ARCHITECTURE.md USERS.md USER.md PRESEARCH.md \
      DEPLOYMENT_RUNBOOK.md DEMO_PLAN.md EVAL_PLAN.md \
      MVP_AUTH_SCOPE.md MVP_STATUS.md OPENEMR_VERSION_PIN.md \

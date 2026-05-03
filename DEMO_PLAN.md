@@ -6,6 +6,8 @@ Show a serious, source-backed primary care workflow: a clinician authenticates, 
 
 Target length: 3-5 minutes.
 
+For the early submission, use the deployed walkthrough in [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md). That artifact includes Railway URLs, screenshots, OAuth proof, agent query proof, citation proof, and health/security smoke checks.
+
 ## Demo Patient
 
 Use the seeded serious synthetic primary-care patient:

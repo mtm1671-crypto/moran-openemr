@@ -1,0 +1,7 @@
+*
+
+!Dockerfile
+!railway.toml
+!pyproject.toml
+!app
+!app/**

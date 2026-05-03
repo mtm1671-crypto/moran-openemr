@@ -3,6 +3,7 @@ from typing import Any, cast
 import httpx
 
 from app.config import Settings
+from app.http_retry import RetryPolicy, request_with_retries
 from app.models import PatientSummary
 
 
@@ -12,24 +13,18 @@ class OpenEMRFhirClient:
             raise ValueError("OPENEMR_FHIR_BASE_URL is required")
         self._base_url = str(settings.openemr_fhir_base_url).rstrip("/")
         self._bearer_token = bearer_token
+        self._tls_verify = settings.openemr_tls_verify
+        self._timeout_seconds = settings.openemr_request_timeout_seconds
+        self._retry_policy = RetryPolicy(
+            attempts=settings.openemr_retry_attempts,
+            backoff_seconds=settings.openemr_retry_backoff_seconds,
+        )
 
     async def metadata(self) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{self._base_url}/metadata",
-                headers=self._headers(),
-            )
-            response.raise_for_status()
-            return cast(dict[str, Any], response.json())
+        return await self._request_json("GET", "/metadata")
 
     async def read_resource(self, resource_type: str, resource_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{self._base_url}/{resource_type}/{resource_id}",
-                headers=self._headers(),
-            )
-            response.raise_for_status()
-            return cast(dict[str, Any], response.json())
+        return await self._request_json("GET", f"/{resource_type}/{resource_id}")
 
     async def get_patient(self, patient_id: str) -> dict[str, Any]:
         return await self.read_resource("Patient", patient_id)
@@ -37,17 +32,14 @@ class OpenEMRFhirClient:
     async def get_patient_summary(self, patient_id: str) -> PatientSummary:
         return _patient_from_fhir(await self.get_patient(patient_id))
 
+    async def list_patients(self, count: int = 100) -> list[PatientSummary]:
+        bundle = await self.search_bundle("Patient", params={"_count": str(count)})
+        return _patients_from_bundle(bundle)
+
     async def search_patients(self, query: str, count: int = 20) -> list[PatientSummary]:
         params = {"name": query, "_count": str(count)}
         bundle = await self.search_bundle("Patient", params=params)
-
-        patients: list[PatientSummary] = []
-        for entry in bundle.get("entry", []):
-            resource = entry.get("resource", {})
-            if resource.get("resourceType") != "Patient":
-                continue
-            patients.append(_patient_from_fhir(resource))
-        return patients
+        return _patients_from_bundle(bundle)
 
     async def search_active_conditions(self, patient_id: str, count: int = 20) -> list[dict[str, Any]]:
         bundle = await self.search_bundle(
@@ -82,21 +74,42 @@ class OpenEMRFhirClient:
         )
         return _resources_from_bundle(bundle, "AllergyIntolerance")
 
+    async def search_document_references(self, patient_id: str, count: int = 10) -> list[dict[str, Any]]:
+        bundle = await self.search_bundle(
+            "DocumentReference",
+            params={"patient": patient_id, "category": "clinical-note", "_count": str(count)},
+        )
+        return _resources_from_bundle(bundle, "DocumentReference")
+
     async def search_bundle(self, resource_type: str, params: dict[str, str]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{self._base_url}/{resource_type}",
-                params=params,
-                headers=self._headers(),
-            )
-            response.raise_for_status()
-            return cast(dict[str, Any], response.json())
+        return await self._request_json("GET", f"/{resource_type}", params=params)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/fhir+json"}
         if self._bearer_token:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
         return headers
+
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        async with httpx.AsyncClient(
+            timeout=self._timeout_seconds,
+            verify=self._tls_verify,
+        ) as client:
+            response = await request_with_retries(
+                client,
+                method,
+                f"{self._base_url}/{path.lstrip('/')}",
+                policy=self._retry_policy,
+                headers=self._headers(),
+                params=params,
+            )
+            return cast(dict[str, Any], response.json())
 
 
 def _patient_from_fhir(resource: dict[str, Any]) -> PatientSummary:
@@ -118,6 +131,16 @@ def _patient_from_fhir(resource: dict[str, Any]) -> PatientSummary:
         birth_date=resource.get("birthDate"),
         gender=resource.get("gender"),
     )
+
+
+def _patients_from_bundle(bundle: dict[str, Any]) -> list[PatientSummary]:
+    patients: list[PatientSummary] = []
+    for entry in bundle.get("entry", []):
+        resource = entry.get("resource", {})
+        if not isinstance(resource, dict) or resource.get("resourceType") != "Patient":
+            continue
+        patients.append(_patient_from_fhir(resource))
+    return patients
 
 
 def _resources_from_bundle(bundle: dict[str, Any], resource_type: str) -> list[dict[str, Any]]:

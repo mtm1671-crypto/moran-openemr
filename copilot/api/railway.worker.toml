@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+cronSchedule = "0 8 * * *"
+startCommand = "python -m app.jobs nightly-maintenance"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

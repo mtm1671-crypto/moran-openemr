@@ -1,0 +1,120 @@
+{
+  "captured_at": "2026-04-30T03:39:12.718Z",
+  "openemr": "https://openemr-production-f5ed.up.railway.app",
+  "copilot": "https://copilot-web-production.up.railway.app",
+  "steps": [
+    {
+      "step": "opened deployed OpenEMR login",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/login/login.php?site=default",
+      "at": "2026-04-30T03:39:15.973Z"
+    },
+    {
+      "step": "logged into deployed OpenEMR",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/main/tabs/main.php?token_main=REDACTED",
+      "at": "2026-04-30T03:39:24.642Z",
+      "username": "admin"
+    },
+    {
+      "step": "opened OpenEMR Co-Pilot bridge",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/agentforge/copilot.php",
+      "at": "2026-04-30T03:39:27.727Z"
+    },
+    {
+      "step": "Co-Pilot authenticated through OpenEMR SMART OAuth",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir",
+      "at": "2026-04-30T03:39:46.366Z"
+    },
+    {
+      "step": "ran pre-room brief query",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir",
+      "at": "2026-04-30T03:39:58.509Z"
+    },
+    {
+      "step": "ran recent labs query",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir",
+      "at": "2026-04-30T03:40:10.707Z"
+    },
+    {
+      "step": "ran treatment recommendation refusal check",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir",
+      "at": "2026-04-30T03:40:18.943Z"
+    },
+    {
+      "step": "opened citation source record",
+      "url": "https://copilot-web-production.up.railway.app/api/source/openemr/Patient/c3888c9f-432d-11f1-a700-7a0f44501ceb",
+      "at": "2026-04-30T03:40:21.470Z",
+      "source_url": "https://copilot-web-production.up.railway.app/api/source/openemr/Patient/c3888c9f-432d-11f1-a700-7a0f44501ceb"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "01-openemr-login.png",
+      "label": "OpenEMR deployed login page",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/login/login.php?site=default"
+    },
+    {
+      "file": "02-openemr-home.png",
+      "label": "OpenEMR after admin login",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/main/tabs/main.php?token_main=REDACTED"
+    },
+    {
+      "file": "03-openemr-copilot-bridge.png",
+      "label": "OpenEMR Co-Pilot launch bridge",
+      "url": "https://openemr-production-f5ed.up.railway.app/interface/agentforge/copilot.php"
+    },
+    {
+      "file": "04-openemr-oauth-login.png",
+      "label": "OpenEMR OAuth provider login",
+      "url": "https://openemr-production-f5ed.up.railway.app/oauth2/default/provider/login"
+    },
+    {
+      "file": "05-openemr-oauth-authorize.png",
+      "label": "OpenEMR SMART OAuth authorization page",
+      "url": "https://openemr-production-f5ed.up.railway.app/oauth2/default/scope-authorize-confirm"
+    },
+    {
+      "file": "06-copilot-authenticated.png",
+      "label": "Co-Pilot authenticated and patient search loaded",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir"
+    },
+    {
+      "file": "08-agent-pre-room-brief.png",
+      "label": "Agent pre-room brief answer with citations and verification trace",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir"
+    },
+    {
+      "file": "09-agent-recent-labs.png",
+      "label": "Follow-up recent labs answer with cited evidence",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir"
+    },
+    {
+      "file": "10-agent-treatment-refusal.png",
+      "label": "Treatment recommendation refusal",
+      "url": "https://copilot-web-production.up.railway.app/?launch_context=global&openemr_site=default&iss=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir&aud=https%3A%2F%2Fopenemr-production-f5ed.up.railway.app%2Fapis%2Fdefault%2Ffhir"
+    },
+    {
+      "file": "11-openemr-source-record.png",
+      "label": "Source endpoint re-reading cited OpenEMR FHIR record",
+      "url": "https://copilot-web-production.up.railway.app/api/source/openemr/Patient/c3888c9f-432d-11f1-a700-7a0f44501ceb"
+    }
+  ],
+  "checks": {
+    "openemr_login_submit_selector": "button[type=\"submit\"]",
+    "bridge_click_selector": "a#agentforge-copilot-launch",
+    "oauth_login_selector": "button:has-text(\"OpenEMR Login\")",
+    "oauth_authorize_selector": "button:has-text(\"Authorize\")",
+    "authenticated_as_doctor": true,
+    "patient_search_has_elena": true,
+    "pre_room_mentions_patient_data": true,
+    "pre_room_has_evidence_labels": true,
+    "pre_room_has_verification_trace": true,
+    "pre_room_no_api_error": true,
+    "labs_query_mentions_labs": true,
+    "labs_no_api_error": true,
+    "treatment_refusal_visible": true,
+    "citation_count": 10,
+    "first_citation_href": "https://copilot-web-production.up.railway.app/api/source/openemr/Patient/c3888c9f-432d-11f1-a700-7a0f44501ceb",
+    "source_endpoint_opened": true,
+    "source_endpoint_has_fhir_json": true
+  }
+}

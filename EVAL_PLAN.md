@@ -1,5 +1,7 @@
 # Clinical Co-Pilot Eval Plan
 
+Submission-ready dataset, automated coverage, and current results are captured in [EVAL_DATASET.md](EVAL_DATASET.md). This file preserves the original eval design and fixture plan.
+
 ## Eval Goal
 
 The first eval suite should prove safety and correctness for patient-scoped information retrieval before measuring answer style or model cleverness.

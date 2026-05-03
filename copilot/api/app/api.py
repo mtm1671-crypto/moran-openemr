@@ -16,15 +16,48 @@ from app.models import (
     CapabilityResponse,
     ChatRequest,
     EvidenceObject,
+    JobStatusResponse,
+    ObservabilityStatusResponse,
     PatientSummary,
     RequestUser,
+    ReindexRequest,
+    ReindexResponse,
     Role,
+    ToolContract,
 )
+from app.jobs import run_patient_reindex
 from app.openemr_auth import resolve_fhir_bearer_token
-from app.providers import MockProviderAdapter
+from app.persistence import (
+    append_chat_messages,
+    build_audit_event,
+    build_evidence_cache_record,
+    database_ready,
+    evidence_cache_ready,
+    initialize_phi_schema,
+    operational_storage_ready,
+    read_evidence_cache_record,
+    read_job_run,
+    vector_store_ready,
+    write_audit_event,
+    write_evidence_cache_record,
+)
+from app.openai_models import (
+    OpenAIEmbeddingAdapter,
+    OpenAIModelError,
+    OpenAIProviderAdapter,
+    OpenRouterProviderAdapter,
+)
+from app.providers import MockProviderAdapter, ProviderAdapter
+from app.telemetry import emit_telemetry_event
+from app.vector_store import VectorStoreError, index_and_search_evidence, search_patient_evidence
 from app.verifier import VerificationError, verify_answer
 
 router = APIRouter()
+
+
+async def initialize_phi_storage(settings: Settings) -> None:
+    if settings.requires_phi_controls() or settings.vector_search_enabled or settings.evidence_cache_enabled:
+        await initialize_phi_schema(settings)
 
 
 class HealthResponse(BaseModel):
@@ -33,9 +66,136 @@ class HealthResponse(BaseModel):
     environment: str
 
 
+class ReadinessResponse(BaseModel):
+    ok: bool
+    service: str
+    environment: str
+    checks: dict[str, bool]
+    errors: list[str]
+
+
+class VectorStatusResponse(BaseModel):
+    enabled: bool
+    ready: bool
+    backend: str
+    embedding_provider: str
+    embedding_dimensions: int
+    search_limit: int
+    candidate_limit: int
+
+
 @router.get("/healthz", response_model=HealthResponse)
 async def healthz(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(ok=True, service="clinical-copilot-api", environment=settings.app_env)
+
+
+@router.get("/readyz", response_model=ReadinessResponse)
+async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessResponse:
+    errors = settings.runtime_config_errors()
+    database_ok = True
+    if settings.requires_phi_controls() or settings.vector_search_enabled or settings.evidence_cache_enabled:
+        database_ok = await database_ready(settings)
+        if not database_ok:
+            errors = [*errors, "DATABASE_URL did not pass connectivity check"]
+    vector_ok = await vector_store_ready(settings)
+    if settings.vector_search_enabled and not vector_ok:
+        errors = [*errors, "vector store schema did not pass readiness check"]
+    cache_ok = await evidence_cache_ready(settings)
+    if settings.evidence_cache_enabled and not cache_ok:
+        errors = [*errors, "evidence cache schema did not pass readiness check"]
+    operational_ok = True
+    if settings.requires_phi_controls() or settings.database_url is not None:
+        operational_ok = await operational_storage_ready(settings)
+        if not operational_ok:
+            errors = [*errors, "operational PHI storage schema did not pass readiness check"]
+    service_account_configured = (
+        settings.openemr_service_account_enabled
+        and (
+            settings.openemr_service_bearer_token is not None
+            or (
+                settings.openemr_service_client_id is not None
+                and settings.openemr_service_client_secret is not None
+                and (
+                    settings.openemr_service_token_url is not None
+                    or settings.openemr_oauth_token_url is not None
+                )
+            )
+        )
+    )
+    service_account_ok = not settings.openemr_service_account_enabled or service_account_configured
+    nightly_reindex_ok = not settings.nightly_reindex_enabled or service_account_configured
+    if not nightly_reindex_ok:
+        errors = [*errors, "OpenEMR service account is required for nightly reindex"]
+
+    return ReadinessResponse(
+        ok=not errors,
+        service="clinical-copilot-api",
+        environment=settings.app_env,
+        checks={
+            "runtime_config": not errors,
+            "phi_controls": settings.requires_phi_controls(),
+            "database": database_ok,
+            "vector_search_enabled": settings.vector_search_enabled,
+            "vector_store": vector_ok,
+            "pgvector_backend": settings.vector_index_backend == "pgvector",
+            "evidence_cache_enabled": settings.evidence_cache_enabled,
+            "evidence_cache": cache_ok,
+            "operational_storage": operational_ok,
+            "audit_persistence": operational_ok,
+            "conversation_persistence": operational_ok and settings.conversation_persistence_enabled,
+            "job_status_storage": operational_ok,
+            "service_account_configured": service_account_configured,
+            "service_account_config_valid": service_account_ok,
+            "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
+            "nightly_reindex_enabled": settings.nightly_reindex_enabled,
+            "structured_logging": settings.structured_logging_enabled,
+            "openemr_fhir_configured": settings.openemr_fhir_base_url is not None
+            or not settings.requires_phi_controls(),
+            "openemr_tls_verify": settings.openemr_tls_verify or not settings.requires_phi_controls(),
+            "llm_egress_disabled": (
+                settings.llm_provider == "mock"
+                and settings.embedding_provider == "none"
+                and not (
+                    settings.vector_search_enabled
+                    and settings.vector_embedding_provider == "openai"
+                )
+                and not settings.allow_phi_to_anthropic
+                and not settings.allow_phi_to_openai
+                and not settings.allow_phi_to_openrouter
+                and not settings.allow_phi_to_local
+            )
+            or not settings.requires_phi_controls(),
+            "openai_configured": (
+                settings.openai_api_key is not None
+                if settings.llm_provider == "openai"
+                or settings.embedding_provider == "openai"
+                or (
+                    settings.vector_search_enabled
+                    and settings.vector_embedding_provider == "openai"
+                )
+                else True
+            ),
+            "openrouter_configured": (
+                settings.openrouter_api_key is not None
+                if settings.llm_provider == "openrouter"
+                else True
+            ),
+        },
+        errors=errors,
+    )
+
+
+@router.get("/api/vector/status", response_model=VectorStatusResponse)
+async def vector_status(settings: Settings = Depends(get_settings)) -> VectorStatusResponse:
+    return VectorStatusResponse(
+        enabled=settings.vector_search_enabled,
+        ready=await vector_store_ready(settings),
+        backend=settings.vector_index_backend,
+        embedding_provider=settings.vector_embedding_provider,
+        embedding_dimensions=settings.vector_embedding_dimensions,
+        search_limit=settings.vector_search_limit,
+        candidate_limit=settings.vector_candidate_limit,
+    )
 
 
 @router.get("/api/me", response_model=RequestUser)
@@ -43,25 +203,282 @@ async def me(user: Annotated[RequestUser, Depends(get_request_user)]) -> Request
     return user
 
 
+@router.get("/api/observability/status", response_model=ObservabilityStatusResponse)
+async def observability_status(settings: Settings = Depends(get_settings)) -> ObservabilityStatusResponse:
+    return ObservabilityStatusResponse(
+        structured_logging_enabled=settings.structured_logging_enabled,
+        audit_persistence_required=settings.audit_persistence_required,
+        conversation_persistence_enabled=settings.conversation_persistence_enabled,
+        vector_search_enabled=settings.vector_search_enabled,
+        vector_index_backend=settings.vector_index_backend,
+        service_account_enabled=settings.openemr_service_account_enabled,
+        nightly_maintenance_enabled=settings.nightly_maintenance_enabled,
+        nightly_reindex_enabled=settings.nightly_reindex_enabled,
+    )
+
+
+@router.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
+async def job_status(
+    job_id: str,
+    user: Annotated[RequestUser, Depends(get_request_user)],
+    settings: Settings = Depends(get_settings),
+) -> JobStatusResponse:
+    _require_job_access(user)
+    record = await read_job_run(settings, job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Job was not found")
+    return JobStatusResponse(
+        job_id=record.job_id,
+        job_type=record.job_type,
+        status=record.status,
+        actor_user_id=record.actor_user_id,
+        patient_id_hash=record.patient_id_hash,
+        metadata=record.metadata,
+        error_code=record.error_code,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+    )
+
+
 @router.get("/api/capabilities", response_model=CapabilityResponse)
 async def capabilities(settings: Settings = Depends(get_settings)) -> CapabilityResponse:
+    tool_schemas = _clinical_tool_schemas()
     return CapabilityResponse(
         roles=[Role.doctor, Role.np_pa, Role.nurse, Role.ma, Role.admin],
-        tools=[
-            "patient_search",
-            "get_patient_header",
-            "get_active_problems",
-            "get_recent_labs",
-            "get_medications",
-            "get_allergies",
-            "verify_claims",
-        ],
+        tools=list(tool_schemas),
+        tool_schemas=tool_schemas,
         providers={
+            "openai_phi_allowed": settings.allow_phi_to_openai,
             "anthropic_phi_allowed": settings.allow_phi_to_anthropic,
             "openrouter_phi_allowed": settings.allow_phi_to_openrouter,
             "local_phi_allowed": settings.allow_phi_to_local,
+            "vector_search_enabled": settings.vector_search_enabled,
+            "vector_embeddings_external": settings.vector_embedding_provider == "openai",
+            "vector_index_backend_pgvector": settings.vector_index_backend == "pgvector",
+            "evidence_cache_enabled": settings.evidence_cache_enabled,
+            "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
+            "nightly_reindex_enabled": settings.nightly_reindex_enabled,
+            "service_account_enabled": settings.openemr_service_account_enabled,
+            "audit_persistence_required": settings.audit_persistence_required,
+            "conversation_persistence_enabled": settings.conversation_persistence_enabled,
         },
         retention_days=settings.conversation_retention_days,
+    )
+
+
+def _clinical_tool_schemas() -> dict[str, ToolContract]:
+    patient_id_input = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "patient_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "OpenEMR FHIR Patient.id for the selected patient.",
+            }
+        },
+        "required": ["patient_id"],
+    }
+    evidence_output = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "evidence": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/EvidenceObject"},
+            },
+            "limitations": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["evidence"],
+        "$defs": {
+            "EvidenceObject": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "evidence_id": {"type": "string"},
+                    "patient_id": {"type": "string"},
+                    "source_system": {"type": "string", "const": "openemr"},
+                    "source_type": {"type": "string"},
+                    "source_id": {"type": "string"},
+                    "display_name": {"type": "string"},
+                    "fact": {"type": "string"},
+                    "source_url": {"type": ["string", "null"]},
+                    "metadata": {"type": "object"},
+                },
+                "required": [
+                    "evidence_id",
+                    "patient_id",
+                    "source_system",
+                    "source_type",
+                    "source_id",
+                    "display_name",
+                    "fact",
+                ],
+            }
+        },
+    }
+
+    return {
+        "patient_search": ToolContract(
+            name="patient_search",
+            description="Search authorized OpenEMR patients visible to the current user.",
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "query": {
+                        "type": ["string", "null"],
+                        "minLength": 2,
+                        "maxLength": 100,
+                        "description": "Optional name or identifier fragment.",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20,
+                    },
+                },
+                "required": [],
+            },
+            output_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "patients": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "patient_id": {"type": "string"},
+                                "display_name": {"type": "string"},
+                                "birth_date": {"type": ["string", "null"]},
+                                "gender": {"type": ["string", "null"]},
+                                "source_system": {"type": "string", "const": "openemr"},
+                            },
+                            "required": ["patient_id", "display_name", "source_system"],
+                        },
+                    }
+                },
+                "required": ["patients"],
+            },
+        ),
+        "get_patient_header": _evidence_tool_contract(
+            name="get_patient_header",
+            description="Retrieve patient demographics and header context for the selected patient.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "get_active_problems": _evidence_tool_contract(
+            name="get_active_problems",
+            description="Retrieve active problems and relevant condition history.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "get_recent_labs": _evidence_tool_contract(
+            name="get_recent_labs",
+            description="Retrieve recent lab observations with source-backed values.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "get_medications": _evidence_tool_contract(
+            name="get_medications",
+            description="Retrieve active and recent medications from OpenEMR FHIR records.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "get_allergies": _evidence_tool_contract(
+            name="get_allergies",
+            description="Retrieve allergy and intolerance records for the selected patient.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "get_recent_notes": _evidence_tool_contract(
+            name="get_recent_notes",
+            description="Retrieve recent unstructured clinical notes exposed through OpenEMR.",
+            input_schema=patient_id_input,
+            output_schema=evidence_output,
+        ),
+        "search_patient_evidence": ToolContract(
+            name="search_patient_evidence",
+            description=(
+                "Search the selected patient's indexed source-backed evidence and clinical notes "
+                "using the production vector index."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "patient_id": {"type": "string", "minLength": 1},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 500},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 6},
+                },
+                "required": ["patient_id", "query"],
+            },
+            output_schema=evidence_output,
+        ),
+        "verify_claims": ToolContract(
+            name="verify_claims",
+            description="Verify answer claims and citations against selected-patient evidence.",
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "patient_id": {"type": "string", "minLength": 1},
+                    "answer": {"type": "string", "minLength": 1},
+                    "citations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "evidence_id": {"type": "string"},
+                                "label": {"type": "string"},
+                                "source_url": {"type": ["string", "null"]},
+                            },
+                            "required": ["evidence_id", "label"],
+                        },
+                    },
+                },
+                "required": ["patient_id", "answer", "citations"],
+            },
+            output_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "verification": {
+                        "type": "string",
+                        "enum": ["passed", "failed"],
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["verification", "errors"],
+            },
+        ),
+    }
+
+
+def _evidence_tool_contract(
+    *,
+    name: str,
+    description: str,
+    input_schema: dict[str, Any],
+    output_schema: dict[str, Any],
+) -> ToolContract:
+    return ToolContract(
+        name=name,
+        description=description,
+        input_schema=input_schema,
+        output_schema=output_schema,
     )
 
 
@@ -69,7 +486,8 @@ async def capabilities(settings: Settings = Depends(get_settings)) -> Capability
 async def patients(
     user: Annotated[RequestUser, Depends(get_request_user)],
     settings: Settings = Depends(get_settings),
-    query: str = Query(min_length=2, max_length=100),
+    query: str | None = Query(default=None, min_length=2, max_length=100),
+    count: int = Query(default=100, ge=1, le=100),
 ) -> list[PatientSummary]:
     if settings.openemr_fhir_base_url is None:
         return [
@@ -84,7 +502,9 @@ async def patients(
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     try:
-        return await client.search_patients(query=query, count=20)
+        if query is None:
+            return await client.list_patients(count=count)
+        return await client.search_patients(query=query, count=min(count, 20))
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in {401, 403}:
             raise HTTPException(
@@ -134,6 +554,37 @@ async def patient(
         raise HTTPException(status_code=502, detail="OpenEMR patient retrieval failed") from exc
 
 
+@router.post("/api/patients/{patient_id}/reindex", response_model=ReindexResponse)
+async def reindex_patient(
+    patient_id: str,
+    request: ReindexRequest,
+    user: Annotated[RequestUser, Depends(get_request_user)],
+    settings: Settings = Depends(get_settings),
+) -> ReindexResponse:
+    _require_reindex_access(user)
+    if not settings.openemr_service_account_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenEMR service account is not configured for backend reindex",
+        )
+    if not settings.vector_search_enabled:
+        raise HTTPException(status_code=503, detail="Vector search is not enabled")
+    try:
+        result = await run_patient_reindex(
+            settings=settings,
+            patient_id=patient_id,
+            actor_user_id=user.user_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Patient reindex failed") from exc
+    return ReindexResponse(
+        job_id=str(result["job_id"]),
+        status="succeeded",
+        patient_id=patient_id,
+        indexed_evidence_count=int(result["indexed_evidence_count"]),
+    )
+
+
 @router.get("/api/source/openemr/{resource_type}/{resource_id}")
 async def openemr_source(
     resource_type: str,
@@ -142,18 +593,39 @@ async def openemr_source(
     settings: Settings = Depends(get_settings),
     patient_id: str | None = Query(default=None, min_length=1, max_length=100),
 ) -> dict[str, Any]:
-    allowed_resource_types = {"Patient", "Condition", "Observation", "MedicationRequest", "AllergyIntolerance"}
+    allowed_resource_types = {
+        "Patient",
+        "Condition",
+        "Observation",
+        "MedicationRequest",
+        "AllergyIntolerance",
+        "DocumentReference",
+    }
     if resource_type not in allowed_resource_types:
         raise HTTPException(status_code=400, detail="Unsupported OpenEMR source resource type")
     if settings.openemr_fhir_base_url is None:
         raise HTTPException(status_code=404, detail="OpenEMR FHIR is not configured")
+    source_patient_id = patient_id if patient_id is not None else resource_id if resource_type == "Patient" else None
+    if source_patient_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="patient_id is required for patient-scoped OpenEMR source resources",
+        )
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     try:
         source = await client.read_resource(resource_type, resource_id)
-        if patient_id is not None and not _resource_belongs_to_patient(source, patient_id):
+        if not _resource_belongs_to_patient(source, source_patient_id):
             raise HTTPException(status_code=404, detail="OpenEMR source was not found")
+        await _write_source_audit(
+            settings=settings,
+            user=user,
+            patient_id=source_patient_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            outcome="success",
+        )
         return source
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in {401, 403}:
@@ -162,8 +634,18 @@ async def openemr_source(
                 detail="OpenEMR FHIR access denied",
             ) from exc
         if exc.response.status_code == 404:
-            fallback_source = await _search_source_by_id(client, resource_type, resource_id, patient_id)
+            fallback_source = await _search_source_by_id(
+                client, resource_type, resource_id, source_patient_id
+            )
             if fallback_source is not None:
+                await _write_source_audit(
+                    settings=settings,
+                    user=user,
+                    patient_id=source_patient_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    outcome="success",
+                )
                 return fallback_source
             raise HTTPException(status_code=404, detail="OpenEMR source was not found") from exc
         raise HTTPException(status_code=502, detail="OpenEMR source retrieval failed") from exc
@@ -177,14 +659,14 @@ async def _search_source_by_id(
     client: OpenEMRFhirClient,
     resource_type: str,
     resource_id: str,
-    patient_id: str | None,
+    patient_id: str,
 ) -> dict[str, Any] | None:
     bundle = await client.search_bundle(resource_type, {"_id": resource_id, "_count": "1"})
     source = _resource_from_bundle(bundle, resource_type, resource_id, patient_id)
     if source is not None:
         return source
 
-    if patient_id is None or resource_type == "Patient":
+    if resource_type == "Patient":
         return None
 
     bundle = await client.search_bundle(resource_type, {"patient": patient_id, "_count": "100"})
@@ -195,7 +677,7 @@ def _resource_from_bundle(
     bundle: dict[str, Any],
     resource_type: str,
     resource_id: str,
-    patient_id: str | None,
+    patient_id: str,
 ) -> dict[str, Any] | None:
     entries = bundle.get("entry")
     if not isinstance(entries, list) or not entries:
@@ -208,7 +690,7 @@ def _resource_from_bundle(
             isinstance(resource, dict)
             and resource.get("resourceType") == resource_type
             and resource.get("id") == resource_id
-            and (patient_id is None or _resource_belongs_to_patient(resource, patient_id))
+            and _resource_belongs_to_patient(resource, patient_id)
         ):
             return resource
     return None
@@ -227,6 +709,32 @@ def _resource_belongs_to_patient(resource: dict[str, Any], patient_id: str) -> b
         return True
 
     return False
+
+
+async def _write_source_audit(
+    *,
+    settings: Settings,
+    user: RequestUser,
+    patient_id: str,
+    resource_type: str,
+    resource_id: str,
+    outcome: str,
+) -> None:
+    if not _persistent_phi_storage_configured(settings):
+        return
+    await write_audit_event(
+        settings,
+        build_audit_event(
+            settings=settings,
+            actor_user_id=user.user_id,
+            action="source_read",
+            outcome=outcome,
+            patient_id=patient_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            metadata_payload={"resource_type": resource_type},
+        ),
+    )
 
 
 @router.get("/api/source/demo-lab-a1c")
@@ -255,25 +763,35 @@ async def chat(
 
 
 async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settings) -> AsyncIterator[str]:
+    started_at = datetime.now(tz=UTC)
     yield _sse("status", {"message": "checking access", "role": user.role})
 
     if _is_treatment_advice_request(request.message):
         yield _sse("status", {"message": "enforcing read-only MVP policy"})
+        payload = {
+            "answer": (
+                "I can't recommend medication changes, diagnoses, orders, or treatment plans "
+                "in this MVP. I can show source-backed current medications, allergies, active "
+                "problems, and recent labs to support clinician review."
+            ),
+            "citations": [],
+            "audit": {
+                "verification": "refused_treatment_recommendation",
+                "policy": "read_only_clinical_information",
+                "patient_id": request.patient_id,
+            },
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=0,
+        )
         yield _sse(
             "final",
-            {
-                "answer": (
-                    "I can't recommend medication changes, diagnoses, orders, or treatment plans "
-                    "in this MVP. I can show source-backed current medications, allergies, active "
-                    "problems, and recent labs to support clinician review."
-                ),
-                "citations": [],
-                "audit": {
-                    "verification": "refused_treatment_recommendation",
-                    "policy": "read_only_clinical_information",
-                    "patient_id": request.patient_id,
-                },
-            },
+            payload,
         )
         return
 
@@ -282,87 +800,313 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
     try:
         retrieval = await _retrieve_evidence(request=request, user=user, settings=settings)
     except HTTPException as exc:
+        payload = {
+            "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
+            "citations": [],
+            "audit": {
+                "verification": "failed",
+                "error": "fhir_access_failed",
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            },
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=0,
+        )
         yield _sse(
             "final",
-            {
-                "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
-                "citations": [],
-                "audit": {
-                    "verification": "failed",
-                    "error": "fhir_access_failed",
-                    "status_code": exc.status_code,
-                    "detail": exc.detail,
-                },
-            },
+            payload,
         )
         return
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         error = "fhir_access_denied" if status_code in {401, 403} else "fhir_retrieval_failed"
+        payload = {
+            "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
+            "citations": [],
+            "audit": {
+                "verification": "failed",
+                "error": error,
+                "status_code": status_code,
+            },
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=0,
+        )
         yield _sse(
             "final",
-            {
-                "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
-                "citations": [],
-                "audit": {
-                    "verification": "failed",
-                    "error": error,
-                    "status_code": status_code,
-                },
+            payload,
+        )
+        return
+    except VectorStoreError as exc:
+        payload = {
+            "answer": "I could not search the source-backed vector index for this patient.",
+            "citations": [],
+            "audit": {
+                "verification": "failed",
+                "error": "vector_store_failed",
+                "detail": str(exc),
             },
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=0,
+        )
+        yield _sse(
+            "final",
+            payload,
         )
         return
     except Exception as exc:
+        payload = {
+            "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
+            "citations": [],
+            "audit": {
+                "verification": "failed",
+                "error": "fhir_retrieval_failed",
+                "detail": str(exc),
+            },
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=0,
+        )
         yield _sse(
             "final",
-            {
-                "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
-                "citations": [],
-                "audit": {
-                    "verification": "failed",
-                    "error": "fhir_retrieval_failed",
-                    "detail": str(exc),
-                },
-            },
+            payload,
         )
         return
 
     yield _sse(
         "status",
         {
-            "message": "verifying sources",
+            "message": "preparing model context",
             "evidence_count": len(retrieval.evidence),
             "tools": retrieval.tools,
         },
     )
 
-    provider = MockProviderAdapter()
-    answer = await provider.answer(
-        patient_id=request.patient_id,
-        user_message=request.message,
-        evidence=retrieval.evidence,
-    )
+    if settings.embedding_provider == "openai":
+        yield _sse("status", {"message": "ranking evidence with embeddings"})
+        try:
+            ranked_evidence = await OpenAIEmbeddingAdapter(settings).rank_evidence(
+                message=request.message,
+                evidence=retrieval.evidence,
+                limit=settings.model_evidence_limit,
+            )
+        except OpenAIModelError as exc:
+            payload = {
+                "answer": "I could not rank the source-backed evidence for this patient.",
+                "citations": [],
+                "audit": {
+                    "verification": "failed",
+                    "error": "embedding_provider_failed",
+                    "detail": str(exc),
+                },
+            }
+            payload = await _persist_and_annotate_chat_payload(
+                settings=settings,
+                user=user,
+                request=request,
+                payload=payload,
+                started_at=started_at,
+                evidence_count=len(retrieval.evidence),
+            )
+            yield _sse(
+                "final",
+                payload,
+            )
+            return
+        retrieval = EvidenceRetrievalResult(
+            evidence=ranked_evidence,
+            tools=[*retrieval.tools, "openai_embedding_rank"],
+            limitations=retrieval.limitations,
+        )
+
+    provider = _provider_for_settings(settings)
+    try:
+        answer = await provider.answer(
+            patient_id=request.patient_id,
+            user_message=request.message,
+            evidence=retrieval.evidence,
+        )
+    except OpenAIModelError as exc:
+        yield _sse("status", {"message": "model output failed validation; using source-backed fallback"})
+        answer = await MockProviderAdapter().answer(
+            patient_id=request.patient_id,
+            user_message=request.message,
+            evidence=retrieval.evidence,
+        )
+        answer.audit["provider"] = "source_backed_fallback"
+        answer.audit["llm_provider_failed"] = settings.llm_provider
+        answer.audit["llm_error"] = str(exc)
+        answer.audit["reasoning_summary"] = (
+            "The model response was unavailable or failed schema/citation validation, so the "
+            "response was generated from retrieved source evidence and re-verified."
+        )
+
     answer.audit["tools"] = retrieval.tools
     answer.audit["limitations"] = retrieval.limitations
+    answer.audit["agent_loop"] = {
+        "mode": "bounded_server_orchestrated",
+        "max_steps": settings.agent_loop_max_steps,
+        "steps": [
+            "check_access",
+            *retrieval.tools,
+            f"provider:{answer.audit.get('provider', settings.llm_provider)}",
+            "verify_claims",
+        ][: settings.agent_loop_max_steps],
+    }
 
     try:
         verify_answer(answer, retrieval.evidence, request.patient_id)
     except VerificationError as exc:
+        payload = {
+            "answer": (
+                "I could not verify the answer against selected-patient evidence, "
+                "so I am not showing it."
+            ),
+            "citations": [],
+            "audit": {"verification": "failed", "reason": str(exc)},
+        }
+        payload = await _persist_and_annotate_chat_payload(
+            settings=settings,
+            user=user,
+            request=request,
+            payload=payload,
+            started_at=started_at,
+            evidence_count=len(retrieval.evidence),
+        )
         yield _sse(
             "final",
-            {
-                "answer": (
-                    "I could not verify the answer against selected-patient evidence, "
-                    "so I am not showing it."
-                ),
-                "citations": [],
-                "audit": {"verification": "failed", "reason": str(exc)},
-            },
+            payload,
         )
         return
 
     answer.audit["verification"] = "passed"
-    yield _sse("final", answer.model_dump(mode="json"))
+    payload = await _persist_and_annotate_chat_payload(
+        settings=settings,
+        user=user,
+        request=request,
+        payload=answer.model_dump(mode="json"),
+        started_at=started_at,
+        evidence_count=len(retrieval.evidence),
+    )
+    yield _sse("final", payload)
+
+
+async def _persist_and_annotate_chat_payload(
+    *,
+    settings: Settings,
+    user: RequestUser,
+    request: ChatRequest,
+    payload: dict[str, Any],
+    started_at: datetime,
+    evidence_count: int,
+) -> dict[str, Any]:
+    audit = payload.setdefault("audit", {})
+    if not isinstance(audit, dict):
+        audit = {}
+        payload["audit"] = audit
+
+    duration_ms = max(int((datetime.now(tz=UTC) - started_at).total_seconds() * 1000), 0)
+    outcome = _chat_audit_outcome(audit)
+    metadata = {
+        "outcome": outcome,
+        "verification": str(audit.get("verification") or "unknown"),
+        "provider": str(audit.get("provider") or "unknown"),
+        "tool_count": len(audit.get("tools", [])) if isinstance(audit.get("tools"), list) else 0,
+        "citation_count": len(payload.get("citations", []))
+        if isinstance(payload.get("citations"), list)
+        else 0,
+        "evidence_count": evidence_count,
+        "duration_ms": duration_ms,
+    }
+    emit_telemetry_event(settings, event="chat_completed", metadata=metadata)
+
+    if not _persistent_phi_storage_configured(settings):
+        audit["persistence"] = "skipped"
+        return payload
+
+    try:
+        if settings.conversation_persistence_enabled:
+            conversation_id = await append_chat_messages(
+                settings=settings,
+                actor_user_id=user.user_id,
+                patient_id=request.patient_id,
+                user_message=request.message,
+                assistant_payload=payload,
+                conversation_id=request.conversation_id,
+            )
+            payload["conversation_id"] = conversation_id
+            audit["conversation_persistence"] = "written"
+
+        await write_audit_event(
+            settings,
+            build_audit_event(
+                settings=settings,
+                actor_user_id=user.user_id,
+                action="chat_completion",
+                outcome=outcome,
+                patient_id=request.patient_id,
+                reason_code=str(audit.get("error") or audit.get("verification") or outcome),
+                metadata_payload=metadata,
+            ),
+        )
+        audit["audit_persistence"] = "written"
+    except Exception as exc:
+        audit["persistence"] = "failed"
+        audit["persistence_error"] = exc.__class__.__name__
+        emit_telemetry_event(
+            settings,
+            event="chat_persistence_failed",
+            metadata={"error_class": exc.__class__.__name__},
+        )
+        if settings.requires_phi_controls() and settings.audit_persistence_required:
+            return {
+                "answer": (
+                    "I could not complete this request because the clinical audit store is "
+                    "unavailable. No verified answer is shown."
+                ),
+                "citations": [],
+                "audit": {
+                    "verification": "failed",
+                    "error": "audit_persistence_failed",
+                    "persistence_error": exc.__class__.__name__,
+                },
+            }
+    return payload
+
+
+def _persistent_phi_storage_configured(settings: Settings) -> bool:
+    return settings.database_url is not None and settings.encryption_key is not None
+
+
+def _chat_audit_outcome(audit: dict[str, Any]) -> str:
+    verification = audit.get("verification")
+    if verification == "passed":
+        return "success"
+    if verification == "refused_treatment_recommendation":
+        return "refused"
+    return "failure"
 
 
 async def _retrieve_evidence(
@@ -372,20 +1116,325 @@ async def _retrieve_evidence(
     settings: Settings,
 ) -> EvidenceRetrievalResult:
     if settings.openemr_fhir_base_url is None:
-        return EvidenceRetrievalResult(
+        retrieval = EvidenceRetrievalResult(
             evidence=_demo_evidence(request.patient_id),
             tools=["demo_evidence"],
             limitations=["OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."],
         )
+        if settings.vector_search_enabled:
+            return await _augment_with_vector_search_with_failover(
+                settings=settings,
+                patient_id=request.patient_id,
+                message=request.message,
+                retrieval=retrieval,
+                service=None,
+            )
+        return retrieval
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     service = FhirEvidenceService(client)
-    return await service.collect_for_question(
+    retrieval = await _collect_evidence_with_cache(
+        settings=settings,
+        user=user,
         patient_id=request.patient_id,
         message=request.message,
         quick_question_id=request.quick_question_id,
+        service=service,
     )
+    if settings.vector_search_enabled:
+        return await _augment_with_vector_search_with_failover(
+            settings=settings,
+            patient_id=request.patient_id,
+            message=request.message,
+            retrieval=retrieval,
+            service=service,
+        )
+    return retrieval
+
+
+async def _augment_with_vector_search_with_failover(
+    *,
+    settings: Settings,
+    patient_id: str,
+    message: str,
+    retrieval: EvidenceRetrievalResult,
+    service: FhirEvidenceService | None,
+) -> EvidenceRetrievalResult:
+    try:
+        return await _augment_with_vector_search(
+            settings=settings,
+            patient_id=patient_id,
+            message=message,
+            retrieval=retrieval,
+            service=service,
+        )
+    except (VectorStoreError, httpx.HTTPError) as exc:
+        emit_telemetry_event(
+            settings,
+            event="vector_search_degraded",
+            metadata={"error_class": exc.__class__.__name__},
+        )
+        return EvidenceRetrievalResult(
+            evidence=retrieval.evidence,
+            tools=_merge_strings(retrieval.tools, ["vector_search_unavailable"]),
+            limitations=_merge_strings(
+                retrieval.limitations,
+                [
+                    (
+                        "Vector search was unavailable, so the answer used live "
+                        "OpenEMR FHIR evidence already retrieved for this question."
+                    )
+                ],
+            ),
+        )
+
+
+async def _collect_evidence_with_cache(
+    *,
+    settings: Settings,
+    user: RequestUser,
+    patient_id: str,
+    message: str,
+    quick_question_id: str | None,
+    service: FhirEvidenceService,
+) -> EvidenceRetrievalResult:
+    if not _evidence_cache_configured(settings):
+        return await service.collect_for_question(
+            patient_id=patient_id,
+            message=message,
+            quick_question_id=quick_question_id,
+        )
+
+    cache_key = _evidence_cache_key(
+        user=user,
+        patient_id=patient_id,
+        message=message,
+        quick_question_id=quick_question_id,
+    )
+    try:
+        cached = await read_evidence_cache_record(
+            settings=settings,
+            patient_id=patient_id,
+            cache_key=cache_key,
+        )
+    except Exception as exc:
+        cached = None
+        emit_telemetry_event(
+            settings,
+            event="evidence_cache_read_failed",
+            metadata={"error_class": exc.__class__.__name__},
+        )
+    if cached is not None:
+        try:
+            retrieval = _retrieval_from_cache_payload(cached.payload)
+            return EvidenceRetrievalResult(
+                evidence=retrieval.evidence,
+                tools=_merge_strings(retrieval.tools, ["evidence_cache_hit"]),
+                limitations=retrieval.limitations,
+            )
+        except ValueError:
+            pass
+
+    retrieval = await service.collect_for_question(
+        patient_id=patient_id,
+        message=message,
+        quick_question_id=quick_question_id,
+    )
+    record = build_evidence_cache_record(
+        settings=settings,
+        patient_id=patient_id,
+        cache_key=cache_key,
+        payload=_retrieval_cache_payload(retrieval),
+        ttl_seconds=settings.evidence_cache_ttl_seconds,
+    )
+    try:
+        await write_evidence_cache_record(settings, record)
+    except Exception as exc:
+        emit_telemetry_event(
+            settings,
+            event="evidence_cache_write_failed",
+            metadata={"error_class": exc.__class__.__name__},
+        )
+        return EvidenceRetrievalResult(
+            evidence=retrieval.evidence,
+            tools=_merge_strings(retrieval.tools, ["evidence_cache_unavailable"]),
+            limitations=_merge_strings(
+                retrieval.limitations,
+                ["Evidence cache was unavailable; live OpenEMR FHIR evidence was used."],
+            ),
+        )
+    return EvidenceRetrievalResult(
+        evidence=retrieval.evidence,
+        tools=_merge_strings(retrieval.tools, ["evidence_cache_write"]),
+        limitations=retrieval.limitations,
+    )
+
+
+async def _augment_with_vector_search(
+    *,
+    settings: Settings,
+    patient_id: str,
+    message: str,
+    retrieval: EvidenceRetrievalResult,
+    service: FhirEvidenceService | None,
+) -> EvidenceRetrievalResult:
+    try:
+        existing_vector_evidence = await search_patient_evidence(
+            settings=settings,
+            patient_id=patient_id,
+            query=message,
+        )
+    except VectorStoreError:
+        existing_vector_evidence = []
+    if existing_vector_evidence:
+        if service is not None:
+            hydrated = await service.hydrate_vector_hits(existing_vector_evidence)
+            existing_vector_evidence = hydrated.evidence
+            limitations = _merge_strings(retrieval.limitations, hydrated.limitations)
+            hydration_tools = hydrated.tools
+        else:
+            limitations = list(retrieval.limitations)
+            hydration_tools = []
+        return EvidenceRetrievalResult(
+            evidence=_merge_evidence(retrieval.evidence, existing_vector_evidence),
+            tools=_merge_strings(
+                retrieval.tools,
+                ["search_patient_evidence", *hydration_tools],
+            ),
+            limitations=limitations,
+        )
+
+    index_evidence = retrieval.evidence
+    limitations = list(retrieval.limitations)
+    if service is not None:
+        seed_retrieval = await service.collect_patient_index_evidence(patient_id)
+        index_evidence = _merge_evidence(retrieval.evidence, seed_retrieval.evidence)
+        limitations = _merge_strings(limitations, seed_retrieval.limitations)
+
+    vector_evidence = await index_and_search_evidence(
+        settings=settings,
+        patient_id=patient_id,
+        query=message,
+        evidence=index_evidence,
+    )
+    cold_hydration_tools: list[str] = []
+    if service is not None and vector_evidence:
+        cold_hydrated = await service.hydrate_vector_hits(vector_evidence)
+        vector_evidence = cold_hydrated.evidence
+        limitations = _merge_strings(limitations, cold_hydrated.limitations)
+        cold_hydration_tools = cold_hydrated.tools
+    return EvidenceRetrievalResult(
+        evidence=_merge_evidence(retrieval.evidence, vector_evidence),
+        tools=_merge_strings(
+            retrieval.tools,
+            ["index_patient_evidence", "search_patient_evidence", *cold_hydration_tools],
+        ),
+        limitations=limitations,
+    )
+
+
+def _evidence_cache_configured(settings: Settings) -> bool:
+    return (
+        settings.evidence_cache_enabled
+        and settings.database_url is not None
+        and settings.encryption_key is not None
+    )
+
+
+def _evidence_cache_key(
+    *,
+    user: RequestUser,
+    patient_id: str,
+    message: str,
+    quick_question_id: str | None,
+) -> str:
+    return json.dumps(
+        {
+            "version": "evidence_retrieval_v1",
+            "user_id": user.user_id,
+            "role": user.role,
+            "scopes": sorted(user.scopes),
+            "patient_id": patient_id,
+            "message": " ".join(message.lower().split()),
+            "quick_question_id": quick_question_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _retrieval_cache_payload(retrieval: EvidenceRetrievalResult) -> dict[str, Any]:
+    return {
+        "schema": "evidence_retrieval_v1",
+        "evidence": [item.model_dump(mode="json") for item in retrieval.evidence],
+        "tools": retrieval.tools,
+        "limitations": retrieval.limitations,
+    }
+
+
+def _retrieval_from_cache_payload(payload: dict[str, Any]) -> EvidenceRetrievalResult:
+    if payload.get("schema") != "evidence_retrieval_v1":
+        raise ValueError("Unsupported evidence cache payload schema")
+    evidence_items = payload.get("evidence")
+    tools = payload.get("tools")
+    limitations = payload.get("limitations")
+    if not isinstance(evidence_items, list) or not isinstance(tools, list):
+        raise ValueError("Evidence cache payload was invalid")
+    if limitations is None:
+        limitations = []
+    if not isinstance(limitations, list):
+        raise ValueError("Evidence cache payload limitations were invalid")
+    return EvidenceRetrievalResult(
+        evidence=[EvidenceObject.model_validate(item) for item in evidence_items],
+        tools=[str(item) for item in tools],
+        limitations=[str(item) for item in limitations],
+    )
+
+
+def _merge_evidence(
+    primary: list[EvidenceObject],
+    secondary: list[EvidenceObject],
+) -> list[EvidenceObject]:
+    merged: list[EvidenceObject] = []
+    seen: set[str] = set()
+    for item in [*primary, *secondary]:
+        if item.evidence_id in seen:
+            continue
+        merged.append(item)
+        seen.add(item.evidence_id)
+    return merged
+
+
+def _merge_strings(primary: list[str], secondary: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in [*primary, *secondary]:
+        if item in seen:
+            continue
+        merged.append(item)
+        seen.add(item)
+    return merged
+
+
+def _provider_for_settings(settings: Settings) -> ProviderAdapter:
+    if settings.llm_provider == "mock":
+        return MockProviderAdapter()
+    if settings.llm_provider == "openai":
+        return OpenAIProviderAdapter(settings)
+    if settings.llm_provider == "openrouter":
+        return OpenRouterProviderAdapter(settings)
+    raise OpenAIModelError(f"Unsupported LLM provider: {settings.llm_provider}")
+
+
+def _require_reindex_access(user: RequestUser) -> None:
+    if user.role not in {Role.doctor, Role.np_pa, Role.admin}:
+        raise HTTPException(status_code=403, detail="Role is not allowed to reindex patient evidence")
+
+
+def _require_job_access(user: RequestUser) -> None:
+    if user.role not in {Role.doctor, Role.np_pa, Role.admin}:
+        raise HTTPException(status_code=403, detail="Role is not allowed to inspect job status")
 
 
 def _demo_evidence(patient_id: str) -> list[EvidenceObject]:

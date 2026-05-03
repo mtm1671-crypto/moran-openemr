@@ -1,7 +1,11 @@
+import base64
+import binascii
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from re import sub
 from typing import Any
+
+import httpx
 
 from app.fhir_client import OpenEMRFhirClient
 from app.models import EvidenceObject
@@ -62,6 +66,22 @@ class FhirEvidenceService:
                 limitations.append("No allergies were returned by OpenEMR FHIR.")
             evidence.extend(allergies)
 
+        if "get_recent_notes" in requested_tools:
+            completed_tools.append("get_recent_notes")
+            try:
+                notes = await self.get_recent_notes(patient_id)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in {401, 403}:
+                    notes = []
+                    limitations.append(
+                        "Clinical notes were not available with the current OpenEMR FHIR token."
+                    )
+                else:
+                    raise
+            if not notes:
+                limitations.append("No clinical notes were returned by OpenEMR FHIR.")
+            evidence.extend(notes)
+
         return EvidenceRetrievalResult(
             evidence=evidence,
             tools=completed_tools,
@@ -90,6 +110,85 @@ class FhirEvidenceService:
     async def get_allergies(self, patient_id: str) -> list[EvidenceObject]:
         allergies = await self._client.search_allergy_intolerances(patient_id)
         return [allergy_intolerance_evidence(allergy, patient_id) for allergy in allergies]
+
+    async def get_recent_notes(self, patient_id: str) -> list[EvidenceObject]:
+        documents = await self._client.search_document_references(patient_id)
+        evidence = [
+            document_reference_evidence(document_reference, patient_id)
+            for document_reference in documents
+        ]
+        evidence.sort(key=lambda item: item.effective_at or item.retrieved_at, reverse=True)
+        return evidence
+
+    async def collect_patient_index_evidence(self, patient_id: str) -> EvidenceRetrievalResult:
+        """Fetch the broad selected-patient evidence set used for vector indexing."""
+
+        evidence: list[EvidenceObject] = []
+        limitations: list[str] = []
+        tools: list[str] = []
+
+        for tool_name, collector in [
+            ("get_patient_demographics", self.get_patient_demographics),
+            ("get_active_problems", self.get_active_problems),
+            ("get_recent_labs", self.get_recent_labs),
+            ("get_medications", self.get_medications),
+            ("get_allergies", self.get_allergies),
+            ("get_recent_notes", self.get_recent_notes),
+        ]:
+            tools.append(tool_name)
+            try:
+                items = await collector(patient_id)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in {401, 403} and tool_name == "get_recent_notes":
+                    limitations.append(
+                        "Clinical notes were not available with the current OpenEMR FHIR token."
+                    )
+                    continue
+                raise
+            if not items:
+                limitations.append(f"{tool_name} returned no evidence from OpenEMR FHIR.")
+            evidence.extend(items)
+
+        return EvidenceRetrievalResult(evidence=evidence, tools=tools, limitations=limitations)
+
+    async def hydrate_vector_hits(self, hits: list[EvidenceObject]) -> EvidenceRetrievalResult:
+        """Re-read vector hits from OpenEMR FHIR before placing them in model context."""
+
+        evidence: list[EvidenceObject] = []
+        limitations: list[str] = []
+        for hit in hits:
+            try:
+                evidence.extend(await self._hydrate_vector_hit(hit))
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in {401, 403, 404}:
+                    limitations.append("A vector hit could not be refreshed from OpenEMR FHIR.")
+                    evidence.append(hit)
+                    continue
+                raise
+        return EvidenceRetrievalResult(
+            evidence=evidence,
+            tools=["hydrate_vector_evidence"],
+            limitations=limitations,
+        )
+
+    async def _hydrate_vector_hit(self, hit: EvidenceObject) -> list[EvidenceObject]:
+        resource_type = _fhir_resource_type_for_source_type(hit.source_type)
+        if resource_type is None:
+            return [hit]
+        resource = await self._client.read_resource(resource_type, hit.source_id)
+        if resource_type == "Patient":
+            return patient_demographics_evidence(resource)
+        if resource_type == "Condition":
+            return [condition_evidence(resource, hit.patient_id)]
+        if resource_type == "Observation":
+            return [lab_observation_evidence(resource, hit.patient_id)]
+        if resource_type == "MedicationRequest":
+            return [medication_request_evidence(resource, hit.patient_id)]
+        if resource_type == "AllergyIntolerance":
+            return [allergy_intolerance_evidence(resource, hit.patient_id)]
+        if resource_type == "DocumentReference":
+            return [document_reference_evidence(resource, hit.patient_id)]
+        return [hit]
 
 
 def patient_demographics_evidence(patient: dict[str, Any]) -> list[EvidenceObject]:
@@ -296,6 +395,40 @@ def allergy_intolerance_evidence(allergy: dict[str, Any], patient_id: str) -> Ev
     )
 
 
+def document_reference_evidence(document_reference: dict[str, Any], patient_id: str) -> EvidenceObject:
+    document_id = _resource_id(document_reference, "unknown-document-reference")
+    display = _codeable_concept_display(document_reference.get("type")) or "Clinical note"
+    note_date = _first_string(
+        document_reference.get("date"),
+        _context_period_start(document_reference),
+    )
+    note_text = _document_reference_text(document_reference)
+    excerpt = _excerpt(note_text, max_chars=700) if note_text else None
+
+    fact = f"Clinical note: {display}."
+    if note_date:
+        fact = f"{fact} Date: {note_date}."
+    if excerpt:
+        fact = f"{fact} Note text: {excerpt}"
+
+    return EvidenceObject(
+        evidence_id=_evidence_id("document_reference", patient_id, document_id),
+        patient_id=patient_id,
+        source_type="clinical_note",
+        source_id=document_id,
+        display_name=display,
+        fact=fact,
+        effective_at=_parse_fhir_datetime(note_date),
+        source_updated_at=_parse_fhir_datetime(_meta_last_updated(document_reference)),
+        retrieved_at=datetime.now(tz=UTC),
+        source_url=_source_url("DocumentReference", document_id, patient_id),
+        metadata={
+            "content_type": _first_attachment_content_type(document_reference),
+            "excerpt": excerpt,
+        },
+    )
+
+
 def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]:
     text = f"{message} {quick_question_id or ''}".lower()
     tools = ["get_patient_demographics"]
@@ -313,6 +446,20 @@ def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]
         term in text for term in ["medication", "medicine", "meds", "prescription", "drug"]
     )
     wants_allergies = any(term in text for term in ["allergy", "allergies", "intolerance"])
+    wants_notes = any(
+        term in text
+        for term in [
+            "note",
+            "notes",
+            "visit",
+            "hpi",
+            "assessment",
+            "subjective",
+            "narrative",
+            "follow-up",
+            "follow up",
+        ]
+    )
 
     if wants_broad_brief or wants_problems:
         tools.append("get_active_problems")
@@ -322,9 +469,19 @@ def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]
         tools.append("get_medications")
     if wants_allergies:
         tools.append("get_allergies")
+    if wants_broad_brief or wants_notes:
+        tools.append("get_recent_notes")
 
     if len(tools) == 1 and not any(
-        [wants_demographics, wants_broad_brief, wants_problems, wants_labs, wants_medications, wants_allergies]
+        [
+            wants_demographics,
+            wants_broad_brief,
+            wants_problems,
+            wants_labs,
+            wants_medications,
+            wants_allergies,
+            wants_notes,
+        ]
     ):
         tools.extend(["get_active_problems", "get_recent_labs"])
 
@@ -443,6 +600,74 @@ def _first_reaction_display(allergy: dict[str, Any]) -> str | None:
     return None
 
 
+def _document_reference_text(document_reference: dict[str, Any]) -> str | None:
+    content = document_reference.get("content")
+    if not isinstance(content, list):
+        return None
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        attachment = item.get("attachment")
+        if not isinstance(attachment, dict):
+            continue
+        data = attachment.get("data")
+        if isinstance(data, str) and data:
+            try:
+                decoded = base64.b64decode(data, validate=True).decode("utf-8", errors="replace")
+            except (binascii.Error, ValueError):
+                continue
+            text = _compact_text(decoded)
+            if text:
+                return text
+    return None
+
+
+def _first_attachment_content_type(document_reference: dict[str, Any]) -> str | None:
+    content = document_reference.get("content")
+    if not isinstance(content, list):
+        return None
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        attachment = item.get("attachment")
+        if not isinstance(attachment, dict):
+            continue
+        content_type = attachment.get("contentType")
+        if isinstance(content_type, str) and content_type:
+            return content_type
+    return None
+
+
+def _context_period_start(document_reference: dict[str, Any]) -> str | None:
+    context = document_reference.get("context")
+    if not isinstance(context, dict):
+        return None
+    period = context.get("period")
+    if not isinstance(period, dict):
+        return None
+    start = period.get("start")
+    return start if isinstance(start, str) and start else None
+
+
+def _meta_last_updated(resource: dict[str, Any]) -> str | None:
+    meta = resource.get("meta")
+    if not isinstance(meta, dict):
+        return None
+    value = meta.get("lastUpdated")
+    return value if isinstance(value, str) and value else None
+
+
+def _compact_text(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _excerpt(value: str, *, max_chars: int) -> str:
+    compacted = _compact_text(value)
+    if len(compacted) <= max_chars:
+        return compacted
+    return compacted[: max_chars - 3].rstrip() + "..."
+
+
 def _parse_fhir_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -481,3 +706,15 @@ def _source_url(resource_type: str, resource_id: str, patient_id: str | None = N
     if patient_id is not None:
         return f"{url}?patient_id={patient_id}"
     return url
+
+
+def _fhir_resource_type_for_source_type(source_type: str) -> str | None:
+    mapping = {
+        "patient_demographics": "Patient",
+        "active_problem": "Condition",
+        "lab_result": "Observation",
+        "medication": "MedicationRequest",
+        "allergy": "AllergyIntolerance",
+        "clinical_note": "DocumentReference",
+    }
+    return mapping.get(source_type)

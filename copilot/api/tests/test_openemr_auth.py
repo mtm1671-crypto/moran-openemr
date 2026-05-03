@@ -1,18 +1,19 @@
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import cast
 
 import pytest
 import respx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from httpx import Response
-from jose import jwt
-from jose.utils import base64url_encode
+from jose import jwt  # type: ignore[import-untyped]
+from jose.utils import base64url_encode  # type: ignore[import-untyped]
 
 from app.config import Settings
 from app.auth import validate_openemr_jwt
-from app.openemr_auth import DevPasswordGrantTokenProvider
+from app.openemr_auth import DevPasswordGrantTokenProvider, ServiceAccountTokenProvider
 
 
 @pytest.mark.asyncio
@@ -69,6 +70,42 @@ async def test_dev_password_grant_caches_token() -> None:
 
 
 @pytest.mark.asyncio
+async def test_service_account_uses_static_backend_bearer_token() -> None:
+    provider = ServiceAccountTokenProvider()
+    settings = Settings(
+        openemr_service_account_enabled=True,
+        openemr_service_bearer_token="service-token",
+    )
+
+    assert await provider.get_access_token(settings) == "service-token"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_service_account_requests_client_credentials_token() -> None:
+    route = respx.post("https://openemr.test/oauth2/default/token").mock(
+        return_value=Response(200, json={"access_token": "service-token", "expires_in": 60})
+    )
+    provider = ServiceAccountTokenProvider()
+    settings = Settings(
+        openemr_service_account_enabled=True,
+        openemr_service_token_url="https://openemr.test/oauth2/default/token",
+        openemr_service_client_id="service-client",
+        openemr_service_client_secret="service-secret",
+        openemr_service_scopes="api:fhir user/Patient.read",
+    )
+
+    token = await provider.get_access_token(settings)
+
+    assert token == "service-token"
+    form = route.calls[0].request.content.decode()
+    assert "grant_type=client_credentials" in form
+    assert "client_id=service-client" in form
+    assert "client_secret=service-secret" in form
+    assert "scope=api%3Afhir+user%2FPatient.read" in form
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_validate_openemr_jwt_uses_jwks_and_maps_request_user() -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -107,6 +144,84 @@ async def test_validate_openemr_jwt_uses_jwks_and_maps_request_user() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_validate_openemr_jwt_accepts_openemr_access_token_claim_shape() -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _signed_token(
+        private_key,
+        {
+            "sub": "openemr-user-1",
+            "iss": "https://openemr.test/oauth2/default",
+            "aud": "clinical-copilot-client-id",
+            "exp": int((datetime.now(tz=UTC) + timedelta(minutes=5)).timestamp()),
+            "scopes": [
+                "openid",
+                "fhirUser",
+                "user/Patient.read",
+                "user/Practitioner.read",
+            ],
+        },
+    )
+    respx.get("https://openemr.test/oauth2/default/jwk").mock(
+        return_value=Response(200, json={"keys": [_public_jwk(private_key)]})
+    )
+    settings = Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        openemr_base_url="https://openemr.test",
+        openemr_site="default",
+        openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
+        openemr_oauth_token_url="https://openemr.test/oauth2/default/token",
+        openemr_jwks_url="https://openemr.test/oauth2/default/jwk",
+        openemr_jwt_issuer="https://openemr.test/apis/default/fhir",
+        openemr_jwt_audience="https://openemr.test/apis/default/fhir",
+        openemr_client_id="clinical-copilot-client-id",
+    )
+
+    user = await validate_openemr_jwt(token, settings)
+
+    assert user.user_id == "openemr-user-1"
+    assert user.role == "doctor"
+    assert user.scopes == [
+        "openid",
+        "fhirUser",
+        "user/Patient.read",
+        "user/Practitioner.read",
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_openemr_jwt_rejects_wrong_openemr_audience() -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _signed_token(
+        private_key,
+        {
+            "sub": "openemr-user-1",
+            "iss": "https://openemr.test/oauth2/default",
+            "aud": "other-client-id",
+            "exp": int((datetime.now(tz=UTC) + timedelta(minutes=5)).timestamp()),
+            "scopes": ["user/Patient.read"],
+        },
+    )
+    respx.get("https://openemr.test/oauth2/default/jwk").mock(
+        return_value=Response(200, json={"keys": [_public_jwk(private_key)]})
+    )
+    settings = Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        openemr_base_url="https://openemr.test",
+        openemr_jwks_url="https://openemr.test/oauth2/default/jwk",
+        openemr_client_id="clinical-copilot-client-id",
+    )
+
+    with pytest.raises(Exception) as exc:
+        await validate_openemr_jwt(token, settings)
+
+    assert getattr(exc.value, "status_code") == 401
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_validate_openemr_jwt_rejects_unmapped_role_without_default() -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     token = _signed_token(
@@ -138,7 +253,7 @@ def _signed_token(private_key: rsa.RSAPrivateKey, claims: dict[str, object]) -> 
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "test-key"})
+    return cast(str, jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "test-key"}))
 
 
 def _public_jwk(private_key: rsa.RSAPrivateKey) -> dict[str, str]:
@@ -155,4 +270,5 @@ def _public_jwk(private_key: rsa.RSAPrivateKey) -> dict[str, str]:
 
 def _base64url_uint(value: int) -> str:
     length = (value.bit_length() + 7) // 8
-    return base64url_encode(value.to_bytes(length, "big")).decode("ascii")
+    encoded = cast(bytes, base64url_encode(value.to_bytes(length, "big")))
+    return encoded.decode("ascii")

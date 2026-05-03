@@ -21,6 +21,7 @@ __pycache__
 
 # AgentForge Co-Pilot local artifacts
 .logs
+.tmp
 copilot/.logs
 copilot/api/.tmp
 .runtime

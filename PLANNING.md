@@ -1,6 +1,6 @@
 # AgentForge Planning Documents
 
-The planning artifacts for the AgentForge Clinical Co-Pilot live at the repository root so reviewers can find them without digging through implementation folders.
+The repository root [README.md](README.md) is the primary final-submission and setup guide. The planning artifacts below are supporting references for reviewers who want deeper context.
 
 ## Core Planning Set
 
@@ -13,6 +13,7 @@ The planning artifacts for the AgentForge Clinical Co-Pilot live at the reposito
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Co-Pilot architecture, OpenEMR placement, verification, and tradeoffs |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Local and Railway deployment plan |
 | [DEMO_PLAN.md](DEMO_PLAN.md) | 3-5 minute demo script and talk track |
+| [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Deployed walkthrough evidence, screenshots, and data-flow proof |
 | [EVAL_PLAN.md](EVAL_PLAN.md) | Deterministic eval plan and fixture expectations |
 | [MVP_AUTH_SCOPE.md](MVP_AUTH_SCOPE.md) | Local-demo auth scope and production-auth exclusions |
 | [MVP_STATUS.md](MVP_STATUS.md) | Current build status and final-product roadmap |
@@ -21,8 +22,8 @@ The planning artifacts for the AgentForge Clinical Co-Pilot live at the reposito
 
 ## Implementation Docs
 
-Implementation-specific Markdown stays near the code it describes, for example:
+Implementation-specific README files are intentionally short pointers back to the root README so setup and deployment instructions do not drift.
 
-- [copilot/README.md](copilot/README.md) for local Co-Pilot API/web setup.
-- [copilot/worker/README.md](copilot/worker/README.md) for the worker placeholder.
+- [copilot/README.md](copilot/README.md) identifies the Co-Pilot service folders.
+- [copilot/worker/README.md](copilot/worker/README.md) documents the worker placeholder.
 - Existing upstream OpenEMR docs remain in their original directories.

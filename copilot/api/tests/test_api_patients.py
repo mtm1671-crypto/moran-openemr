@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 import pytest
 import respx
 from fastapi.testclient import TestClient
@@ -9,7 +11,7 @@ from app.openemr_auth import clear_dev_password_token_cache
 
 
 @pytest.fixture(autouse=True)
-def reset_app_overrides() -> None:
+def reset_app_overrides() -> Generator[None]:
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
     yield
@@ -92,6 +94,59 @@ def test_patient_search_passes_through_user_bearer_token() -> None:
 
 
 @respx.mock
+def test_patient_roster_lists_authorized_patients_without_name_query() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    patient_route = respx.get("http://openemr.test/apis/default/fhir/Patient").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "p1",
+                            "name": [{"given": ["Elena"], "family": "Morrison"}],
+                            "birthDate": "1972-09-18",
+                            "gender": "female",
+                        }
+                    },
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "p2",
+                            "name": [{"given": ["Marcus"], "family": "Chen"}],
+                            "birthDate": "1959-02-07",
+                            "gender": "male",
+                        }
+                    },
+                ],
+            },
+        )
+    )
+
+    response = TestClient(app).get(
+        "/api/patients?count=50",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert response.status_code == 200
+    assert [patient["display_name"] for patient in response.json()] == [
+        "Elena Morrison",
+        "Marcus Chen",
+    ]
+    assert patient_route.calls[0].request.headers["authorization"] == "Bearer user-token"
+    assert "name" not in patient_route.calls[0].request.url.params
+    assert patient_route.calls[0].request.url.params["_count"] == "50"
+
+
+@respx.mock
 def test_patient_search_returns_unauthorized_when_openemr_denies_access() -> None:
     settings = Settings(
         app_env="local",
@@ -118,6 +173,16 @@ def test_me_does_not_echo_bearer_token() -> None:
 
     assert response.status_code == 200
     assert "access_token" not in response.json()
+
+
+def test_me_requires_bearer_token_when_dev_bypass_is_disabled() -> None:
+    settings = Settings(app_env="production", dev_auth_bypass=False)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/me")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
 
 
 def test_demo_patient_context_returns_summary_without_fhir() -> None:

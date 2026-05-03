@@ -62,10 +62,55 @@ class ChatRequest(BaseModel):
     patient_id: str
     message: str
     quick_question_id: str | None = None
+    conversation_id: str | None = None
+
+
+class ToolContract(BaseModel):
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
 
 
 class CapabilityResponse(BaseModel):
     roles: list[Role]
     tools: list[str]
+    tool_schemas: dict[str, ToolContract] = Field(default_factory=dict)
     providers: dict[str, bool]
     retention_days: int
+
+
+class ReindexRequest(BaseModel):
+    force: bool = False
+
+
+class ReindexResponse(BaseModel):
+    job_id: str
+    status: str
+    patient_id: str
+    indexed_evidence_count: int | None = None
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    job_type: str
+    status: str
+    actor_user_id: str
+    patient_id_hash: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class ObservabilityStatusResponse(BaseModel):
+    structured_logging_enabled: bool
+    audit_persistence_required: bool
+    conversation_persistence_enabled: bool
+    vector_search_enabled: bool
+    vector_index_backend: str
+    service_account_enabled: bool
+    nightly_maintenance_enabled: bool
+    nightly_reindex_enabled: bool

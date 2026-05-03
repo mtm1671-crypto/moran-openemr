@@ -6,6 +6,7 @@ from app.evidence_tools import (
     FhirEvidenceService,
     allergy_intolerance_evidence,
     condition_evidence,
+    document_reference_evidence,
     lab_observation_evidence,
     medication_request_evidence,
     patient_demographics_evidence,
@@ -125,6 +126,38 @@ def test_allergy_intolerance_evidence_extracts_reaction_and_status() -> None:
     assert evidence.source_url == "/api/source/openemr/AllergyIntolerance/a1?patient_id=p1"
 
 
+def test_document_reference_evidence_decodes_plain_text_attachment() -> None:
+    evidence = document_reference_evidence(
+        {
+            "resourceType": "DocumentReference",
+            "id": "d1",
+            "status": "current",
+            "type": {"text": "Progress Note"},
+            "date": "2026-04-24T14:20:00Z",
+            "subject": {"reference": "Patient/p1"},
+            "content": [
+                {
+                    "attachment": {
+                        "contentType": "text/plain",
+                        "data": (
+                            "U3ViamVjdGl2ZTogcGF0aWVudCByZXBvcnRzIGltcHJvdmVkIGJyZWF0aGluZy4g"
+                            "QXNzZXNzbWVudDogYXN0aG1hIHN5bXB0b21zIHN0YWJsZS4="
+                        ),
+                    }
+                }
+            ],
+        },
+        patient_id="p1",
+    )
+
+    assert evidence.evidence_id == "ev_document_reference_p1_d1"
+    assert evidence.source_type == "clinical_note"
+    assert evidence.display_name == "Progress Note"
+    assert "patient reports improved breathing" in evidence.fact
+    assert evidence.metadata["content_type"] == "text/plain"
+    assert evidence.source_url == "/api/source/openemr/DocumentReference/d1?patient_id=p1"
+
+
 @pytest.mark.asyncio
 async def test_collect_for_question_runs_only_demographics_for_demographics_question() -> None:
     client = _FakeFhirClient()
@@ -154,14 +187,21 @@ async def test_collect_for_question_runs_all_core_tools_for_broad_brief() -> Non
         "get_patient_demographics",
         "get_active_problems",
         "get_recent_labs",
+        "get_recent_notes",
     ]
     assert [item.source_type for item in result.evidence] == [
         "patient_demographics",
         "patient_demographics",
         "active_problem",
         "lab_result",
+        "clinical_note",
     ]
-    assert client.calls == ["get_patient", "search_active_conditions", "search_lab_observations"]
+    assert client.calls == [
+        "get_patient",
+        "search_active_conditions",
+        "search_lab_observations",
+        "search_document_references",
+    ]
 
 
 @pytest.mark.asyncio
@@ -186,6 +226,25 @@ async def test_collect_for_question_runs_medication_and_allergy_tools_when_reque
         "search_medication_requests",
         "search_allergy_intolerances",
     ]
+
+
+@pytest.mark.asyncio
+async def test_collect_for_question_runs_note_tool_when_requested() -> None:
+    client = _FakeFhirClient()
+    service = FhirEvidenceService(cast(OpenEMRFhirClient, client))
+
+    result = await service.collect_for_question(
+        patient_id="p1",
+        message="Summarize recent clinical notes for this patient.",
+    )
+
+    assert result.tools == ["get_patient_demographics", "get_recent_notes"]
+    assert [item.source_type for item in result.evidence] == [
+        "patient_demographics",
+        "patient_demographics",
+        "clinical_note",
+    ]
+    assert client.calls == ["get_patient", "search_document_references"]
 
 
 class _FakeFhirClient:
@@ -242,5 +301,27 @@ class _FakeFhirClient:
                 "resourceType": "AllergyIntolerance",
                 "id": "a1",
                 "code": {"text": "Penicillin"},
+            }
+        ]
+
+    async def search_document_references(self, patient_id: str) -> list[dict[str, Any]]:
+        self.calls.append("search_document_references")
+        return [
+            {
+                "resourceType": "DocumentReference",
+                "id": "d1",
+                "type": {"text": "Progress Note"},
+                "date": "2026-04-24T14:20:00Z",
+                "content": [
+                    {
+                        "attachment": {
+                            "contentType": "text/plain",
+                            "data": (
+                                "U3ViamVjdGl2ZTogcGF0aWVudCByZXBvcnRzIGltcHJvdmVkIGJyZWF0aGluZy4g"
+                                "QXNzZXNzbWVudDogYXN0aG1hIHN5bXB0b21zIHN0YWJsZS4="
+                            ),
+                        }
+                    }
+                ],
             }
         ]

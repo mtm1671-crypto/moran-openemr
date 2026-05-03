@@ -45,6 +45,75 @@ async def test_search_patients_maps_fhir_bundle_and_sends_bearer_token() -> None
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_search_patients_retries_transient_openemr_failure() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/Patient").mock(
+        side_effect=[
+            Response(503, json={"error": "temporarily unavailable"}),
+            Response(
+                200,
+                json={
+                    "resourceType": "Bundle",
+                    "entry": [
+                        {
+                            "resource": {
+                                "resourceType": "Patient",
+                                "id": "p1",
+                                "name": [{"given": ["Jane"], "family": "Moran"}],
+                            }
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+    settings = Settings(
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+        openemr_retry_backoff_seconds=0,
+    )
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    patients = await client.search_patients("Jane")
+
+    assert patients[0].patient_id == "p1"
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_patients_omits_name_query() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/Patient").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "p1",
+                            "name": [{"given": ["Elena"], "family": "Morrison"}],
+                        }
+                    },
+                    {"resource": {"resourceType": "Observation", "id": "ignored"}},
+                ],
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    patients = await client.list_patients(count=50)
+
+    assert len(patients) == 1
+    assert patients[0].display_name == "Elena Morrison"
+    request = route.calls[0].request
+    assert request.headers["authorization"] == "Bearer token-123"
+    assert "name" not in request.url.params
+    assert request.url.params["_count"] == "50"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_patient_reads_patient_resource() -> None:
     route = respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
         return_value=Response(
@@ -196,3 +265,30 @@ async def test_search_allergy_intolerances_filters_bundle_resources() -> None:
     request = route.calls[0].request
     assert request.url.params["patient"] == "p1"
     assert request.url.params["_count"] == "3"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_document_references_filters_clinical_notes() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/DocumentReference").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {"resource": {"resourceType": "DocumentReference", "id": "d1"}},
+                    {"resource": {"resourceType": "Observation", "id": "ignored"}},
+                ],
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    documents = await client.search_document_references("p1", count=4)
+
+    assert documents == [{"resourceType": "DocumentReference", "id": "d1"}]
+    request = route.calls[0].request
+    assert request.url.params["patient"] == "p1"
+    assert request.url.params["category"] == "clinical-note"
+    assert request.url.params["_count"] == "4"
