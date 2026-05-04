@@ -94,6 +94,31 @@ test("OpenEMR launch context preselects a patient", async ({ page }) => {
   await expect(page.getByText(patientId)).toBeVisible();
 });
 
+test("document extraction approval feeds the chat evidence flow", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await page.getByLabel("Document type").selectOption("intake_form");
+  await page.getByLabel("Document file").setInputFiles({
+    name: "synthetic-intake.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Social History: Misses doses when work shifts change", "utf8")
+  });
+  await page.getByRole("button", { name: "Extract" }).click();
+
+  await expect(page.getByText(/Document extracted:/)).toBeVisible();
+  await expect(page.getByText("Misses doses when work shifts change").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Approve all" }).click();
+  await expect(page.getByText(/document facts approved/i)).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Message" }).fill("What social barriers are documented?");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  await expect(page.getByText(/approved_document_evidence/).first()).toBeVisible();
+  await expect(page.getByText(/Misses doses when work shifts change/).last()).toBeVisible();
+});
+
 test("missing bearer session starts SMART authorization with launch context", async ({ page }) => {
   await page.route("**/api/me", async (route) => {
     await route.fulfill({

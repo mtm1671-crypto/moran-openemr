@@ -25,6 +25,8 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 | Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
 | User document and use cases | [USER.md](USER.md) |
 | Agent architecture document with one-page summary | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Week 2 architecture design | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
+| Early submission readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
 | Demo video plan and walkthrough checklist | [DEMO_PLAN.md](DEMO_PLAN.md) and [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
 | Eval dataset, test suite, and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
 | AI cost analysis | [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) |
@@ -71,17 +73,18 @@ Working in the deployed demo:
 - Answers include citations and source links.
 - Unsupported treatment recommendation requests are refused.
 - OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
+- Local Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, human approval, lab write adapter, and approved document facts in chat evidence.
 
 Latest API verification:
 
 ```text
-pytest: 104 passed, 5 skipped
+pytest: 114 passed, 5 skipped
 ruff: all checks passed
 mypy: success
 pip-audit: no known vulnerabilities found
 npm audit: no known vulnerabilities found
 web build: passed
-Playwright: 6 passed
+Playwright: 7 passed
 production /readyz: ok
 openrouter_configured: true
 pgvector_backend: true
@@ -399,9 +402,11 @@ The root README is the source of truth for final submission. The remaining Markd
 | Document | Purpose |
 |---|---|
 | [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Earlier deployed walkthrough screenshots and proof notes |
+| [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) | Week 2 early submission blockers, smoke path, and deployment checklist |
 | [DEMO_PLAN.md](DEMO_PLAN.md) | Demo script and talk track |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Longer deployment notes and environment checklists |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Deeper architecture plan and future-state design |
+| [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |
 | [USER.md](USER.md) | Primary user, supporting users, use cases, and MVP non-goals |
 | [MVP_STATUS.md](MVP_STATUS.md) | Historical MVP status and roadmap notes |
 | [EVAL_PLAN.md](EVAL_PLAN.md) | Eval and fixture plan |

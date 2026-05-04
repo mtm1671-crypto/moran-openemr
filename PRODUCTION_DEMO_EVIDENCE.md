@@ -13,6 +13,10 @@ Captured: 2026-04-29 22:39 America/Chicago / 2026-04-30T03:39Z
 Latest deployed Co-Pilot web build used for the walkthrough:
 `8695fc30-ef37-49bc-9fb4-c504929367a7`.
 
+Note: the original deployed walkthrough below proves the Week 1 chat/source-link path.
+The Week 2 document extraction/review workflow is implemented and verified locally, but
+still needs redeploy plus a fresh deployed smoke capture before early submission.
+
 ## What The Live Walkthrough Proves
 
 - OpenEMR is running on Railway and accepts clinician login.
@@ -120,6 +124,20 @@ Trusted OpenEMR issuer redirects with api:oemr, api:fhir, and FHIR read scopes
 Local regression checks before redeploy:
 
 ```text
-npm run test:e2e: 6 passed
+API pytest tests: 114 passed, 5 skipped
+ruff: all checks passed
+mypy: success
 npm run build: passed
+npm run test:e2e: 7 passed
 ```
+
+## Week 2 Evidence To Recapture After Redeploy
+
+After the latest commit is deployed, capture these additional proof points:
+
+1. Co-Pilot document panel visible after OpenEMR launch.
+2. Synthetic intake form upload and extraction.
+3. Extracted facts with source preview and bounding-box highlight.
+4. `Approve all` review action.
+5. Chat answer to `What social barriers are documented?` showing approved document evidence.
+6. Synthetic lab upload, approval, and `Write labs` result.

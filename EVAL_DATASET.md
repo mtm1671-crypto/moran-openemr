@@ -7,15 +7,13 @@ This eval artifact defines the deterministic dataset and reports the latest auto
 Latest local readiness run recorded for this submission package:
 
 ```text
-Date: 2026-05-03
-Command: .\copilot\scripts\phi-readiness-check.ps1 -SkipDocker
-API tests: 104 passed, 5 skipped
+Date: 2026-05-04
+Command: focused local Week 2 verification
+API tests: 114 passed, 5 skipped
 Ruff: all checks passed
 Mypy: success
-pip-audit: no known vulnerabilities found
-npm audit: no known vulnerabilities found
 Web build: passed
-Playwright: 6 passed
+Playwright: 7 passed
 ```
 
 Latest deployed checks recorded before this doc update:
@@ -87,7 +85,7 @@ Every automated and manual eval uses these pass/fail rules:
 
 | Area | Files | Result |
 |---|---|---|
-| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `104 passed, 5 skipped` API run |
+| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `114 passed, 5 skipped` API run |
 | Patient search and source links | `test_api_patients.py`, `test_api_source.py` | Passed |
 | FHIR client and retry behavior | `test_fhir_client.py`, `test_openemr_auth.py` | Passed |
 | Evidence tools and cache failover | `test_evidence_tools.py`, `test_api_chat_evidence.py` | Passed |
@@ -95,7 +93,8 @@ Every automated and manual eval uses these pass/fail rules:
 | pgvector and embedding behavior | `test_vector_store.py` | Passed |
 | PHI readiness configuration | `test_phi_security.py`, `test_main.py` | Passed |
 | Nightly jobs and reindexing | `test_jobs.py` | Passed |
-| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 6 passed |
+| Week 2 document extraction/review/write | `test_document_models.py`, `test_document_extraction.py`, `test_document_api.py` | Passed |
+| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 7 passed |
 
 ## Manual Demo Acceptance
 
@@ -111,3 +110,5 @@ For the final video, the walkthrough should show:
 8. Citation/source-link click.
 9. Treatment recommendation refusal.
 10. Health/capability evidence from `/readyz` or `/api/capabilities`.
+11. Synthetic intake/lab document extraction with bounding-box citation preview.
+12. Human approval and approved document evidence used in a chat answer.

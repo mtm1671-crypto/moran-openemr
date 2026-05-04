@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { DocumentUploadPanel } from "./components/DocumentUploadPanel";
+
 type RequestUser = {
   user_id: string;
   role: string;
@@ -388,7 +390,12 @@ export default function Home() {
 
   function sourceHref(citation: Citation) {
     if (!citation.source_url) return undefined;
-    if (!citation.source_url.startsWith("/api/source/")) return undefined;
+    if (
+      !citation.source_url.startsWith("/api/source/") &&
+      !citation.source_url.startsWith("/api/documents/")
+    ) {
+      return undefined;
+    }
     return `${apiBase}${citation.source_url}`;
   }
 
@@ -470,6 +477,13 @@ export default function Home() {
           </button>
         ))}
       </nav>
+
+      <DocumentUploadPanel
+        apiBase={apiBase}
+        disabled={!selectedPatient || !isAuthenticated}
+        patientId={selectedPatient?.patient_id ?? null}
+        onStatus={(text) => setLines((current) => [...current, { role: "status", text }])}
+      />
 
       <section className="chat" aria-label="Chat">
         <div className="messages">

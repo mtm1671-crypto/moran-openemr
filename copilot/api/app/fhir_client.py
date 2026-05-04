@@ -26,6 +26,9 @@ class OpenEMRFhirClient:
     async def read_resource(self, resource_type: str, resource_id: str) -> dict[str, Any]:
         return await self._request_json("GET", f"/{resource_type}/{resource_id}")
 
+    async def create_resource(self, resource_type: str, resource: dict[str, Any]) -> dict[str, Any]:
+        return await self._request_json("POST", f"/{resource_type}", json_body=resource)
+
     async def get_patient(self, patient_id: str) -> dict[str, Any]:
         return await self.read_resource("Patient", patient_id)
 
@@ -96,6 +99,7 @@ class OpenEMRFhirClient:
         path: str,
         *,
         params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         async with httpx.AsyncClient(
             timeout=self._timeout_seconds,
@@ -108,6 +112,7 @@ class OpenEMRFhirClient:
                 policy=self._retry_policy,
                 headers=self._headers(),
                 params=params,
+                json=json_body,
             )
             return cast(dict[str, Any], response.json())
 

@@ -9,8 +9,10 @@ The repository root [README.md](README.md) is the primary final-submission and s
 | [PRESEARCH.md](PRESEARCH.md) | Pre-code planning, constraints, and discovery notes |
 | [AUDIT.md](AUDIT.md) | OpenEMR security, performance, architecture, data quality, and compliance audit |
 | [USERS.md](USERS.md) | Target users, workflow, roles, use cases, and demo scenario |
-| [USER.md](USER.md) | Compatibility pointer to `USERS.md` |
+| [USER.md](USER.md) | Standalone primary-user and use-case document |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Co-Pilot architecture, OpenEMR placement, verification, and tradeoffs |
+| [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |
+| [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) | Week 2 early submission blockers, smoke path, and deployment checklist |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Local and Railway deployment plan |
 | [DEMO_PLAN.md](DEMO_PLAN.md) | 3-5 minute demo script and talk track |
 | [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Deployed walkthrough evidence, screenshots, and data-flow proof |

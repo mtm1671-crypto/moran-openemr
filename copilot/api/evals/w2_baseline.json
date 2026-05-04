@@ -1,0 +1,16 @@
+{
+  "status": "pseudocode_baseline_placeholder",
+  "note": "Replace with committed Week 2 eval summary once the 50-case runner exists.",
+  "hard_gate_categories": [
+    "schema_valid",
+    "citation_present",
+    "bbox_valid",
+    "patient_scope_valid",
+    "safe_refusal",
+    "no_phi_in_logs",
+    "no_unapproved_chart_write",
+    "low_confidence_write_blocked",
+    "duplicate_observation_prevented",
+    "source_roundtrip_valid"
+  ]
+}

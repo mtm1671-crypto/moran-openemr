@@ -1,0 +1,178 @@
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '20px', 'fontFamily': 'Inter, system-ui, sans-serif', 'primaryColor': '#f8fafc', 'primaryTextColor': '#0f172a', 'lineColor': '#475569', 'secondaryColor': '#e2e8f0', 'tertiaryColor': '#f1f5f9'}, 'flowchart': {'curve': 'basis', 'nodeSpacing': 60, 'rankSpacing': 80, 'padding': 20}}}%%
+flowchart LR
+
+%% ============================================================
+%% CLIENT
+%% ============================================================
+subgraph CLIENT["CLINICIAN + CO-PILOT WEB"]
+  direction TB
+  UI["Upload &amp; Review UI<br/>Question UI<br/>/api/status panel"]
+end
+
+%% ============================================================
+%% API + WORKERS (single FastAPI service)
+%% ============================================================
+subgraph APP["FASTAPI + LANGGRAPH SERVICE"]
+  direction TB
+  AUTH["Auth + Patient Guard<br/>FHIR bearer revalidated per request"]
+  SUP["Rule-Based Supervisor<br/>typed GraphState<br/>RoutingDecision per transition<br/>closed reason_code enum"]
+  EX["intake-extractor<br/>Mistral OCR → deterministic parser<br/>→ vision crop / full-page fallback<br/>ExtractedFact[] append-only"]
+  ER["evidence-retriever<br/>structured query or 4o-mini rewriter<br/>patient FHIR + guideline RAG<br/>BM25 + HNSW + RRF + Cohere rerank"]
+  AC["answer-composer<br/>two-bundle prompt<br/>strict ClinicalAnswer payload"]
+  VER["Verifier (typed rule pipeline)<br/>5 targets · severity-driven action<br/>regen / refuse / block_write / block_log"]
+end
+
+%% ============================================================
+%% OUTBOX + DRAIN
+%% ============================================================
+subgraph DRAIN["OUTBOX DRAIN WORKERS"]
+  direction TB
+  DW["Multi-worker SKIP LOCKED<br/>per-tenant advisory lock<br/>Observation + Provenance POST<br/>If-None-Exist + round-trip verify<br/>retry → backoff → DLQ"]
+end
+
+%% ============================================================
+%% POSTGRES (single instance)
+%% ============================================================
+subgraph DB["POSTGRES — ParadeDB BM25 + pgvector HNSW"]
+  direction TB
+  OPER["Operational tables (monthly partitioned)<br/>extraction_jobs · extracted_facts<br/>routing_decisions · verification_runs<br/>retrieval_runs · observation_writes<br/>cost_events (per org_id)"]
+  QUEUE["Outbox<br/>pending_observation_writes · DLQ"]
+  CORPUS["Guideline corpus<br/>guideline_documents · guideline_chunks<br/>chunk_hash UNIQUE"]
+  PHI["Compliance schema (write-only role)<br/>phi_access_log · chain_heads<br/>per-tenant hash chain · monthly partitions"]
+end
+
+%% ============================================================
+%% OPENEMR
+%% ============================================================
+subgraph EMR["OPENEMR (FHIR) — source of truth"]
+  direction TB
+  PAT["Patient · DocumentReference · Binary"]
+  OBS["Observation · Provenance"]
+end
+
+%% ============================================================
+%% EXTERNAL PROVIDERS
+%% ============================================================
+subgraph PROV["EXTERNAL ML/LLM PROVIDERS"]
+  direction TB
+  MISTRAL["Mistral OCR<br/>fallback: Azure DocIntel"]
+  OPENAI["OpenAI<br/>gpt-4.1 vision · gpt-4.1 answer<br/>4o-mini rewriter · embedding-3-large"]
+  COHERE["Cohere Rerank v3<br/>skip-on-confidence-gap<br/>fallback: Voyage"]
+end
+
+%% ============================================================
+%% OBSERVABILITY
+%% ============================================================
+subgraph OBS_STACK["OBSERVABILITY (self-hosted, OTel-native)"]
+  direction TB
+  OTEL["OTel Collector + OpenLLMetry"]
+  BACKENDS["Tempo · Loki · Mimir · Langfuse"]
+  DASH["Grafana + Alertmanager → PagerDuty<br/>SLO burn · cost · latency · compliance"]
+end
+
+%% ============================================================
+%% COMPLIANCE ARCHIVE
+%% ============================================================
+subgraph WORM["COMPLIANCE ARCHIVE (separate AWS account)"]
+  direction TB
+  S3["S3 Object Lock — COMPLIANCE mode<br/>monthly partition snapshots<br/>KMS-signed Merkle root<br/>retention 6 years 30 days"]
+end
+
+%% ============================================================
+%% SYNTHETIC MONITORING
+%% ============================================================
+subgraph SYN["CONTINUOUS SYNTHETIC MONITORING"]
+  direction TB
+  SMR["Stratified eval · smoke 15min<br/>full hourly · cross-variant nightly"]
+end
+
+%% ============================================================
+%% PRIMARY EDGES
+%% ============================================================
+
+%% Client → API
+UI --> AUTH
+
+%% Auth → Supervisor
+AUTH --> SUP
+AUTH -.FHIR Patient read.-> PAT
+
+%% Document upload path: API stores source in OpenEMR
+AUTH -.Binary + DocumentReference<br/>If-None-Exist.-> PAT
+
+%% Supervisor → workers
+SUP --> EX
+SUP --> ER
+SUP --> AC
+
+%% Workers → external providers
+EX --> MISTRAL
+EX --> OPENAI
+ER --> COHERE
+ER --> OPENAI
+AC --> OPENAI
+
+%% Workers → DB
+EX --> OPER
+ER --> CORPUS
+ER --> OPER
+AC --> OPER
+
+%% ER also reads patient FHIR
+ER -.patient evidence.-> PAT
+
+%% Verification
+EX --> VER
+AC --> VER
+VER --> OPER
+VER -.regenerate / refuse / block.-> SUP
+
+%% Approval → outbox
+SUP -.transactional<br/>outbox insert.-> QUEUE
+
+%% Drain → FHIR write
+QUEUE --> DW
+DW -- POST + round-trip verify --> OBS
+DW --> OPER
+
+%% PHI access logging
+AUTH -.every PHI access.-> PHI
+PHI -.monthly snapshot<br/>+ Merkle root.-> S3
+
+%% Cost telemetry
+MISTRAL -.cost_events.-> OPER
+OPENAI -.cost_events.-> OPER
+COHERE -.cost_events.-> OPER
+
+%% Observability flows
+APP -.OTel spans + logs.-> OTEL
+DRAIN -.OTel spans.-> OTEL
+OTEL --> BACKENDS
+BACKENDS --> DASH
+
+%% Synthetic monitoring drives the system from outside
+SMR -.HTTP traffic.-> AUTH
+SMR -.eval pass-rate SLO.-> BACKENDS
+
+%% ============================================================
+%% STYLING
+%% ============================================================
+classDef client fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#0b1733
+classDef api fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#052e16
+classDef worker fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#1f1300
+classDef data fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#1e1140
+classDef emr fill:#cffafe,stroke:#0e7490,stroke-width:2px,color:#062834
+classDef provider fill:#fee2e2,stroke:#b91c1c,stroke-width:2px,color:#3b0a0a
+classDef obs fill:#f5d0fe,stroke:#a21caf,stroke-width:2px,color:#3b0938
+classDef worm fill:#fde68a,stroke:#a16207,stroke-width:2px,color:#1c0f01
+classDef syn fill:#d1fae5,stroke:#047857,stroke-width:2px,color:#022c22
+
+class UI client
+class AUTH,SUP api
+class EX,ER,AC,VER,DW worker
+class OPER,QUEUE,CORPUS,PHI data
+class PAT,OBS emr
+class MISTRAL,OPENAI,COHERE provider
+class OTEL,BACKENDS,DASH obs
+class S3 worm
+class SMR syn

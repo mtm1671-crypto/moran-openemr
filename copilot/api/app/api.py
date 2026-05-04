@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from app.auth import get_request_user
 from app.config import Settings, get_settings
+from app.document_ingestion import router as document_router
+from app.document_storage import approved_document_evidence
 from app.evidence_tools import EvidenceRetrievalResult, FhirEvidenceService
 from app.fhir_client import OpenEMRFhirClient
 from app.models import (
@@ -53,6 +55,7 @@ from app.vector_store import VectorStoreError, index_and_search_evidence, search
 from app.verifier import VerificationError, verify_answer
 
 router = APIRouter()
+router.include_router(document_router)
 
 
 async def initialize_phi_storage(settings: Settings) -> None:
@@ -1116,9 +1119,13 @@ async def _retrieve_evidence(
     settings: Settings,
 ) -> EvidenceRetrievalResult:
     if settings.openemr_fhir_base_url is None:
+        document_evidence = approved_document_evidence(request.patient_id)
         retrieval = EvidenceRetrievalResult(
-            evidence=_demo_evidence(request.patient_id),
-            tools=["demo_evidence"],
+            evidence=_merge_evidence(_demo_evidence(request.patient_id), document_evidence),
+            tools=_merge_strings(
+                ["demo_evidence"],
+                ["approved_document_evidence"] if document_evidence else [],
+            ),
             limitations=["OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."],
         )
         if settings.vector_search_enabled:
@@ -1142,6 +1149,13 @@ async def _retrieve_evidence(
         quick_question_id=request.quick_question_id,
         service=service,
     )
+    document_evidence = approved_document_evidence(request.patient_id)
+    if document_evidence:
+        retrieval = EvidenceRetrievalResult(
+            evidence=_merge_evidence(retrieval.evidence, document_evidence),
+            tools=_merge_strings(retrieval.tools, ["approved_document_evidence"]),
+            limitations=retrieval.limitations,
+        )
     if settings.vector_search_enabled:
         return await _augment_with_vector_search_with_failover(
             settings=settings,
