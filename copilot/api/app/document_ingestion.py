@@ -35,7 +35,7 @@ from app.document_storage import (
 )
 from app.extraction_adapters import ExtractionError
 from app.fhir_client import OpenEMRFhirClient
-from app.extraction_pipeline import extract_document_facts
+from app.extraction_pipeline import extract_document_facts_async
 from app.models import RequestUser, Role
 from app.observation_writer import ObservationWriteError, write_lab_fact_observation
 from app.ocr_layout import LayoutExtractionError
@@ -75,13 +75,14 @@ async def attach_and_extract(
 
     update_document_job(job.job_id, status=W2JobStatus.extracting, trace="extracting_started")
     try:
-        facts = extract_document_facts(
+        facts = await extract_document_facts_async(
             job_id=job.job_id,
             patient_id=request.patient_id,
             doc_type=request.doc_type,
             source_id=source.source_id,
             content=source.content,
             content_type=source.content_type,
+            settings=settings,
         )
     except (ExtractionError, LayoutExtractionError, ValueError) as exc:
         update_document_job(

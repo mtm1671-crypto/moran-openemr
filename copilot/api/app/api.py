@@ -87,6 +87,23 @@ class VectorStatusResponse(BaseModel):
     candidate_limit: int
 
 
+class ModelStatusResponse(BaseModel):
+    llm_provider: str
+    llm_model: str | None
+    embedding_provider: str
+    embedding_model: str | None
+    ocr_provider: str
+    ocr_model: str | None
+    ocr_enabled: bool
+    vision_ocr_enabled: bool
+    external_model_egress: bool
+    phi_controls_required: bool
+    openai_configured: bool
+    openrouter_configured: bool
+    openrouter_demo_data_only: bool
+    model_retry_attempts: int
+
+
 @router.get("/healthz", response_model=HealthResponse)
 async def healthz(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(ok=True, service="clinical-copilot-api", environment=settings.app_env)
@@ -129,6 +146,16 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
     nightly_reindex_ok = not settings.nightly_reindex_enabled or service_account_configured
     if not nightly_reindex_ok:
         errors = [*errors, "OpenEMR service account is required for nightly reindex"]
+    openai_configured = not settings.uses_openai_models() or settings.openai_api_key is not None
+    openrouter_configured = (
+        not settings.uses_openrouter_models() or settings.openrouter_api_key is not None
+    )
+    ocr_provider_configured = (
+        settings.ocr_provider == "none"
+        or (settings.ocr_provider == "openai" and settings.openai_api_key is not None)
+        or (settings.ocr_provider == "openrouter" and settings.openrouter_api_key is not None)
+    )
+    ocr_model_configured = settings.ocr_model_configured()
 
     return ReadinessResponse(
         ok=not errors,
@@ -152,12 +179,17 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
             "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
             "nightly_reindex_enabled": settings.nightly_reindex_enabled,
             "structured_logging": settings.structured_logging_enabled,
+            "ocr_enabled": settings.ocr_provider != "none",
+            "ocr_provider_configured": ocr_provider_configured,
+            "ocr_model_configured": ocr_model_configured,
+            "vision_ocr_enabled": settings.ocr_provider in {"openai", "openrouter"},
             "openemr_fhir_configured": settings.openemr_fhir_base_url is not None
             or not settings.requires_phi_controls(),
             "openemr_tls_verify": settings.openemr_tls_verify or not settings.requires_phi_controls(),
             "llm_egress_disabled": (
                 settings.llm_provider == "mock"
                 and settings.embedding_provider == "none"
+                and settings.ocr_provider == "none"
                 and not (
                     settings.vector_search_enabled
                     and settings.vector_embedding_provider == "openai"
@@ -168,21 +200,8 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
                 and not settings.allow_phi_to_local
             )
             or not settings.requires_phi_controls(),
-            "openai_configured": (
-                settings.openai_api_key is not None
-                if settings.llm_provider == "openai"
-                or settings.embedding_provider == "openai"
-                or (
-                    settings.vector_search_enabled
-                    and settings.vector_embedding_provider == "openai"
-                )
-                else True
-            ),
-            "openrouter_configured": (
-                settings.openrouter_api_key is not None
-                if settings.llm_provider == "openrouter"
-                else True
-            ),
+            "openai_configured": openai_configured,
+            "openrouter_configured": openrouter_configured,
         },
         errors=errors,
     )
@@ -198,6 +217,28 @@ async def vector_status(settings: Settings = Depends(get_settings)) -> VectorSta
         embedding_dimensions=settings.vector_embedding_dimensions,
         search_limit=settings.vector_search_limit,
         candidate_limit=settings.vector_candidate_limit,
+    )
+
+
+@router.get("/api/models/status", response_model=ModelStatusResponse)
+async def model_status(settings: Settings = Depends(get_settings)) -> ModelStatusResponse:
+    return ModelStatusResponse(
+        llm_provider=settings.llm_provider,
+        llm_model=_configured_llm_model(settings),
+        embedding_provider=settings.embedding_provider,
+        embedding_model=_configured_embedding_model(settings),
+        ocr_provider=settings.ocr_provider,
+        ocr_model=_configured_ocr_model(settings),
+        ocr_enabled=settings.ocr_provider != "none",
+        vision_ocr_enabled=settings.ocr_provider in {"openai", "openrouter"},
+        external_model_egress=settings.uses_openai_models() or settings.uses_openrouter_models(),
+        phi_controls_required=settings.requires_phi_controls(),
+        openai_configured=not settings.uses_openai_models() or settings.openai_api_key is not None,
+        openrouter_configured=(
+            not settings.uses_openrouter_models() or settings.openrouter_api_key is not None
+        ),
+        openrouter_demo_data_only=settings.openrouter_demo_data_only,
+        model_retry_attempts=settings.model_retry_attempts,
     )
 
 
@@ -259,6 +300,13 @@ async def capabilities(settings: Settings = Depends(get_settings)) -> Capability
             "local_phi_allowed": settings.allow_phi_to_local,
             "vector_search_enabled": settings.vector_search_enabled,
             "vector_embeddings_external": settings.vector_embedding_provider == "openai",
+            "ocr_enabled": settings.ocr_provider != "none",
+            "ocr_openai_enabled": settings.ocr_provider == "openai",
+            "ocr_openrouter_enabled": settings.ocr_provider == "openrouter",
+            "vision_ocr_enabled": settings.ocr_provider in {"openai", "openrouter"},
+            "external_model_egress": settings.uses_openai_models()
+            or settings.uses_openrouter_models(),
+            "openrouter_demo_data_only": settings.openrouter_demo_data_only,
             "vector_index_backend_pgvector": settings.vector_index_backend == "pgvector",
             "evidence_cache_enabled": settings.evidence_cache_enabled,
             "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
@@ -1439,6 +1487,28 @@ def _provider_for_settings(settings: Settings) -> ProviderAdapter:
     if settings.llm_provider == "openrouter":
         return OpenRouterProviderAdapter(settings)
     raise OpenAIModelError(f"Unsupported LLM provider: {settings.llm_provider}")
+
+
+def _configured_llm_model(settings: Settings) -> str | None:
+    if settings.llm_provider == "openai":
+        return settings.openai_llm_model
+    if settings.llm_provider == "openrouter":
+        return settings.openrouter_llm_model
+    return None
+
+
+def _configured_embedding_model(settings: Settings) -> str | None:
+    if settings.embedding_provider == "openai":
+        return settings.openai_embedding_model
+    return None
+
+
+def _configured_ocr_model(settings: Settings) -> str | None:
+    if settings.ocr_provider == "openai":
+        return settings.openai_ocr_model
+    if settings.ocr_provider == "openrouter":
+        return settings.openrouter_ocr_model
+    return None
 
 
 def _require_reindex_access(user: RequestUser) -> None:

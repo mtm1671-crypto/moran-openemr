@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     openrouter_baa_confirmed: bool = False
     openrouter_data_policy_confirmed: bool = False
     model_evidence_limit: int = 12
+    ocr_provider: str = "none"
+    openai_ocr_model: str = "gpt-4.1-mini"
+    openai_ocr_detail: str = "high"
+    openai_ocr_max_output_tokens: int = 2500
+    openrouter_ocr_model: str = "baidu/qianfan-ocr-fast:free"
+    openrouter_ocr_max_tokens: int = 2500
     vector_search_enabled: bool = False
     vector_embedding_provider: str = "hash"
     vector_embedding_dimensions: int = 256
@@ -119,6 +125,26 @@ class Settings(BaseSettings):
     def requires_phi_controls(self) -> bool:
         return self.phi_mode or self.app_env.lower() in _PHI_ENV_NAMES
 
+    def uses_openai_models(self) -> bool:
+        return (
+            self.llm_provider == "openai"
+            or self.embedding_provider == "openai"
+            or self.ocr_provider == "openai"
+            or (self.vector_search_enabled and self.vector_embedding_provider == "openai")
+        )
+
+    def uses_openrouter_models(self) -> bool:
+        return self.llm_provider == "openrouter" or self.ocr_provider == "openrouter"
+
+    def ocr_model_configured(self) -> bool:
+        if self.ocr_provider == "none":
+            return True
+        if self.ocr_provider == "openai":
+            return bool(self.openai_ocr_model.strip())
+        if self.ocr_provider == "openrouter":
+            return bool(self.openrouter_ocr_model.strip())
+        return False
+
     def runtime_config_errors(self) -> list[str]:
         errors: list[str] = []
         if self.llm_provider not in {"mock", "openai", "openrouter"}:
@@ -137,6 +163,29 @@ class Settings(BaseSettings):
             errors.append("OPENROUTER_TIMEOUT_SECONDS must be greater than 0")
         if self.openrouter_max_tokens <= 0:
             errors.append("OPENROUTER_MAX_TOKENS must be greater than 0")
+        if not self.openai_llm_model.strip():
+            errors.append("OPENAI_LLM_MODEL must not be blank")
+        if not self.openai_embedding_model.strip():
+            errors.append("OPENAI_EMBEDDING_MODEL must not be blank")
+        if not self.openrouter_llm_model.strip():
+            errors.append("OPENROUTER_LLM_MODEL must not be blank")
+        if self.ocr_provider not in {"none", "openai", "openrouter"}:
+            errors.append("OCR_PROVIDER must be one of: none, openai, openrouter")
+        if self.openai_ocr_detail not in {"auto", "high", "low"}:
+            errors.append("OPENAI_OCR_DETAIL must be one of: auto, high, low")
+        if self.openai_ocr_max_output_tokens <= 0:
+            errors.append("OPENAI_OCR_MAX_OUTPUT_TOKENS must be greater than 0")
+        if self.openrouter_ocr_max_tokens <= 0:
+            errors.append("OPENROUTER_OCR_MAX_TOKENS must be greater than 0")
+        if self.ocr_provider == "openai" and not self.openai_ocr_model.strip():
+            errors.append("OPENAI_OCR_MODEL must not be blank when OCR_PROVIDER=openai")
+        if self.ocr_provider == "openrouter":
+            if not self.openrouter_ocr_model.strip():
+                errors.append("OPENROUTER_OCR_MODEL must not be blank when OCR_PROVIDER=openrouter")
+            if self.openrouter_ocr_model.strip() == "openrouter/free" and self.requires_phi_controls():
+                errors.append(
+                    "OPENROUTER_OCR_MODEL must name a concrete OCR/vision model for PHI-mode OCR"
+                )
         if self.openemr_request_timeout_seconds <= 0:
             errors.append("OPENEMR_REQUEST_TIMEOUT_SECONDS must be greater than 0")
         if self.openemr_retry_attempts <= 0:
@@ -189,16 +238,12 @@ class Settings(BaseSettings):
         if self.nightly_reindex_enabled and not self.openemr_service_account_enabled:
             errors.append("OPENEMR_SERVICE_ACCOUNT_ENABLED must be true when nightly reindex is enabled")
 
-        uses_openai = (
-            self.llm_provider == "openai"
-            or self.embedding_provider == "openai"
-            or (self.vector_search_enabled and self.vector_embedding_provider == "openai")
-        )
+        uses_openai = self.uses_openai_models()
         if uses_openai and self.openai_api_key is None:
             errors.append("OPENAI_API_KEY is required when OpenAI models are enabled")
         if uses_openai:
             _require_https("OPENAI_BASE_URL", self.openai_base_url, errors)
-        uses_openrouter = self.llm_provider == "openrouter"
+        uses_openrouter = self.uses_openrouter_models()
         if uses_openrouter and self.openrouter_api_key is None:
             errors.append("OPENROUTER_API_KEY is required when OpenRouter is enabled")
         if uses_openrouter:

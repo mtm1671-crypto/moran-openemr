@@ -210,5 +210,7 @@ def _final_event(stream_text: str) -> dict[str, Any]:
     for event in stream_text.split("\n\n"):
         if event.startswith("event: final"):
             data_line = next(line for line in event.splitlines() if line.startswith("data: "))
-            return json.loads(data_line.removeprefix("data: "))
+            payload = json.loads(data_line.removeprefix("data: "))
+            assert isinstance(payload, dict)
+            return payload
     raise AssertionError("No final SSE event found")

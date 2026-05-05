@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.4.0",
+    "pypdf>=6.0.0",
     "python-jose[cryptography]>=3.3.0",
     "cryptography>=42.0.0",
     "sqlalchemy[asyncio]>=2.0.0",
@@ -35,6 +36,7 @@ strict = true
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=69.0"]

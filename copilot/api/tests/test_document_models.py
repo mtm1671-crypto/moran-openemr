@@ -1,4 +1,5 @@
 import base64
+from datetime import date
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +10,7 @@ from app.document_models import (
     DocumentSourceCitation,
     LabResultFact,
     W2CitationSourceType,
+    W2DocType,
 )
 
 
@@ -46,7 +48,7 @@ def test_lab_result_fact_accepts_source_backed_value() -> None:
         value="8.6",
         unit="%",
         reference_range="4.0-5.6",
-        collection_date="2026-03-12",
+        collection_date=date.fromisoformat("2026-03-12"),
         abnormal_flag="high",
         source_citation=citation,
         extraction_confidence=0.93,
@@ -59,11 +61,10 @@ def test_lab_result_fact_accepts_source_backed_value() -> None:
 def test_attach_request_decodes_bounded_base64_content() -> None:
     request = DocumentAttachExtractRequest(
         patient_id="p1",
-        doc_type="lab_pdf",
+        doc_type=W2DocType.lab_pdf,
         filename="lab.txt",
         content_type="text/plain",
         content_base64=base64.b64encode(b"Hemoglobin A1c 8.6 % H").decode("ascii"),
     )
 
     assert request.decoded_content() == b"Hemoglobin A1c 8.6 % H"
-

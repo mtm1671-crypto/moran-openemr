@@ -12,7 +12,8 @@ from app.document_models import (
     W2ProposedDestination,
 )
 from app.extraction_adapters import extract_typed_facts
-from app.ocr_layout import extract_layout
+from app.config import Settings
+from app.ocr_layout import extract_layout, extract_layout_async
 
 
 def extract_document_facts(
@@ -25,6 +26,29 @@ def extract_document_facts(
     content_type: str,
 ) -> list[ExtractedFact]:
     layout = extract_layout(content, content_type)
+    typed_facts = extract_typed_facts(doc_type=doc_type, layout=layout, source_id=source_id)
+    return [
+        _normalize_fact(
+            job_id=job_id,
+            patient_id=patient_id,
+            doc_type=doc_type,
+            fact=fact,
+        )
+        for fact in typed_facts
+    ]
+
+
+async def extract_document_facts_async(
+    *,
+    job_id: str,
+    patient_id: str,
+    doc_type: W2DocType,
+    source_id: str,
+    content: bytes,
+    content_type: str,
+    settings: Settings,
+) -> list[ExtractedFact]:
+    layout = await extract_layout_async(content, content_type, settings)
     typed_facts = extract_typed_facts(doc_type=doc_type, layout=layout, source_id=source_id)
     return [
         _normalize_fact(
@@ -92,4 +116,3 @@ def _lab_normalized_value(fact: LabResultFact) -> str:
 def _fact_id(*parts: object) -> str:
     digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
     return f"w2fact-{digest[:24]}"
-

@@ -307,7 +307,9 @@ def test_agent_document_write_is_idempotent_under_concurrent_pressure(
         ),
     )
     assert upload.status_code == 202
-    job_id = upload.json()["job"]["job_id"]
+    raw_job_id = upload.json()["job"]["job_id"]
+    assert isinstance(raw_job_id, str)
+    job_id = raw_job_id
     facts = client.get(f"/api/documents/{job_id}/review").json()["facts"]
     client.post(
         f"/api/documents/{job_id}/review/decisions",
@@ -442,7 +444,9 @@ def _upload_and_approve_intake(
         json=_document_payload(content, patient_id=patient_id, filename=f"{patient_id}.txt"),
     )
     assert upload.status_code == 202
-    job_id = upload.json()["job"]["job_id"]
+    raw_job_id = upload.json()["job"]["job_id"]
+    assert isinstance(raw_job_id, str)
+    job_id = raw_job_id
     facts = client.get(f"/api/documents/{job_id}/review").json()["facts"]
     approve = client.post(
         f"/api/documents/{job_id}/review/decisions",
@@ -472,5 +476,7 @@ def _final_event(stream_text: str) -> dict[str, Any]:
     for event in stream_text.split("\n\n"):
         if event.startswith("event: final"):
             data_line = next(line for line in event.splitlines() if line.startswith("data: "))
-            return json.loads(data_line.removeprefix("data: "))
+            payload = json.loads(data_line.removeprefix("data: "))
+            assert isinstance(payload, dict)
+            return payload
     raise AssertionError("No final SSE event found")

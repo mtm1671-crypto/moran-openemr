@@ -131,10 +131,36 @@ def test_production_config_rejects_openai_without_api_key() -> None:
     )
 
 
+def test_production_config_rejects_openai_ocr_without_api_key() -> None:
+    settings = _phi_ready_settings(
+        ocr_provider="openai",
+        allow_phi_to_openai=True,
+        openai_baa_confirmed=True,
+        openai_data_policy_confirmed=True,
+    )
+
+    assert "OPENAI_API_KEY is required when OpenAI models are enabled" in (
+        settings.runtime_config_errors()
+    )
+
+
 def test_production_config_rejects_openai_without_phi_approvals() -> None:
     settings = _phi_ready_settings(
         llm_provider="openai",
         embedding_provider="openai",
+        openai_api_key="test-key",
+    )
+
+    errors = settings.runtime_config_errors()
+
+    assert "ALLOW_PHI_TO_OPENAI must be true before PHI can be sent to OpenAI" in errors
+    assert "OPENAI_BAA_CONFIRMED must be true before PHI can be sent to OpenAI" in errors
+    assert "OPENAI_DATA_POLICY_CONFIRMED must be true before PHI can be sent to OpenAI" in errors
+
+
+def test_production_config_rejects_openai_ocr_without_phi_approvals() -> None:
+    settings = _phi_ready_settings(
+        ocr_provider="openai",
         openai_api_key="test-key",
     )
 
@@ -156,6 +182,68 @@ def test_production_config_rejects_openrouter_without_api_key() -> None:
     )
 
 
+def test_production_config_rejects_openrouter_ocr_without_api_key() -> None:
+    settings = _phi_ready_settings(
+        ocr_provider="openrouter",
+        openrouter_demo_data_only=True,
+    )
+
+    assert "OPENROUTER_API_KEY is required when OpenRouter is enabled" in (
+        settings.runtime_config_errors()
+    )
+
+
+def test_production_config_rejects_generic_openrouter_free_for_phi_ocr() -> None:
+    settings = _phi_ready_settings(
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        openrouter_demo_data_only=True,
+        openrouter_ocr_model="openrouter/free",
+    )
+
+    assert (
+        "OPENROUTER_OCR_MODEL must name a concrete OCR/vision model for PHI-mode OCR"
+        in settings.runtime_config_errors()
+    )
+
+
+def test_production_config_rejects_blank_ocr_models() -> None:
+    openai_settings = _phi_ready_settings(
+        ocr_provider="openai",
+        openai_api_key="test-key",
+        allow_phi_to_openai=True,
+        openai_baa_confirmed=True,
+        openai_data_policy_confirmed=True,
+        openai_ocr_model=" ",
+    )
+    openrouter_settings = _phi_ready_settings(
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        openrouter_demo_data_only=True,
+        openrouter_ocr_model=" ",
+    )
+
+    assert "OPENAI_OCR_MODEL must not be blank when OCR_PROVIDER=openai" in (
+        openai_settings.runtime_config_errors()
+    )
+    assert "OPENROUTER_OCR_MODEL must not be blank when OCR_PROVIDER=openrouter" in (
+        openrouter_settings.runtime_config_errors()
+    )
+
+
+def test_production_config_rejects_invalid_openrouter_ocr_token_budget() -> None:
+    settings = _phi_ready_settings(
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        openrouter_demo_data_only=True,
+        openrouter_ocr_max_tokens=0,
+    )
+
+    assert "OPENROUTER_OCR_MAX_TOKENS must be greater than 0" in (
+        settings.runtime_config_errors()
+    )
+
+
 def test_production_config_rejects_openrouter_without_demo_or_phi_approval() -> None:
     settings = _phi_ready_settings(
         llm_provider="openrouter",
@@ -171,6 +259,7 @@ def test_production_config_rejects_openrouter_without_demo_or_phi_approval() -> 
 def test_production_config_accepts_openrouter_for_synthetic_demo_data() -> None:
     settings = _phi_ready_settings(
         llm_provider="openrouter",
+        ocr_provider="openrouter",
         openrouter_api_key="test-key",
         openrouter_demo_data_only=True,
     )
@@ -182,6 +271,7 @@ def test_production_config_accepts_explicit_openai_phi_path() -> None:
     settings = _phi_ready_settings(
         llm_provider="openai",
         embedding_provider="openai",
+        ocr_provider="openai",
         openai_api_key="test-key",
         allow_phi_to_openai=True,
         openai_baa_confirmed=True,
@@ -241,6 +331,50 @@ def test_readyz_reports_runtime_checks() -> None:
     assert payload["checks"]["runtime_config"] is True
 
 
+def test_readyz_reports_openrouter_config_for_ocr_only() -> None:
+    settings = Settings(app_env="local", ocr_provider="openrouter")
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = TestClient(app).get("/readyz")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["checks"]["ocr_enabled"] is True
+    assert payload["checks"]["ocr_provider_configured"] is False
+    assert payload["checks"]["openrouter_configured"] is False
+    assert "OPENROUTER_API_KEY is required when OpenRouter is enabled" in payload["errors"]
+
+
+def test_model_status_reports_sanitized_model_wiring() -> None:
+    settings = Settings(
+        app_env="local",
+        llm_provider="openrouter",
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        openrouter_demo_data_only=True,
+        openrouter_ocr_model="baidu/qianfan-ocr-fast:free",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = TestClient(app).get("/api/models/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["llm_provider"] == "openrouter"
+    assert payload["llm_model"] == "nvidia/nemotron-3-super-120b-a12b:free"
+    assert payload["ocr_provider"] == "openrouter"
+    assert payload["ocr_model"] == "baidu/qianfan-ocr-fast:free"
+    assert payload["vision_ocr_enabled"] is True
+    assert payload["external_model_egress"] is True
+    assert payload["openrouter_configured"] is True
+    assert "test-key" not in response.text
+
+
 def test_capabilities_expose_llm_callable_tool_schemas() -> None:
     response = TestClient(app).get("/api/capabilities")
 
@@ -262,6 +396,7 @@ def test_capabilities_expose_llm_callable_tool_schemas() -> None:
     assert search_schema["required"] == ["patient_id", "query"]
     assert search_schema["properties"]["query"]["minLength"] == 2
     assert "evidence_cache_enabled" in payload["providers"]
+    assert "vision_ocr_enabled" in payload["providers"]
 
 
 def test_vector_status_reports_default_disabled_state() -> None:

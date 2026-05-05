@@ -224,7 +224,15 @@ class DocumentAttachExtractRequest(BaseModel):
     @classmethod
     def validate_content_type(cls, value: str) -> str:
         normalized = value.lower().strip()
-        allowed = {"application/pdf", "text/plain", "text/csv", "application/octet-stream"}
+        allowed = {
+            "application/pdf",
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "text/plain",
+            "text/csv",
+            "application/octet-stream",
+        }
         if normalized not in allowed:
             raise ValueError("unsupported document content type")
         return normalized
@@ -278,4 +286,3 @@ class DocumentWriteResult(BaseModel):
 
 def now_utc() -> datetime:
     return datetime.now(tz=UTC)
-

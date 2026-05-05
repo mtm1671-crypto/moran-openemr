@@ -27,7 +27,7 @@ end
 %% ============================================================
 subgraph DRAIN["OUTBOX DRAIN WORKERS"]
   direction TB
-  DW["Multi-worker SKIP LOCKED<br/>per-tenant advisory lock<br/>Observation + Provenance POST<br/>If-None-Exist + round-trip verify<br/>retry → backoff → DLQ"]
+  DW["Multi-worker SKIP LOCKED<br/>per-tenant slot table<br/>Observation + Provenance POST<br/>If-None-Exist + round-trip verify<br/>retry → backoff → DLQ"]
 end
 
 %% ============================================================
@@ -38,7 +38,7 @@ subgraph DB["POSTGRES — ParadeDB BM25 + pgvector HNSW"]
   OPER["Operational tables (monthly partitioned)<br/>extraction_jobs · extracted_facts<br/>routing_decisions · verification_runs<br/>retrieval_runs · observation_writes<br/>cost_events (per org_id)"]
   QUEUE["Outbox<br/>pending_observation_writes · DLQ"]
   CORPUS["Guideline corpus<br/>guideline_documents · guideline_chunks<br/>chunk_hash UNIQUE"]
-  PHI["Compliance schema (write-only role)<br/>phi_access_log · chain_heads<br/>per-tenant hash chain · monthly partitions"]
+  PHI["Compliance schema (insert-only app role)<br/>phi_access_log · monthly partitions<br/>WORM archive export"]
 end
 
 %% ============================================================
@@ -66,7 +66,7 @@ end
 subgraph OBS_STACK["OBSERVABILITY (self-hosted, OTel-native)"]
   direction TB
   OTEL["OTel Collector + OpenLLMetry"]
-  BACKENDS["Tempo · Loki · Mimir · Langfuse"]
+  BACKENDS["Tempo metadata · Loki · Mimir<br/>Langfuse prompt traces"]
   DASH["Grafana + Alertmanager → PagerDuty<br/>SLO burn · cost · latency · compliance"]
 end
 
@@ -75,7 +75,7 @@ end
 %% ============================================================
 subgraph WORM["COMPLIANCE ARCHIVE (separate AWS account)"]
   direction TB
-  S3["S3 Object Lock — COMPLIANCE mode<br/>monthly partition snapshots<br/>KMS-signed Merkle root<br/>retention 6 years 30 days"]
+  S3["S3 Object Lock — COMPLIANCE mode<br/>monthly partition snapshots<br/>retention 6 years 30 days"]
 end
 
 %% ============================================================
@@ -137,7 +137,7 @@ DW --> OPER
 
 %% PHI access logging
 AUTH -.every PHI access.-> PHI
-PHI -.monthly snapshot<br/>+ Merkle root.-> S3
+PHI -.monthly immutable snapshot.-> S3
 
 %% Cost telemetry
 MISTRAL -.cost_events.-> OPER

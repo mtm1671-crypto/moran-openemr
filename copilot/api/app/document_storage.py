@@ -42,7 +42,7 @@ class StoredDocumentSource:
 _SOURCES: dict[str, StoredDocumentSource] = {}
 _JOBS: dict[str, DocumentJobRecord] = {}
 _FACTS_BY_JOB: dict[str, list[ExtractedFact]] = {}
-_JOB_BY_SOURCE_KEY: dict[tuple[str, W2DocType, str], str] = {}
+_JOB_BY_SOURCE_KEY: dict[tuple[str, W2DocType, str, str], str] = {}
 _STORE_LOCK = RLock()
 
 
@@ -58,9 +58,15 @@ def source_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def find_reusable_job(*, patient_id: str, doc_type: W2DocType, source_hash: str) -> DocumentJobRecord | None:
+def find_reusable_job(
+    *,
+    patient_id: str,
+    doc_type: W2DocType,
+    source_hash: str,
+    content_type: str,
+) -> DocumentJobRecord | None:
     with _STORE_LOCK:
-        job_id = _JOB_BY_SOURCE_KEY.get((patient_id, doc_type, source_hash))
+        job_id = _JOB_BY_SOURCE_KEY.get((patient_id, doc_type, source_hash, content_type))
         if job_id is None:
             return None
         return _JOBS.get(job_id)
@@ -77,11 +83,17 @@ def create_document_workflow(
 ) -> tuple[DocumentJobRecord, StoredDocumentSource, bool]:
     digest = source_sha256(content)
     with _STORE_LOCK:
-        existing = find_reusable_job(patient_id=patient_id, doc_type=doc_type, source_hash=digest)
+        existing = find_reusable_job(
+            patient_id=patient_id,
+            doc_type=doc_type,
+            source_hash=digest,
+            content_type=content_type,
+        )
         if existing is not None:
             return existing, _SOURCES[existing.source.source_id], False
 
-        source_id = f"local-doc-{digest[:24]}"
+        source_key_digest = hashlib.sha256(f"{content_type}\0{digest}".encode("utf-8")).hexdigest()
+        source_id = f"local-doc-{source_key_digest[:24]}"
         source = StoredDocumentSource(
             source_id=source_id,
             patient_id=patient_id,
@@ -106,7 +118,7 @@ def create_document_workflow(
         _SOURCES[source_id] = source
         _JOBS[job.job_id] = job
         _FACTS_BY_JOB[job.job_id] = []
-        _JOB_BY_SOURCE_KEY[(patient_id, doc_type, digest)] = job.job_id
+        _JOB_BY_SOURCE_KEY[(patient_id, doc_type, digest, content_type)] = job.job_id
         return job, source, True
 
 
