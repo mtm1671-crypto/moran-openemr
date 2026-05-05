@@ -61,7 +61,7 @@ async def attach_and_extract(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    job, source = create_document_workflow(
+    job, source, was_created = create_document_workflow(
         patient_id=request.patient_id,
         doc_type=request.doc_type,
         filename=request.filename,
@@ -69,7 +69,7 @@ async def attach_and_extract(
         content=content,
         actor_user_id=user.user_id,
     )
-    if job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
+    if not was_created or job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
         return _job_response(job.job_id)
 
     update_document_job(job.job_id, status=W2JobStatus.extracting, trace="extracting_started")
