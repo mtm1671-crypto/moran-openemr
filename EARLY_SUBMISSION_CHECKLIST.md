@@ -69,17 +69,14 @@ Add this Week 2 section after the existing chat/source-link walkthrough:
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; the current source preview proves citation/bounding-box plumbing inside Co-Pilot.
 - The 50-case Week 2 eval gate has utility scaffolding and initial fixture shape, but the blocking GitLab CI gate is not activated yet.
 
-## Recommended Next Commands
+## Remaining Manual Submission Work
 
-```powershell
-git status --short
-git add README.md PLANNING.md EARLY_SUBMISSION_CHECKLIST.md W2_ARCHITECTURE.md docs copilot
-git commit -m "Implement Week 2 document evidence workflow"
-git push origin master
-git push gitlab master
-```
+- Add the uploaded demo video link to the submission form.
+- Run the authenticated OpenEMR browser walkthrough after the redeploy.
+- Capture the Week 2 document extraction/review/chat evidence segment in the video or screenshots.
+- Mention the production caveats above clearly.
 
-Then trigger/review Railway deploys and run:
+Optional final local rerun:
 
 ```powershell
 cd copilot/api

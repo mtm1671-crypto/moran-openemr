@@ -16,15 +16,17 @@ Web build: passed
 Playwright: 7 passed
 ```
 
-Latest deployed checks recorded before this doc update:
+Latest deployed checks recorded after the Week 2 redeploy:
 
 ```text
 Co-Pilot API /readyz: ok
+Co-Pilot API document route without auth: 401
+Co-Pilot web /: HTTP 200
+Co-Pilot web document panel markup: present
 pgvector backend: enabled
 operational storage: enabled
 audit persistence: enabled
 conversation persistence: enabled
-Co-Pilot web /: HTTP 200
 Co-Pilot web /api/capabilities: reachable
 ```
 

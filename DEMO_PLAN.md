@@ -2,11 +2,11 @@
 
 ## Demo Goal
 
-Show a serious, source-backed primary care workflow: a clinician authenticates, selects one patient, asks concise chart questions, receives cited answers, and sees the assistant refuse unsupported treatment recommendations.
+Show a serious, source-backed primary care workflow: a clinician authenticates from OpenEMR, selects one patient, asks concise chart questions, receives cited answers, sees the assistant refuse unsupported treatment recommendations, and uses the Week 2 document evidence flow for synthetic intake/lab documents.
 
 Target length: 3-5 minutes.
 
-For the early submission, use the deployed walkthrough in [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md). That artifact includes Railway URLs, screenshots, OAuth proof, agent query proof, citation proof, and health/security smoke checks.
+For submission logistics, use [SUBMISSION.md](SUBMISSION.md). For deployed proof notes, use [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md).
 
 ## Demo Patient
 
@@ -32,24 +32,46 @@ Do not use real PHI.
 
 1. Open the Railway OpenEMR URL briefly and show that the EMR is accessible.
 2. Explain the final placement: the Co-Pilot belongs as a top-level OpenEMR tab alongside Schedule/Calendar, with chart and schedule entry points that launch patient context.
-3. Switch to the current standalone Co-Pilot app and state the implementation scope: local demo auth with OpenEMR-backed FHIR reads.
-4. Show the role-aware landing state as `dev-doctor`.
-5. Search for or select the demo patient.
-6. Ask: "What should I know before seeing this patient?"
-7. Show streamed status:
+3. Launch the deployed Co-Pilot from OpenEMR.
+4. Complete SMART/OAuth if prompted.
+5. Show the authenticated landing state as `doctor`.
+6. Select the demo patient from the patient dropdown.
+7. Ask: "What should I know before seeing this patient?"
+8. Show streamed status:
    - checking access
    - retrieving demographics
    - retrieving active problems
    - retrieving recent labs
    - verifying sources
-8. Show final answer with inline source labels.
-9. Click one citation and open the underlying OpenEMR source or source detail view.
-10. Ask: "Show recent labs and abnormal results."
-11. Show cited lab answer.
-12. Ask: "What medication changes should I make?"
-13. Show refusal:
+9. Show final answer with source labels.
+10. Click one citation and open the source detail view.
+11. Ask: "Summarize recent clinical notes for this patient."
+12. Show cited unstructured note evidence.
+13. Ask: "What medication changes should I make?"
+14. Show refusal:
     - no treatment recommendations in MVP
     - offer to show active problems, recent labs, current meds, and allergies with sources.
+15. Upload a synthetic intake text file:
+
+```text
+Social History: Misses doses when work shifts change
+```
+
+16. Click `Extract`.
+17. Show extracted fact, source preview, bounding-box highlight, and trace.
+18. Click `Approve all`.
+19. Ask: "What social barriers are documented?"
+20. Show the answer citing approved document evidence.
+21. Upload a synthetic lab text file:
+
+```text
+Collection Date: 2026-03-12
+Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
+LDL Cholesterol 142 mg/dL reference range 0-99 H
+```
+
+22. Click `Extract`, `Approve all`, and `Write labs`.
+23. Explain that only approved lab facts are eligible for Observation writes.
 
 ## Product Placement Talk Track
 
@@ -68,6 +90,8 @@ Long term, this belongs directly inside OpenEMR as a top-level Co-Pilot tab alon
 - The assistant can answer follow-ups.
 - The assistant refuses treatment recommendations.
 - The UI exposes a concise audit trail without hidden chain-of-thought.
+- The document workflow preserves source citations and bounding-box evidence.
+- Chart writes are gated by explicit human approval.
 
 ## Failure Cases To Avoid
 
@@ -77,3 +101,4 @@ Long term, this belongs directly inside OpenEMR as a top-level Co-Pilot tab alon
 - Showing raw chain-of-thought.
 - Showing PHI in logs, browser console output, or error messages.
 - Letting the user ask about another patient inside the same conversation context.
+- Presenting the synthetic document workflow as real-PHI-ready persistence.

@@ -2,7 +2,7 @@
 
 ## Pricing Snapshot
 
-Pricing changes over time, so this analysis records the assumptions used for the final submission package on 2026-05-03.
+Pricing changes over time, so this analysis records the assumptions used for the final submission package on 2026-05-04.
 
 Sources:
 
@@ -29,6 +29,8 @@ Relevant prices used:
 
 The current deployed synthetic-data demo can use `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. That path is useful for demo economics, but it is not counted as a production PHI path. Real PHI should use a HIPAA-appropriate provider path with the required contractual controls, or a self-hosted model environment.
 
+The Week 2 document flow adds OCR/extraction/review work, but the current submitted slice uses deterministic synthetic text/PDF extraction and does not add paid model calls by default.
+
 ## Actual Development AI Spend
 
 Paid metered AI API spend attributable from this repository: **$0.00 recorded**.
@@ -37,6 +39,7 @@ Reasoning:
 
 - Automated API tests default to the mock provider and deterministic fixtures.
 - Local vector tests default to hash embeddings unless OpenAI embeddings are explicitly configured.
+- Week 2 document extraction tests use deterministic synthetic fixtures.
 - The deployed demo configuration uses OpenRouter's free Nemotron model for synthetic data.
 - No provider billing export is committed to the repository.
 

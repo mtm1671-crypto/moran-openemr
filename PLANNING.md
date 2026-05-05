@@ -6,6 +6,7 @@ The repository root [README.md](README.md) is the primary final-submission and s
 
 | Document | Purpose |
 |---|---|
+| [SUBMISSION.md](SUBMISSION.md) | Final submission links, artifact map, verification snapshot, demo checklist, and caveats |
 | [PRESEARCH.md](PRESEARCH.md) | Pre-code planning, constraints, and discovery notes |
 | [AUDIT.md](AUDIT.md) | OpenEMR security, performance, architecture, data quality, and compliance audit |
 | [USERS.md](USERS.md) | Target users, workflow, roles, use cases, and demo scenario |

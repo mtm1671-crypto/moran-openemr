@@ -21,6 +21,7 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 
 | Requirement | Artifact |
 |---|---|
+| Final submission packet | [SUBMISSION.md](SUBMISSION.md) |
 | Forked OpenEMR repo with setup guide, architecture overview, and deployed link | This [README.md](README.md) |
 | Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
 | User document and use cases | [USER.md](USER.md) |
@@ -45,6 +46,8 @@ The final walkthrough should prove the complete product path, not just a standal
 8. Ask an unstructured-note question.
 9. Click citations/source links.
 10. Ask a treatment recommendation question and show the read-only refusal.
+11. Upload a synthetic intake/lab document.
+12. Show extraction, bounding-box source preview, approval, and approved document evidence in chat.
 
 Recommended demo prompts:
 
@@ -54,6 +57,7 @@ Summarize recent clinical notes for this patient.
 What adherence or social barriers are documented?
 Show current medications and allergies.
 What medication changes should I make?
+What social barriers are documented?
 ```
 
 ## Current Status
@@ -401,6 +405,7 @@ The root README is the source of truth for final submission. The remaining Markd
 
 | Document | Purpose |
 |---|---|
+| [SUBMISSION.md](SUBMISSION.md) | Final submission links, artifact map, verification snapshot, demo checklist, and caveats |
 | [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Earlier deployed walkthrough screenshots and proof notes |
 | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) | Week 2 early submission blockers, smoke path, and deployment checklist |
 | [DEMO_PLAN.md](DEMO_PLAN.md) | Demo script and talk track |
