@@ -14,8 +14,8 @@ Latest deployed Co-Pilot web build used for the walkthrough:
 `8695fc30-ef37-49bc-9fb4-c504929367a7`.
 
 Note: the original deployed walkthrough below proves the Week 1 chat/source-link path.
-The Week 2 document extraction/review workflow is implemented and verified locally, but
-still needs redeploy plus a fresh deployed smoke capture before early submission.
+The Week 2 document extraction/review workflow is now redeployed, but still needs
+a fresh authenticated browser smoke capture before early submission.
 
 ## What The Live Walkthrough Proves
 
@@ -133,7 +133,16 @@ npm run test:e2e: 7 passed
 
 ## Week 2 Evidence To Recapture After Redeploy
 
-After the latest commit is deployed, capture these additional proof points:
+Post-redeploy endpoint checks on 2026-05-04:
+
+```text
+Co-Pilot API /readyz: 200
+Co-Pilot API document route without auth: 401
+Co-Pilot web /: 200
+Co-Pilot web document panel markup: present
+```
+
+Capture these additional proof points in the authenticated browser walkthrough:
 
 1. Co-Pilot document panel visible after OpenEMR launch.
 2. Synthetic intake form upload and extraction.

@@ -30,13 +30,22 @@ git diff --check: passed
 
 | Blocker | Status | Owner | Done When |
 |---|---|---|---|
-| Commit Week 2 implementation | Not done | Repo | Working tree is committed with document workflow, tests, docs, and diagram |
-| Push to GitHub/GitLab | Not done | Repo | Remote repo contains the latest Week 2 slice |
-| Redeploy Railway API/web | Not done | Railway | API and web services are running the new commit |
-| Production smoke test | Not done | Demo | Deployed OpenEMR -> Co-Pilot launch -> auth -> patient select -> chat still passes |
-| Week 2 document smoke test | Not done | Demo | Deployed Co-Pilot can upload synthetic intake/lab text/PDF, extract facts, approve, and use approved facts in chat |
+| Commit Week 2 implementation | Done | Repo | Commit `6e7a3ef5f` contains document workflow, tests, docs, and diagram |
+| Push to GitHub/GitLab | Done | Repo | GitHub and GitLab `master` contain commit `6e7a3ef5f` |
+| Redeploy Railway API/web | Done | Railway | API and web were redeployed from clean service packages on 2026-05-04 |
+| Production smoke test | Partial | Demo | API `/readyz` is 200 and web root is 200; full OpenEMR auth walkthrough still needs browser capture |
+| Week 2 document smoke test | Partial | Demo | Deployed document API route is present and web panel is present; authenticated upload/review/chat path still needs browser capture |
 | Screenshot/video evidence update | Not done | Submission | New screenshots or video segment show document extraction, review, bbox preview, and evidence-backed chat |
 | Eval doc refresh | Local done, deployed pending | Repo | `EVAL_DATASET.md` records latest local and deployed checks |
+
+Post-redeploy endpoint checks:
+
+```text
+Co-Pilot API /readyz: 200
+Co-Pilot API /api/documents/patients/demo-diabetes-001/approved-evidence without auth: 401
+Co-Pilot web /: 200
+Co-Pilot web contains document panel markup: yes
+```
 
 ## Demo Script Delta
 
@@ -82,4 +91,3 @@ cd ..\web
 npm run build
 $env:PLAYWRIGHT_API_PORT='8126'; $env:PLAYWRIGHT_WEB_PORT='3126'; $env:PLAYWRIGHT_OPENEMR_MOCK_PORT='9926'; npm run test:e2e
 ```
-
