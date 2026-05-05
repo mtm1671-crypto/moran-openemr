@@ -23,6 +23,7 @@ from app.document_models import (
 )
 from app.document_storage import (
     approved_document_evidence,
+    begin_document_write,
     create_document_workflow,
     fact_counts,
     read_document_facts,
@@ -197,7 +198,17 @@ async def write_approved_facts(
 ) -> DocumentWriteResult:
     _require_document_access(user)
     job = await _require_job_for_user(job_id, user, settings)
-    update_document_job(job.job_id, status=W2JobStatus.writing, trace="write_started")
+    job, write_started = begin_document_write(job.job_id)
+    if not write_started:
+        if job.status == W2JobStatus.writing:
+            raise HTTPException(status_code=409, detail="Document write already in progress")
+        return DocumentWriteResult(
+            job=job,
+            written_count=0,
+            skipped_count=0,
+            failed_count=0,
+            facts=read_document_facts(job.job_id),
+        )
 
     written_count = 0
     skipped_count = 0

@@ -142,6 +142,31 @@ def update_document_job(
         return updated
 
 
+def begin_document_write(job_id: str) -> tuple[DocumentJobRecord, bool]:
+    with _STORE_LOCK:
+        job = require_document_job(job_id)
+        if job.status == W2JobStatus.writing:
+            return job, False
+        if job.status in {
+            W2JobStatus.received,
+            W2JobStatus.extracting,
+            W2JobStatus.completed,
+            W2JobStatus.failed,
+        }:
+            return job, False
+
+        updated = job.model_copy(
+            update={
+                "status": W2JobStatus.writing,
+                "updated_at": now_utc(),
+                "error_code": None,
+                "trace": [*job.trace, "write_started"],
+            }
+        )
+        _JOBS[job_id] = updated
+        return updated, True
+
+
 def replace_document_facts(job_id: str, facts: list[ExtractedFact]) -> None:
     with _STORE_LOCK:
         require_document_job(job_id)
