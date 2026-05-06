@@ -129,6 +129,19 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
     )
     assert observation_route.calls[0].request.headers["authorization"] == "Bearer user-token"
 
+    observation_route.mock(return_value=Response(201, json={"resourceType": "Observation", "id": "obs-retry"}))
+    retry = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert retry.status_code == 200
+    retry_body = retry.json()
+    assert retry_body["written_count"] == 1
+    assert retry_body["failed_count"] == 0
+    assert retry_body["facts"][0]["status"] == "written"
+    assert retry_body["facts"][0]["written_resource_id"] == "obs-retry"
+
 
 def test_unassigned_document_can_extract_but_not_approve_or_write() -> None:
     client = TestClient(app)

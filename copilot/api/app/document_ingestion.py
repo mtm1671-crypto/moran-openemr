@@ -224,8 +224,9 @@ async def write_approved_facts(
     written_count = 0
     skipped_count = 0
     failed_count = 0
+    writable_statuses = {W2FactStatus.approved, W2FactStatus.write_failed}
     for fact in read_document_facts(job.job_id):
-        if fact.status != W2FactStatus.approved:
+        if fact.status not in writable_statuses:
             skipped_count += 1
             continue
         if fact.proposed_destination != W2ProposedDestination.openemr_observation:

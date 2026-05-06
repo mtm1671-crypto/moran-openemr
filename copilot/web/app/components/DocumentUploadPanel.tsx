@@ -160,6 +160,13 @@ export function DocumentUploadPanel({
     }
   }
 
+  const hasWritableFacts = facts.some(
+    (fact) => fact.status === "approved" || fact.status === "write_failed"
+  );
+  const hasOnlyRetryableFailures =
+    facts.some((fact) => fact.status === "write_failed") &&
+    !facts.some((fact) => fact.status === "approved");
+
   return (
     <section className="documentPanel" aria-label="Document evidence workflow">
       <div className="documentControls">
@@ -170,7 +177,7 @@ export function DocumentUploadPanel({
               ? `${job.patient_id ? "assigned" : "unassigned"} - ${job.status} - ${facts.length} facts`
               : "Upload lab PDF, image, or intake form"}
           </span>
-          {!canWriteObservations && facts.some((fact) => fact.status === "approved") ? (
+          {!canWriteObservations && hasWritableFacts ? (
             <span>Re-authorize OpenEMR before writing labs</span>
           ) : null}
         </div>
@@ -212,7 +219,7 @@ export function DocumentUploadPanel({
             isWorking ||
             !job?.patient_id ||
             !canWriteObservations ||
-            !facts.some((fact) => fact.status === "approved")
+            !hasWritableFacts
           }
           onClick={writeApproved}
           title={
@@ -222,7 +229,7 @@ export function DocumentUploadPanel({
           }
           type="button"
         >
-          Write labs
+          {hasOnlyRetryableFailures ? "Retry writes" : "Write labs"}
         </button>
       </div>
       {job ? <ExtractionReviewPanel facts={facts} trace={trace} /> : null}
