@@ -68,3 +68,15 @@ def test_attach_request_decodes_bounded_base64_content() -> None:
     )
 
     assert request.decoded_content() == b"Hemoglobin A1c 8.6 % H"
+
+
+def test_attach_request_allows_unassigned_document() -> None:
+    request = DocumentAttachExtractRequest(
+        doc_type=W2DocType.lab_pdf,
+        filename="lab.txt",
+        content_type="text/plain",
+        content_base64=base64.b64encode(b"Hemoglobin A1c 8.6 % H").decode("ascii"),
+    )
+
+    assert request.patient_id is None
+    assert request.decoded_content() == b"Hemoglobin A1c 8.6 % H"

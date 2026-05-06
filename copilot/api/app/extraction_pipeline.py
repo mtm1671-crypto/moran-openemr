@@ -19,7 +19,7 @@ from app.ocr_layout import extract_layout, extract_layout_async
 def extract_document_facts(
     *,
     job_id: str,
-    patient_id: str,
+    patient_id: str | None,
     doc_type: W2DocType,
     source_id: str,
     content: bytes,
@@ -41,7 +41,7 @@ def extract_document_facts(
 async def extract_document_facts_async(
     *,
     job_id: str,
-    patient_id: str,
+    patient_id: str | None,
     doc_type: W2DocType,
     source_id: str,
     content: bytes,
@@ -64,7 +64,7 @@ async def extract_document_facts_async(
 def _normalize_fact(
     *,
     job_id: str,
-    patient_id: str,
+    patient_id: str | None,
     doc_type: W2DocType,
     fact: LabResultFact | IntakeFact,
 ) -> ExtractedFact:

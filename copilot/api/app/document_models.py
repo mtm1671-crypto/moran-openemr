@@ -127,7 +127,7 @@ class IntakeFact(BaseModel):
 class ExtractedFact(BaseModel):
     fact_id: str = Field(min_length=1, max_length=80)
     document_job_id: str = Field(min_length=1, max_length=80)
-    patient_id: str = Field(min_length=1, max_length=100)
+    patient_id: str | None = Field(default=None, min_length=1, max_length=100)
     doc_type: W2DocType
     fact_type: W2FactType
     display_label: str = Field(min_length=1, max_length=140)
@@ -202,7 +202,7 @@ class DocumentSourceSummary(BaseModel):
 
 class DocumentJobRecord(BaseModel):
     job_id: str
-    patient_id: str
+    patient_id: str | None = Field(default=None, min_length=1, max_length=100)
     doc_type: W2DocType
     status: W2JobStatus
     actor_user_id: str
@@ -214,11 +214,18 @@ class DocumentJobRecord(BaseModel):
 
 
 class DocumentAttachExtractRequest(BaseModel):
-    patient_id: str = Field(min_length=1, max_length=100)
+    patient_id: str | None = Field(default=None, min_length=1, max_length=100)
     doc_type: W2DocType
     filename: str = Field(min_length=1, max_length=160)
     content_type: str = Field(min_length=1, max_length=120)
     content_base64: str = Field(min_length=1)
+
+    @field_validator("patient_id", mode="before")
+    @classmethod
+    def normalize_patient_id(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("content_type")
     @classmethod

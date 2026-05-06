@@ -3,7 +3,7 @@ import { PdfBoundingBoxPreview } from "./PdfBoundingBoxPreview";
 
 export type DocumentJob = {
   job_id: string;
-  patient_id: string;
+  patient_id: string | null;
   doc_type: string;
   status: string;
   source: {
@@ -84,4 +84,3 @@ export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelPro
     </div>
   );
 }
-

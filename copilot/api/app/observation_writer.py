@@ -40,6 +40,9 @@ async def write_lab_fact_observation(
 
 
 def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
+    if fact.patient_id is None:
+        raise ObservationWriteError("Fact must be assigned to a patient before writing")
+
     payload = fact.payload
     value_text = str(payload.get("value") or fact.normalized_value.split()[0])
     numeric_value = _coerce_float(value_text)
@@ -130,4 +133,3 @@ def _interpretation(abnormal_flag: object) -> dict[str, Any] | None:
         ],
         "text": display,
     }
-

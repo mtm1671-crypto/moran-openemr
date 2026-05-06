@@ -141,6 +141,11 @@ async def submit_review_decisions(
 ) -> DocumentReviewResult:
     _require_document_access(user)
     job = await _require_job_for_user(job_id, user, settings)
+    if job.patient_id is None and any(decision.action == "approve" for decision in request.decisions):
+        raise HTTPException(
+            status_code=422,
+            detail="Assign the document to a patient before approving extracted facts",
+        )
     facts = {fact.fact_id: fact for fact in read_document_facts(job.job_id)}
     for decision in request.decisions:
         fact = facts.get(decision.fact_id)
@@ -199,6 +204,11 @@ async def write_approved_facts(
 ) -> DocumentWriteResult:
     _require_document_access(user)
     job = await _require_job_for_user(job_id, user, settings)
+    if job.patient_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Assign the document to a patient before writing extracted facts",
+        )
     job, write_started = begin_document_write(job.job_id)
     if not write_started:
         if job.status == W2JobStatus.writing:
@@ -310,6 +320,10 @@ async def _require_job_for_user(
         raise HTTPException(status_code=404, detail="Source document was not found")
     if job.patient_id != source.patient_id:
         raise HTTPException(status_code=500, detail="Document job source mismatch")
+    if job.patient_id is None:
+        if user.role == Role.admin or job.actor_user_id == user.user_id:
+            return job
+        raise HTTPException(status_code=403, detail="Unassigned document access denied")
     await _require_patient_access(user=user, patient_id=job.patient_id, settings=settings)
     return job
 
@@ -322,9 +336,11 @@ def _require_document_access(user: RequestUser) -> None:
 async def _require_patient_access(
     *,
     user: RequestUser,
-    patient_id: str,
+    patient_id: str | None,
     settings: Settings,
 ) -> None:
+    if patient_id is None:
+        return
     if settings.openemr_fhir_base_url is None:
         return
     bearer_token = await resolve_fhir_bearer_token(user, settings)

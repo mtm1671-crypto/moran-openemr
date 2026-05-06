@@ -34,12 +34,14 @@ export function DocumentUploadPanel({
   const [facts, setFacts] = useState<DocumentFact[]>([]);
   const [trace, setTrace] = useState<string[]>([]);
   const [isWorking, setIsWorking] = useState(false);
+  const [extractUnassigned, setExtractUnassigned] = useState(false);
 
   async function uploadDocument() {
-    if (!patientId || !file) {
-      onStatus("Select a patient and document before extraction.");
+    if (!file) {
+      onStatus("Select a document before extraction.");
       return;
     }
+    const effectivePatientId = extractUnassigned ? null : patientId;
     setIsWorking(true);
     try {
       const contentBase64 = await fileToBase64(file);
@@ -48,7 +50,7 @@ export function DocumentUploadPanel({
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          patient_id: patientId,
+          ...(effectivePatientId ? { patient_id: effectivePatientId } : {}),
           doc_type: docType,
           filename: file.name,
           content_type: file.type || "application/octet-stream",
@@ -60,7 +62,11 @@ export function DocumentUploadPanel({
       }
       const payload = (await response.json()) as DocumentJobResponse;
       setJob(payload.job);
-      onStatus(`Document extracted: ${formatCounts(payload.fact_counts)}.`);
+      onStatus(
+        effectivePatientId
+          ? `Document extracted: ${formatCounts(payload.fact_counts)}.`
+          : `Unassigned document extracted: ${formatCounts(payload.fact_counts)}.`
+      );
       await loadReview(payload.job.job_id);
     } catch (error) {
       onStatus(errorMessage(error, "Document extraction failed"));
@@ -84,6 +90,10 @@ export function DocumentUploadPanel({
 
   async function approveAll() {
     if (!job) return;
+    if (!job.patient_id) {
+      onStatus("Select a patient before approving document facts.");
+      return;
+    }
     const reviewable = facts.filter((fact) => fact.status === "review_required");
     if (!reviewable.length) {
       onStatus("No extracted facts need approval.");
@@ -113,6 +123,10 @@ export function DocumentUploadPanel({
 
   async function writeApproved() {
     if (!job) return;
+    if (!job.patient_id) {
+      onStatus("Select a patient before writing document facts.");
+      return;
+    }
     setIsWorking(true);
     try {
       const response = await fetch(`${apiBase}/api/documents/${job.job_id}/write`, {
@@ -145,7 +159,11 @@ export function DocumentUploadPanel({
       <div className="documentControls">
         <div className="documentTitle">
           <strong>Document evidence</strong>
-          <span>{job ? `${job.status} - ${facts.length} facts` : "Upload lab PDF or intake form"}</span>
+          <span>
+            {job
+              ? `${job.patient_id ? "assigned" : "unassigned"} - ${job.status} - ${facts.length} facts`
+              : "Upload lab PDF, image, or intake form"}
+          </span>
         </div>
         <select
           aria-label="Document type"
@@ -161,15 +179,25 @@ export function DocumentUploadPanel({
           disabled={disabled || isWorking}
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           type="file"
-          accept=".txt,.pdf,text/plain,application/pdf"
+          accept=".txt,.pdf,.png,.jpg,.jpeg,text/plain,application/pdf,image/png,image/jpeg"
         />
-        <button disabled={disabled || isWorking || !file || !patientId} onClick={uploadDocument} type="button">
+        <label className="documentUnassignedToggle">
+          <input
+            aria-label="Extract unassigned"
+            checked={extractUnassigned}
+            disabled={disabled || isWorking}
+            onChange={(event) => setExtractUnassigned(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Unassigned</span>
+        </label>
+        <button disabled={disabled || isWorking || !file} onClick={uploadDocument} type="button">
           {isWorking ? "Working" : "Extract"}
         </button>
-        <button disabled={disabled || isWorking || !facts.length} onClick={approveAll} type="button">
+        <button disabled={disabled || isWorking || !job?.patient_id || !facts.length} onClick={approveAll} type="button">
           Approve all
         </button>
-        <button disabled={disabled || isWorking || !facts.some((fact) => fact.status === "approved")} onClick={writeApproved} type="button">
+        <button disabled={disabled || isWorking || !job?.patient_id || !facts.some((fact) => fact.status === "approved")} onClick={writeApproved} type="button">
           Write labs
         </button>
       </div>
@@ -199,4 +227,3 @@ function errorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
-

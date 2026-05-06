@@ -21,7 +21,7 @@ from app.models import EvidenceObject
 @dataclass(frozen=True)
 class StoredDocumentSource:
     source_id: str
-    patient_id: str
+    patient_id: str | None
     doc_type: W2DocType
     filename: str
     content_type: str
@@ -42,7 +42,7 @@ class StoredDocumentSource:
 _SOURCES: dict[str, StoredDocumentSource] = {}
 _JOBS: dict[str, DocumentJobRecord] = {}
 _FACTS_BY_JOB: dict[str, list[ExtractedFact]] = {}
-_JOB_BY_SOURCE_KEY: dict[tuple[str, W2DocType, str, str], str] = {}
+_JOB_BY_SOURCE_KEY: dict[tuple[str | None, W2DocType, str, str], str] = {}
 _STORE_LOCK = RLock()
 
 
@@ -60,7 +60,7 @@ def source_sha256(content: bytes) -> str:
 
 def find_reusable_job(
     *,
-    patient_id: str,
+    patient_id: str | None,
     doc_type: W2DocType,
     source_hash: str,
     content_type: str,
@@ -74,7 +74,7 @@ def find_reusable_job(
 
 def create_document_workflow(
     *,
-    patient_id: str,
+    patient_id: str | None,
     doc_type: W2DocType,
     filename: str,
     content_type: str,
@@ -92,7 +92,11 @@ def create_document_workflow(
         if existing is not None:
             return existing, _SOURCES[existing.source.source_id], False
 
-        source_key_digest = hashlib.sha256(f"{content_type}\0{digest}".encode("utf-8")).hexdigest()
+        source_key_digest = hashlib.sha256(
+            f"{patient_id or 'unassigned'}\0{doc_type.value}\0{content_type}\0{digest}".encode(
+                "utf-8"
+            )
+        ).hexdigest()
         source_id = f"local-doc-{source_key_digest[:24]}"
         source = StoredDocumentSource(
             source_id=source_id,
@@ -221,7 +225,7 @@ def approved_document_evidence(patient_id: str) -> list[EvidenceObject]:
         evidence: list[EvidenceObject] = []
         for job_id, facts in _FACTS_BY_JOB.items():
             job = _JOBS.get(job_id)
-            if job is None or job.patient_id != patient_id:
+            if job is None or job.patient_id is None or job.patient_id != patient_id:
                 continue
             for fact in facts:
                 if fact.status not in {W2FactStatus.approved, W2FactStatus.written}:
@@ -231,6 +235,8 @@ def approved_document_evidence(patient_id: str) -> list[EvidenceObject]:
 
 
 def _fact_to_evidence(job: DocumentJobRecord, fact: ExtractedFact) -> EvidenceObject:
+    if job.patient_id is None:
+        raise ValueError("Unassigned document facts cannot become patient evidence")
     return EvidenceObject(
         evidence_id=f"document:{fact.fact_id}",
         patient_id=job.patient_id,

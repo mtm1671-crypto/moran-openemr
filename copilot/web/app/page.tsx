@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DocumentUploadPanel } from "./components/DocumentUploadPanel";
 
@@ -112,40 +112,28 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    async function initialize() {
-      const launchParams = new URLSearchParams(window.location.search);
-      const authError = launchParams.get("auth_error");
-      if (authError) {
-        setAuthStatus("failed");
-        setLines((current) => [
-          ...current,
-          { role: "status", text: `OpenEMR authorization failed: ${authError}` }
-        ]);
-        return;
-      }
-
-      const authenticated = await loadSession(launchParams);
-      if (!authenticated) {
-        return;
-      }
-
-      const launchPatientId = launchParams.get("patient_id");
-      if (launchPatientId) {
-        await loadLaunchPatient(launchPatientId, launchParams);
-        await loadPatientRoster(false);
-      } else {
-        await loadPatientRoster(true);
-      }
-    }
-
-    void initialize();
-  }, [apiBase]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [lines]);
 
-  async function loadSession(launchParams: URLSearchParams) {
+  const beginSmartAuth = useCallback((launchParams: URLSearchParams) => {
+    setAuthStatus("authenticating");
+    setLines((current) => [
+      ...current,
+      { role: "status", text: "OpenEMR authorization required. Redirecting to sign in." }
+    ]);
+
+    const startUrl = new URL("/api/auth/start", window.location.origin);
+    startUrl.searchParams.set("redirect_to", `${window.location.pathname}${window.location.search}`);
+    for (const key of ["iss", "aud", "launch"]) {
+      const value = launchParams.get(key);
+      if (value) {
+        startUrl.searchParams.set(key, value);
+      }
+    }
+    window.location.assign(startUrl.toString());
+  }, []);
+
+  const loadSession = useCallback(async (launchParams: URLSearchParams) => {
     try {
       const response = await fetchWithTimeout(`${apiBase}/api/me`, { cache: "no-store" });
       if (response.status === 401) {
@@ -174,27 +162,9 @@ export default function Home() {
       ]);
       return false;
     }
-  }
+  }, [apiBase, beginSmartAuth]);
 
-  function beginSmartAuth(launchParams: URLSearchParams) {
-    setAuthStatus("authenticating");
-    setLines((current) => [
-      ...current,
-      { role: "status", text: "OpenEMR authorization required. Redirecting to sign in." }
-    ]);
-
-    const startUrl = new URL("/api/auth/start", window.location.origin);
-    startUrl.searchParams.set("redirect_to", `${window.location.pathname}${window.location.search}`);
-    for (const key of ["iss", "aud", "launch"]) {
-      const value = launchParams.get(key);
-      if (value) {
-        startUrl.searchParams.set(key, value);
-      }
-    }
-    window.location.assign(startUrl.toString());
-  }
-
-  async function loadLaunchPatient(patientId: string, launchParams: URLSearchParams) {
+  const loadLaunchPatient = useCallback(async (patientId: string, launchParams: URLSearchParams) => {
     try {
       const response = await fetchWithTimeout(
         `${apiBase}/api/patients/${encodeURIComponent(patientId)}`,
@@ -227,9 +197,9 @@ export default function Home() {
         }
       ]);
     }
-  }
+  }, [apiBase]);
 
-  async function loadPatientRoster(selectFirst: boolean) {
+  const loadPatientRoster = useCallback(async (selectFirst: boolean) => {
     try {
       const response = await fetchWithTimeout(`${apiBase}/api/patients?count=100`, {
         cache: "no-store"
@@ -255,7 +225,37 @@ export default function Home() {
         }
       ]);
     }
-  }
+  }, [apiBase]);
+
+  useEffect(() => {
+    async function initialize() {
+      const launchParams = new URLSearchParams(window.location.search);
+      const authError = launchParams.get("auth_error");
+      if (authError) {
+        setAuthStatus("failed");
+        setLines((current) => [
+          ...current,
+          { role: "status", text: `OpenEMR authorization failed: ${authError}` }
+        ]);
+        return;
+      }
+
+      const authenticated = await loadSession(launchParams);
+      if (!authenticated) {
+        return;
+      }
+
+      const launchPatientId = launchParams.get("patient_id");
+      if (launchPatientId) {
+        await loadLaunchPatient(launchPatientId, launchParams);
+        await loadPatientRoster(false);
+      } else {
+        await loadPatientRoster(true);
+      }
+    }
+
+    void initialize();
+  }, [loadLaunchPatient, loadPatientRoster, loadSession]);
 
   async function sendChat(nextMessage: string, quickQuestionId?: string) {
     if (!selectedPatient?.patient_id || !nextMessage.trim()) {
@@ -480,7 +480,7 @@ export default function Home() {
 
       <DocumentUploadPanel
         apiBase={apiBase}
-        disabled={!selectedPatient || !isAuthenticated}
+        disabled={!isAuthenticated}
         patientId={selectedPatient?.patient_id ?? null}
         onStatus={(text) => setLines((current) => [...current, { role: "status", text }])}
       />

@@ -74,6 +74,69 @@ def test_attach_review_and_write_lab_document() -> None:
     assert all(fact["written_resource_id"].startswith("demo-observation-") for fact in write_body["facts"])
 
 
+def test_unassigned_document_can_extract_but_not_approve_or_write() -> None:
+    client = TestClient(app)
+    payload = _document_payload(
+        doc_type="lab_pdf",
+        content="""
+        Patient: Unmatched Example
+        Collection Date: 2026-04-18
+        Hemoglobin A1c 8.2 % reference range 4.0-5.6 H
+        """,
+    )
+    payload.pop("patient_id")
+
+    response = client.post("/api/documents/attach-and-extract", json=payload)
+
+    assert response.status_code == 202
+    body = response.json()
+    job_id = body["job"]["job_id"]
+    assert body["job"]["patient_id"] is None
+    assert body["job"]["status"] == "review_required"
+
+    review = client.get(f"/api/documents/{job_id}/review")
+    assert review.status_code == 200
+    facts = review.json()["facts"]
+    assert facts[0]["patient_id"] is None
+    assert facts[0]["display_label"] == "Hemoglobin A1c"
+
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": facts[0]["fact_id"], "action": "approve"}]},
+    )
+    assert approve.status_code == 422
+    assert approve.json()["detail"] == "Assign the document to a patient before approving extracted facts"
+
+    write = client.post(f"/api/documents/{job_id}/write")
+    assert write.status_code == 422
+    assert write.json()["detail"] == "Assign the document to a patient before writing extracted facts"
+
+    evidence = client.get("/api/documents/patients/p1/approved-evidence")
+    assert evidence.status_code == 200
+    assert evidence.json()["evidence_count"] == 0
+
+
+def test_unassigned_document_can_be_rejected_to_close_review() -> None:
+    client = TestClient(app)
+    payload = _document_payload(
+        doc_type="lab_pdf",
+        content="Hemoglobin A1c 8.2 % reference range 4.0-5.6 H",
+    )
+    payload.pop("patient_id")
+    upload = client.post("/api/documents/attach-and-extract", json=payload)
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(f"/api/documents/{job_id}/review").json()["facts"][0]["fact_id"]
+
+    reject = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "reject"}]},
+    )
+
+    assert reject.status_code == 200
+    assert reject.json()["job"]["status"] == "completed"
+    assert reject.json()["facts"][0]["status"] == "rejected"
+
+
 def test_approved_intake_facts_are_available_as_source_backed_chat_evidence() -> None:
     client = TestClient(app)
     upload = client.post(
