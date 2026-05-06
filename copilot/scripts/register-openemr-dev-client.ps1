@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$scope = "openid offline_access api:oemr api:fhir user/Patient.read user/Practitioner.read user/Observation.read user/Condition.read user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
+$scope = "openid offline_access api:oemr api:fhir user/Patient.read user/Practitioner.read user/Observation.read user/Observation.write user/Condition.read user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
 
 $registrationBody = @{
     application_type = "private"

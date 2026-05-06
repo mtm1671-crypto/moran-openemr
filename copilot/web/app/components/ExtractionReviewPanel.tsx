@@ -76,7 +76,9 @@ export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelPro
               <small>{fact.blocking_reasons.join(", ")}</small>
             ) : null}
             {fact.written_resource_id ? <small>Observation {fact.written_resource_id}</small> : null}
-            {fact.write_error ? <small>{fact.write_error}</small> : null}
+            {fact.write_error ? (
+              <small className="factError">Write failed: {fact.write_error}</small>
+            ) : null}
           </article>
         ))}
       </div>

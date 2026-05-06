@@ -459,6 +459,14 @@ h1 {
   font-size: 11px;
 }
 
+.factCard .factError {
+  border-left: 3px solid #b42318;
+  background: #fff1f0;
+  color: #8a1f14;
+  line-height: 1.35;
+  padding: 6px 8px;
+}
+
 .tracePanel {
   display: grid;
   align-content: start;

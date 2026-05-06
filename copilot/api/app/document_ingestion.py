@@ -235,15 +235,26 @@ async def write_approved_facts(
         try:
             resource_id = await write_lab_fact_observation(fact=fact, user=user, settings=settings)
         except (ObservationWriteError, httpx.HTTPError) as exc:
+            write_error = _write_error_message(exc)
             failed_count += 1
             update_document_fact(
                 job.job_id,
                 fact.model_copy(
                     update={
                         "status": W2FactStatus.write_failed,
-                        "write_error": _write_error_message(exc),
+                        "write_error": write_error,
                     }
                 ),
+            )
+            emit_telemetry_event(
+                settings,
+                event="w2_document_fact_write_failed",
+                metadata={
+                    "doc_type": job.doc_type.value,
+                    "fact_type": fact.fact_type.value,
+                    "destination": fact.proposed_destination.value,
+                    "error_kind": _write_error_kind(write_error),
+                },
             )
             continue
         written_count += 1
@@ -277,6 +288,7 @@ async def write_approved_facts(
             "written_count": written_count,
             "skipped_count": skipped_count,
             "failed_count": failed_count,
+            "error_kinds": _write_error_counts(final_facts),
         },
     )
     return DocumentWriteResult(
@@ -333,9 +345,11 @@ def _write_error_message(exc: Exception) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
         if status_code in {401, 403}:
+            detail = _operation_outcome_summary(exc.response)
+            suffix = f": {detail}" if detail else ""
             return (
                 f"OpenEMR write denied (HTTP {status_code}): "
-                "re-authorize with user/Observation.write scope"
+                f"re-authorize with user/Observation.write scope{suffix}"
             )
         if status_code == 400:
             detail = _operation_outcome_summary(exc.response)
@@ -379,6 +393,30 @@ def _operation_outcome_summary(response: httpx.Response) -> str | None:
             if isinstance(code, str) and code.strip():
                 return code.strip()[:180]
     return None
+
+
+def _write_error_kind(message: str | None) -> str:
+    if not message:
+        return "none"
+    if "HTTP 401" in message or "HTTP 403" in message:
+        return "authorization"
+    if "HTTP 400" in message:
+        return "payload_validation"
+    if "timed out" in message:
+        return "timeout"
+    if "HTTP " in message:
+        return "openemr_http"
+    return "local_validation"
+
+
+def _write_error_counts(facts: list[ExtractedFact]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for fact in facts:
+        if fact.status != W2FactStatus.write_failed:
+            continue
+        kind = _write_error_kind(fact.write_error)
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 def _require_document_access(user: RequestUser) -> None:

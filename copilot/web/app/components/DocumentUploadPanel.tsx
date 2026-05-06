@@ -150,9 +150,7 @@ export function DocumentUploadPanel({
       };
       setJob(payload.job);
       setFacts(payload.facts);
-      onStatus(
-        `Document write finished: ${payload.written_count} written, ${payload.skipped_count} skipped, ${payload.failed_count} failed.`
-      );
+      onStatus(writeStatusMessage(payload));
     } catch (error) {
       onStatus(errorMessage(error, "Observation write failed"));
     } finally {
@@ -250,6 +248,19 @@ function formatCounts(counts: Record<string, number>) {
   const entries = Object.entries(counts);
   if (!entries.length) return "no facts";
   return entries.map(([status, count]) => `${count} ${status}`).join(", ");
+}
+
+function writeStatusMessage(payload: {
+  written_count: number;
+  skipped_count: number;
+  failed_count: number;
+  facts: DocumentFact[];
+}) {
+  const base = `Document write finished: ${payload.written_count} written, ${payload.skipped_count} skipped, ${payload.failed_count} failed.`;
+  const failures = payload.facts.filter((fact) => fact.status === "write_failed" && fact.write_error);
+  if (!failures.length) return base;
+  const first = failures[0];
+  return `${base} First failure: ${first.display_label} - ${first.write_error}`;
 }
 
 function errorMessage(error: unknown, fallback: string): string {

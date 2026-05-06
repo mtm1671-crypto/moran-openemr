@@ -125,7 +125,8 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
     assert body["failed_count"] == 1
     assert body["facts"][0]["status"] == "write_failed"
     assert body["facts"][0]["write_error"] == (
-        "OpenEMR write denied (HTTP 403): re-authorize with user/Observation.write scope"
+        "OpenEMR write denied (HTTP 403): "
+        "re-authorize with user/Observation.write scope: insufficient_scope"
     )
     assert observation_route.calls[0].request.headers["authorization"] == "Bearer user-token"
 
