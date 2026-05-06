@@ -74,6 +74,62 @@ def test_attach_review_and_write_lab_document() -> None:
     assert all(fact["written_resource_id"].startswith("demo-observation-") for fact in write_body["facts"])
 
 
+@respx.mock
+def test_write_failure_reports_missing_observation_write_scope() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    observation_route = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(
+            403,
+            json={
+                "resourceType": "OperationOutcome",
+                "issue": [{"code": "forbidden", "diagnostics": "insufficient_scope"}],
+            },
+        )
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="Hemoglobin A1c 8.6 % reference range 4.0-5.6 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 0
+    assert body["failed_count"] == 1
+    assert body["facts"][0]["status"] == "write_failed"
+    assert body["facts"][0]["write_error"] == (
+        "OpenEMR write denied (HTTP 403): re-authorize with user/Observation.write scope"
+    )
+    assert observation_route.calls[0].request.headers["authorization"] == "Bearer user-token"
+
+
 def test_unassigned_document_can_extract_but_not_approve_or_write() -> None:
     client = TestClient(app)
     payload = _document_payload(

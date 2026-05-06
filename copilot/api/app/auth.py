@@ -31,7 +31,7 @@ async def get_request_user(
         return RequestUser(
             user_id="dev-doctor",
             role=Role.doctor,
-            scopes=["patient/*.read", "user/Practitioner.read"],
+            scopes=["patient/*.read", "user/Practitioner.read", "user/Observation.write"],
             practitioner_id="dev-practitioner",
             access_token=bearer_token,
         )

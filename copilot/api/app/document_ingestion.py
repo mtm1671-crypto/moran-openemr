@@ -240,7 +240,7 @@ async def write_approved_facts(
                 fact.model_copy(
                     update={
                         "status": W2FactStatus.write_failed,
-                        "write_error": exc.__class__.__name__,
+                        "write_error": _write_error_message(exc),
                     }
                 ),
             )
@@ -326,6 +326,58 @@ async def _require_job_for_user(
         raise HTTPException(status_code=403, detail="Unassigned document access denied")
     await _require_patient_access(user=user, patient_id=job.patient_id, settings=settings)
     return job
+
+
+def _write_error_message(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        if status_code in {401, 403}:
+            return (
+                f"OpenEMR write denied (HTTP {status_code}): "
+                "re-authorize with user/Observation.write scope"
+            )
+        if status_code == 400:
+            detail = _operation_outcome_summary(exc.response)
+            suffix = f": {detail}" if detail else ""
+            return f"OpenEMR rejected the Observation payload (HTTP 400){suffix}"
+        return f"OpenEMR write failed (HTTP {status_code})"
+    if isinstance(exc, httpx.TimeoutException):
+        return "OpenEMR write timed out"
+    if isinstance(exc, ObservationWriteError):
+        return str(exc) or exc.__class__.__name__
+    return exc.__class__.__name__
+
+
+def _operation_outcome_summary(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    for key in ("error_description", "detail", "error"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:180]
+
+    issues = payload.get("issue")
+    if isinstance(issues, list):
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            diagnostics = issue.get("diagnostics")
+            if isinstance(diagnostics, str) and diagnostics.strip():
+                return diagnostics.strip()[:180]
+            details = issue.get("details")
+            if isinstance(details, dict):
+                text = details.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()[:180]
+            code = issue.get("code")
+            if isinstance(code, str) and code.strip():
+                return code.strip()[:180]
+    return None
 
 
 def _require_document_access(user: RequestUser) -> None:

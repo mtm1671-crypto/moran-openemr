@@ -184,6 +184,7 @@ export function resolveScopes(hasLaunchContext: boolean): string {
     "user/Patient.read",
     "user/Practitioner.read",
     "user/Observation.read",
+    "user/Observation.write",
     "user/Condition.read",
     "user/MedicationRequest.read",
     "user/AllergyIntolerance.read",

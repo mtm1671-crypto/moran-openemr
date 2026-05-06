@@ -480,6 +480,7 @@ export default function Home() {
 
       <DocumentUploadPanel
         apiBase={apiBase}
+        canWriteObservations={canWriteObservations(session)}
         disabled={!isAuthenticated}
         patientId={selectedPatient?.patient_id ?? null}
         onStatus={(text) => setLines((current) => [...current, { role: "status", text }])}
@@ -572,5 +573,17 @@ function mergePatients(current: PatientSummary[], next: PatientSummary[]) {
   }
   return [...byId.values()].sort((left, right) =>
     left.display_name.localeCompare(right.display_name)
+  );
+}
+
+function canWriteObservations(user: RequestUser | null): boolean {
+  if (!user) return false;
+  return user.scopes.some((scope) =>
+    [
+      "user/Observation.write",
+      "user/Observation.cud",
+      "patient/Observation.write",
+      "patient/Observation.cud"
+    ].includes(scope)
   );
 }

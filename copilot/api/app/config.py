@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     openemr_retry_backoff_seconds: float = 0.25
     openemr_dev_scopes: str = (
         "openid offline_access api:oemr api:fhir "
-        "user/Patient.read user/Practitioner.read user/Observation.read user/Condition.read "
+        "user/Patient.read user/Practitioner.read user/Observation.read user/Observation.write user/Condition.read "
         "user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
     )
 
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     openemr_service_bearer_token: SecretStr | None = None
     openemr_service_scopes: str = (
         "openid offline_access api:oemr api:fhir "
-        "user/Patient.read user/Practitioner.read user/Observation.read user/Condition.read "
+        "user/Patient.read user/Practitioner.read user/Observation.read user/Observation.write user/Condition.read "
         "user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
     )
     structured_logging_enabled: bool = True

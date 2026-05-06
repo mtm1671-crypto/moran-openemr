@@ -6,6 +6,7 @@ import { ExtractionReviewPanel, type DocumentFact, type DocumentJob } from "./Ex
 
 type DocumentUploadPanelProps = {
   apiBase: string;
+  canWriteObservations: boolean;
   disabled: boolean;
   patientId: string | null;
   onStatus: (message: string) => void;
@@ -24,6 +25,7 @@ type DocumentReviewPayload = {
 
 export function DocumentUploadPanel({
   apiBase,
+  canWriteObservations,
   disabled,
   patientId,
   onStatus
@@ -127,6 +129,10 @@ export function DocumentUploadPanel({
       onStatus("Select a patient before writing document facts.");
       return;
     }
+    if (!canWriteObservations) {
+      onStatus("Re-authorize OpenEMR with user/Observation.write before writing labs.");
+      return;
+    }
     setIsWorking(true);
     try {
       const response = await fetch(`${apiBase}/api/documents/${job.job_id}/write`, {
@@ -164,6 +170,9 @@ export function DocumentUploadPanel({
               ? `${job.patient_id ? "assigned" : "unassigned"} - ${job.status} - ${facts.length} facts`
               : "Upload lab PDF, image, or intake form"}
           </span>
+          {!canWriteObservations && facts.some((fact) => fact.status === "approved") ? (
+            <span>Re-authorize OpenEMR before writing labs</span>
+          ) : null}
         </div>
         <select
           aria-label="Document type"
@@ -197,7 +206,22 @@ export function DocumentUploadPanel({
         <button disabled={disabled || isWorking || !job?.patient_id || !facts.length} onClick={approveAll} type="button">
           Approve all
         </button>
-        <button disabled={disabled || isWorking || !job?.patient_id || !facts.some((fact) => fact.status === "approved")} onClick={writeApproved} type="button">
+        <button
+          disabled={
+            disabled ||
+            isWorking ||
+            !job?.patient_id ||
+            !canWriteObservations ||
+            !facts.some((fact) => fact.status === "approved")
+          }
+          onClick={writeApproved}
+          title={
+            canWriteObservations
+              ? undefined
+              : "Re-authorize OpenEMR with user/Observation.write before writing labs."
+          }
+          type="button"
+        >
           Write labs
         </button>
       </div>
