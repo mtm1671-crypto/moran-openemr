@@ -154,6 +154,8 @@ Agent execution is a bounded server-orchestrated loop: access check, schema-decl
 
 Reliability behavior is intentionally bounded. OpenEMR FHIR, JWKS, token, OpenAI, and OpenRouter calls retry transient 408/409/425/429/5xx and network timeout failures with short exponential backoff. Authorization failures still fail closed. Evidence-cache and vector-index outages degrade to live selected-patient OpenEMR FHIR evidence with an audit limitation. If audit persistence is required and unavailable, the API withholds the answer and returns an explicit failure final event instead of leaking an unaudited answer.
 
+Scaling posture is cost-aware instead of model-maximalist. Common structured questions should be answered from verified FHIR/evidence objects without an LLM; simple summaries route to the lowest-cost eval-approved model; broad note synthesis and verifier retries can use a stronger approved model with strict token caps. Redis is a production add for multi-replica hot-path state such as JWKS/session validation, roster prefetch, idempotency keys, distributed locks, tenant rate limits, and job progress fanout, while Postgres remains the encrypted source for evidence, audit, vectors, conversations, and approved facts. The detailed latency, Redis, and 1k/10k clinician scaling plan is in [ARCHITECTURE.md](ARCHITECTURE.md) and [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md).
+
 Repository layout:
 
 ```text

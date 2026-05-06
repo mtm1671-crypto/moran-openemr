@@ -328,6 +328,71 @@ The MVP should prioritize correctness over speed:
 
 If freshness cannot be confirmed, the assistant should say so instead of presenting stale chart facts as current.
 
+### Redis And Hot-Path Caching
+
+Postgres remains the source of truth for encrypted evidence, audit records, vector chunks, job status, and conversation history. Redis is useful at scale, but only for short-lived operational state that can be safely rebuilt:
+
+- SMART/JWKS validation cache keyed by token/JWKS hash, with a 30-60 second TTL.
+- Patient roster and schedule prefetch cache scoped by clinician, organization, and OpenEMR scope set.
+- Request idempotency keys for document uploads, reindex jobs, and Observation write retries.
+- Distributed locks for per-patient reindex and per-document extraction so multiple API replicas do not duplicate expensive work.
+- Rate-limit counters and per-tenant concurrency budgets.
+- SSE progress fanout if the API moves document extraction and long-running jobs fully off-request.
+
+Redis should not store final answers as the primary cache. Final-answer caching is risky because source freshness, authorization, and patient context can change quickly. Cache evidence and retrieval plans instead, then re-run source hydration and verification before showing the clinician an answer.
+
+The MVP uses Postgres-backed encrypted evidence cache and in-process local caches where safe. Redis becomes a production scale add when either API replicas exceed one, queue depth becomes visible, or repeated evidence retrieval creates measurable OpenEMR/FHIR pressure.
+
+## Latency, Cost, And Scale Strategy
+
+The critical performance goal is that most chart questions feel interactive while still failing closed on safety gates. The target production budget is:
+
+```text
+Auth/session check            < 100 ms hot cache, < 600 ms cold JWKS/FHIR check
+Patient roster                < 500 ms cached, < 2 s live OpenEMR FHIR
+Structured evidence retrieval < 1.5 s p95
+Vector search + hydration     < 2.5 s p95
+LLM answer compose            < 3-8 s depending on model/provider
+Verification                  < 500 ms for deterministic citation checks
+```
+
+The main latency levers are:
+
+- Prefer deterministic source-backed answers for demographics, active problems, medications, allergies, and recent labs when no LLM is needed.
+- Use vector search to narrow context before the LLM call; never send an entire chart or full document set to the model.
+- Keep `MODEL_EVIDENCE_LIMIT`, `VECTOR_SEARCH_LIMIT`, and output token caps small unless evals prove quality requires more context.
+- Stream status immediately so slow OpenEMR or model calls do not look like a dead UI.
+- Run document OCR/extraction, patient reindex, and nightly maintenance through worker/queue paths instead of tying them to chat request latency.
+
+The main cost levers are:
+
+- Route trivial factual requests to the deterministic fallback instead of an LLM.
+- Use a cheaper approved model for answer composition after it passes the same eval suite as the frontier model.
+- Use expensive models only for hard cases: low confidence, broad summarization, ambiguous note synthesis, or verifier retry.
+- Cache retrieval plans and evidence bundles, not unsupported final clinical answers.
+- Track per-tenant token usage, cache hit rate, provider/model, and verifier rejection rate as first-class telemetry.
+
+Concurrency design by scale:
+
+```text
+100 clinicians
+    Single-region Railway services, Postgres/pgvector, one API replica, one worker.
+
+1,000 clinicians
+    Multiple API replicas, Redis for hot caches/locks/rate limits, separate worker queue,
+    model-provider budgets, Postgres indexes reviewed from real query plans.
+
+10,000 clinicians
+    Dedicated Postgres/pgvector tier, read replicas for non-critical reads, durable queue
+    for extraction/reindex/write jobs, model gateway with provider failover and tenant quotas.
+
+100,000 clinicians
+    Multi-region edge/web, regional API pools, sharded patient/vector indexes, negotiated
+    model pricing or self-hosted inference, formal SRE/security/compliance operations.
+```
+
+At 1,000 simultaneous clinicians, the risk is less CPU and more serialized external dependencies: OpenEMR FHIR latency, model provider rate limits, token spend spikes, and vector index contention. The production answer is therefore queue isolation, model routing, rate limits, and source/evidence caching, not simply adding bigger API containers.
+
 ## Ingestion And ETL
 
 Railway should run a separate ETL/cron service. It pulls OpenEMR data, normalizes it, chunks documents, computes embeddings, extracts approved relationships, and writes derived rows to Postgres.
@@ -378,6 +443,19 @@ ProviderAdapter
     stream(messages, tools, policy_context) -> AsyncIterator[ModelEvent]
     healthcheck() -> ProviderHealth
 ```
+
+Production model routing should be policy-based rather than hardcoded to one provider:
+
+```text
+request_classification
+    deterministic_only       -> no LLM
+    simple_source_summary    -> lowest-cost approved model
+    broad_note_synthesis     -> stronger approved model
+    verifier_retry_required  -> stronger approved model with stricter output cap
+    PHI provider unavailable -> safe failure, not silent downgrade to unapproved egress
+```
+
+OpenRouter and open-source hosted models are useful for synthetic demos and cost exploration. Real PHI still requires the same provider approval gates as any other external model path. Self-hosted OpenAI-compatible models become attractive when token volume is high enough that GPU utilization is predictable and compliance review can cover the deployment.
 
 ## Streaming
 
