@@ -91,7 +91,7 @@ test("OpenEMR launch context preselects a patient", async ({ page }) => {
   await expect(page.getByText("Schedule appointment context included.")).toBeVisible();
   await expect(page.getByText(patientName).first()).toBeVisible();
   await expect(page.getByLabel("Switch patient")).toHaveValue(patientId);
-  await expect(page.getByText(patientId)).toBeVisible();
+  await expect(page.locator(".patientSwitcher code")).toHaveText(patientId);
 });
 
 test("modern patient dashboard renders OpenEMR FHIR clinical cards", async ({ page }) => {
@@ -161,6 +161,7 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await page.goto("/");
 
   await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByLabel("Document workflow proof").getByText("Memory-only document workflow.")).toBeVisible();
   await page.getByLabel("Document type").selectOption("intake_form");
   await page.getByLabel("Document file").setInputFiles({
     name: "synthetic-intake.txt",
@@ -174,11 +175,14 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
 
   await page.getByRole("button", { name: "Approve all" }).click();
   await expect(page.getByText(/document facts approved/i)).toBeVisible();
+  await expect(page.getByLabel("Approved patient document evidence").getByText("Approved patient evidence")).toBeVisible();
+  await expect(page.getByText(/1 approved evidence objects/)).toBeVisible();
 
   await page.getByRole("textbox", { name: "Message" }).fill("What social barriers are documented?");
   await page.getByRole("button", { name: "Send" }).click();
 
   await expect(page.getByText(/approved_document_evidence/).first()).toBeVisible();
+  await expect(page.getByLabel("Agent route trace").getByText("approved_document_evidence")).toBeVisible();
   await expect(page.getByText(/Misses doses when work shifts change/).last()).toBeVisible();
 });
 

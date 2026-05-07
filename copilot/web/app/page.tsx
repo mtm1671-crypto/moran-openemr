@@ -35,6 +35,15 @@ type ChatAudit = {
   evidence_count?: number;
   evidence_used_count?: number;
   reasoning_summary?: string;
+  provider?: string;
+  persistence?: string;
+  audit_persistence?: string;
+  conversation_persistence?: string;
+  agent_loop?: {
+    mode?: string;
+    max_steps?: number;
+    steps?: string[];
+  };
   [key: string]: unknown;
 };
 
@@ -43,6 +52,7 @@ type ChatLine = {
   text: string;
   citations?: Citation[];
   audit?: ChatAudit;
+  conversationId?: string;
 };
 
 type SsePayload = {
@@ -52,6 +62,7 @@ type SsePayload = {
   audit?: ChatAudit;
   evidence_count?: number;
   tools?: string[];
+  conversation_id?: string;
 };
 
 type AuthStatus = "checking" | "authenticated" | "authenticating" | "failed";
@@ -367,7 +378,8 @@ export default function Home() {
           role: "assistant",
           text: parsed.answer ?? "No verified answer returned.",
           citations: parsed.citations,
-          audit: parsed.audit
+          audit: parsed.audit,
+          conversationId: parsed.conversation_id
         }
       ]);
       return "final";
@@ -521,9 +533,17 @@ export default function Home() {
               ) : null}
               {line.audit ? (
                 <div className="auditTrace">
-                  {line.audit.tools?.length ? <span>{line.audit.tools.join(" -> ")}</span> : null}
-                  {line.audit.verification ? <span>{line.audit.verification}</span> : null}
-                  {line.audit.reasoning_summary ? <span>{line.audit.reasoning_summary}</span> : null}
+                  {auditSummaryChips(line.audit, line.conversationId).map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                  {line.audit.agent_loop?.steps?.length ? (
+                    <ol className="agentStepList" aria-label="Agent route trace">
+                      {line.audit.agent_loop.steps.map((step, stepIndex) => (
+                        <li key={`${step}-${stepIndex}`}>{step}</li>
+                      ))}
+                    </ol>
+                  ) : null}
+                  {line.audit.reasoning_summary ? <p>{line.audit.reasoning_summary}</p> : null}
                 </div>
               ) : null}
             </div>
@@ -600,4 +620,23 @@ function canWriteObservations(user: RequestUser | null): boolean {
       "patient/Observation.cud"
     ].includes(scope)
   );
+}
+
+function auditSummaryChips(audit: ChatAudit, conversationId?: string): string[] {
+  const chips: string[] = [];
+  if (audit.verification) chips.push(`verification: ${audit.verification}`);
+  if (audit.provider) chips.push(`provider: ${audit.provider}`);
+  if (audit.tools?.length) chips.push(`retrieval: ${audit.tools.join(" -> ")}`);
+  if (typeof audit.evidence_count === "number") chips.push(`evidence: ${audit.evidence_count}`);
+  if (typeof audit.evidence_used_count === "number") {
+    chips.push(`used: ${audit.evidence_used_count}`);
+  }
+  if (audit.conversation_persistence) {
+    chips.push(`conversation: ${audit.conversation_persistence}`);
+  }
+  if (audit.audit_persistence) chips.push(`audit: ${audit.audit_persistence}`);
+  if (audit.persistence) chips.push(`persistence: ${audit.persistence}`);
+  if (conversationId) chips.push(`conversation id: ${conversationId}`);
+  if (audit.limitations?.length) chips.push(`limitations: ${audit.limitations.length}`);
+  return chips;
 }

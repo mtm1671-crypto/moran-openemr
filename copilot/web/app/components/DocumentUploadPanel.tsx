@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ExtractionReviewPanel, type DocumentFact, type DocumentJob } from "./ExtractionReviewPanel";
 
@@ -23,6 +23,28 @@ type DocumentReviewPayload = {
   trace: string[];
 };
 
+type CapabilityResponse = {
+  providers?: Record<string, boolean>;
+};
+
+type ApprovedEvidence = {
+  evidence_id: string;
+  source_type: string;
+  source_id: string;
+  display_name: string;
+  fact: string;
+  confidence: string;
+  source_url: string | null;
+  retrieved_at: string;
+  metadata?: Record<string, unknown>;
+};
+
+type ApprovedEvidencePayload = {
+  patient_id: string;
+  evidence_count: number;
+  evidence: ApprovedEvidence[];
+};
+
 export function DocumentUploadPanel({
   apiBase,
   canWriteObservations,
@@ -37,6 +59,61 @@ export function DocumentUploadPanel({
   const [trace, setTrace] = useState<string[]>([]);
   const [isWorking, setIsWorking] = useState(false);
   const [extractUnassigned, setExtractUnassigned] = useState(false);
+  const [persistenceReady, setPersistenceReady] = useState<boolean | null>(null);
+  const [capabilityStatus, setCapabilityStatus] = useState("Checking storage readiness.");
+  const [approvedEvidence, setApprovedEvidence] = useState<ApprovedEvidence[]>([]);
+  const [approvedEvidenceStatus, setApprovedEvidenceStatus] = useState(
+    "No approved document evidence loaded."
+  );
+
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/capabilities`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Capabilities returned ${response.status}`);
+      }
+      const payload = (await response.json()) as CapabilityResponse;
+      const providers = payload.providers ?? {};
+      const enabled = providers.document_workflow_persistence_enabled ?? false;
+      const ready = providers.document_workflow_persistence_ready ?? false;
+      setPersistenceReady(ready);
+      setCapabilityStatus(ready ? "Durable storage ready." : enabled ? "Storage configured, not ready." : "Memory-only document workflow.");
+    } catch (error) {
+      setPersistenceReady(null);
+      setCapabilityStatus(errorMessage(error, "Storage readiness unavailable"));
+    }
+  }, [apiBase]);
+
+  const loadApprovedEvidence = useCallback(async () => {
+    if (!patientId || disabled) {
+      setApprovedEvidence([]);
+      setApprovedEvidenceStatus("Select an authorized patient to load approved evidence.");
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${apiBase}/api/documents/patients/${encodeURIComponent(patientId)}/approved-evidence`,
+        { cache: "no-store" }
+      );
+      if (!response.ok) {
+        throw new Error(`Approved evidence returned ${response.status}`);
+      }
+      const payload = (await response.json()) as ApprovedEvidencePayload;
+      setApprovedEvidence(payload.evidence);
+      setApprovedEvidenceStatus(`${payload.evidence_count} approved evidence objects for ${payload.patient_id}.`);
+    } catch (error) {
+      setApprovedEvidence([]);
+      setApprovedEvidenceStatus(errorMessage(error, "Approved evidence unavailable"));
+    }
+  }, [apiBase, disabled, patientId]);
+
+  useEffect(() => {
+    void loadCapabilities();
+  }, [loadCapabilities]);
+
+  useEffect(() => {
+    void loadApprovedEvidence();
+  }, [loadApprovedEvidence]);
 
   async function uploadDocument() {
     if (!file) {
@@ -70,6 +147,7 @@ export function DocumentUploadPanel({
           : `Unassigned document extracted: ${formatCounts(payload.fact_counts)}.`
       );
       await loadReview(payload.job.job_id);
+      await loadApprovedEvidence();
     } catch (error) {
       onStatus(errorMessage(error, "Document extraction failed"));
     } finally {
@@ -115,6 +193,7 @@ export function DocumentUploadPanel({
         throw new Error(`Review approval returned ${response.status}`);
       }
       await loadReview(job.job_id);
+      await loadApprovedEvidence();
       onStatus(`${reviewable.length} document facts approved for this patient.`);
     } catch (error) {
       onStatus(errorMessage(error, "Review approval failed"));
@@ -150,6 +229,7 @@ export function DocumentUploadPanel({
       };
       setJob(payload.job);
       setFacts(payload.facts);
+      await loadApprovedEvidence();
       onStatus(writeStatusMessage(payload));
     } catch (error) {
       onStatus(errorMessage(error, "Observation write failed"));
@@ -164,6 +244,11 @@ export function DocumentUploadPanel({
   const hasOnlyRetryableFailures =
     facts.some((fact) => fact.status === "write_failed") &&
     !facts.some((fact) => fact.status === "approved");
+  const reviewRequiredCount = facts.filter((fact) => fact.status === "review_required").length;
+  const approvedCount = facts.filter((fact) => fact.status === "approved").length;
+  const writtenCount = facts.filter((fact) => fact.status === "written").length;
+  const failedWriteCount = facts.filter((fact) => fact.status === "write_failed").length;
+  const sourceDigest = job?.source.source_sha256.slice(0, 12) ?? "pending";
 
   return (
     <section className="documentPanel" aria-label="Document evidence workflow">
@@ -230,8 +315,106 @@ export function DocumentUploadPanel({
           {hasOnlyRetryableFailures ? "Retry writes" : "Write labs"}
         </button>
       </div>
+      <div className="documentProofStrip" aria-label="Document workflow proof">
+        <WorkflowBadge
+          label="Storage"
+          state={persistenceReady === null ? "checking" : persistenceReady ? "ready" : "blocked"}
+          value={capabilityStatus}
+        />
+        <WorkflowBadge
+          label="Assignment"
+          state={job?.patient_id || (!job && patientId && !extractUnassigned) ? "ready" : "blocked"}
+          value={job ? job.patient_id ?? "unassigned" : patientId ?? "no patient"}
+        />
+        <WorkflowBadge
+          label="Source"
+          state={job ? "ready" : "checking"}
+          value={job ? `${job.source.filename} - sha256:${sourceDigest}` : file?.name ?? "no file"}
+        />
+        <WorkflowBadge
+          label="Extraction"
+          state={facts.length ? "ready" : "checking"}
+          value={`${facts.length} facts, ${reviewRequiredCount} need review`}
+        />
+        <WorkflowBadge
+          label="Persistence"
+          state={approvedEvidence.length ? "ready" : approvedCount || writtenCount ? "checking" : "blocked"}
+          value={`${approvedEvidence.length} retrievable evidence objects`}
+        />
+        <WorkflowBadge
+          label="Write"
+          state={failedWriteCount ? "blocked" : writtenCount ? "ready" : "checking"}
+          value={`${writtenCount} written, ${failedWriteCount} failed`}
+        />
+      </div>
       {job ? <ExtractionReviewPanel facts={facts} trace={trace} /> : null}
+      <section className="approvedEvidencePanel" aria-label="Approved patient document evidence">
+        <header>
+          <div>
+            <strong>Approved patient evidence</strong>
+            <span>{approvedEvidenceStatus}</span>
+          </div>
+          <button
+            disabled={disabled || isWorking || !patientId}
+            onClick={() => void loadApprovedEvidence()}
+            type="button"
+          >
+            Refresh evidence
+          </button>
+        </header>
+        {approvedEvidence.length ? (
+          <div className="approvedEvidenceList">
+            {approvedEvidence.map((item) => (
+              <article className="approvedEvidenceCard" key={item.evidence_id}>
+                <div>
+                  <strong>{item.display_name}</strong>
+                  <span>{item.confidence}</span>
+                </div>
+                <p>{item.fact}</p>
+                <dl>
+                  <div>
+                    <dt>Evidence ID</dt>
+                    <dd>{item.evidence_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>{item.source_type}</dd>
+                  </div>
+                  <div>
+                    <dt>Stored</dt>
+                    <dd>{formatTimestamp(item.retrieved_at)}</dd>
+                  </div>
+                </dl>
+                {sourceHref(apiBase, item.source_url) ? (
+                  <a href={sourceHref(apiBase, item.source_url)} rel="noreferrer" target="_blank">
+                    Open citation
+                  </a>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="approvedEvidenceEmpty">No approved document evidence for the selected patient.</p>
+        )}
+      </section>
     </section>
+  );
+}
+
+function WorkflowBadge({
+  label,
+  state,
+  value
+}: {
+  label: string;
+  state: "ready" | "checking" | "blocked";
+  value: string;
+}) {
+  return (
+    <span className={`workflowBadge ${state}`}>
+      <strong>{label}</strong>
+      <small>{value}</small>
+    </span>
   );
 }
 
@@ -261,6 +444,22 @@ function writeStatusMessage(payload: {
   if (!failures.length) return base;
   const first = failures[0];
   return `${base} First failure: ${first.display_label} - ${first.write_error}`;
+}
+
+function sourceHref(apiBase: string, sourceUrl: string | null) {
+  if (!sourceUrl?.startsWith("/api/")) return undefined;
+  return `${apiBase}${sourceUrl}`;
+}
+
+function formatTimestamp(value: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 function errorMessage(error: unknown, fallback: string): string {

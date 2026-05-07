@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
 import { GraphTracePanel } from "./GraphTracePanel";
 import { PdfBoundingBoxPreview } from "./PdfBoundingBoxPreview";
 
@@ -24,6 +28,8 @@ export type DocumentFact = {
   proposed_destination: string;
   blocking_reasons: string[];
   citation: {
+    source_type?: string;
+    source_id?: string;
     page_or_section: string;
     field_or_chunk_id: string;
     quote_or_value: string;
@@ -35,6 +41,12 @@ export type DocumentFact = {
       y1: number;
     } | null;
   };
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  schema_valid?: boolean;
+  citation_present?: boolean;
+  bbox_present?: boolean;
+  needs_human_review?: boolean;
   written_resource_id: string | null;
   write_error: string | null;
 };
@@ -45,14 +57,33 @@ type ExtractionReviewPanelProps = {
 };
 
 export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelProps) {
-  const selectedFact = facts[0] ?? null;
+  const [selectedFactId, setSelectedFactId] = useState<string | null>(facts[0]?.fact_id ?? null);
+  const selectedFact = useMemo(
+    () => facts.find((fact) => fact.fact_id === selectedFactId) ?? facts[0] ?? null,
+    [facts, selectedFactId]
+  );
+
+  useEffect(() => {
+    if (!facts.length) {
+      setSelectedFactId(null);
+      return;
+    }
+    if (!facts.some((fact) => fact.fact_id === selectedFactId)) {
+      setSelectedFactId(facts[0].fact_id);
+    }
+  }, [facts, selectedFactId]);
 
   return (
     <div className="reviewGrid">
       <PdfBoundingBoxPreview fact={selectedFact} />
       <div className="factList" aria-label="Extracted facts">
         {facts.map((fact) => (
-          <article className="factCard" key={fact.fact_id}>
+          <button
+            className={`factCard ${selectedFact?.fact_id === fact.fact_id ? "selected" : ""}`}
+            key={fact.fact_id}
+            onClick={() => setSelectedFactId(fact.fact_id)}
+            type="button"
+          >
             <div className="factHeader">
               <strong>{fact.display_label}</strong>
               <span className={`factStatus ${fact.status}`}>{fact.status}</span>
@@ -69,9 +100,28 @@ export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelPro
               </div>
               <div>
                 <dt>Citation</dt>
-                <dd>{fact.citation.page_or_section}</dd>
+                <dd>{`${fact.citation.page_or_section} / ${fact.citation.field_or_chunk_id}`}</dd>
               </div>
             </dl>
+            <div className="factChecks" aria-label={`${fact.display_label} evidence checks`}>
+              <span className={fact.schema_valid === false ? "blocked" : "ready"}>
+                schema {fact.schema_valid === false ? "invalid" : "valid"}
+              </span>
+              <span className={fact.citation_present === false ? "blocked" : "ready"}>
+                citation {fact.citation_present === false ? "missing" : "present"}
+              </span>
+              <span className={fact.bbox_present === false ? "blocked" : "ready"}>
+                bbox {fact.bbox_present === false ? "missing" : "present"}
+              </span>
+            </div>
+            <div className="factQuote">
+              <strong>Quote</strong>
+              <span>{fact.citation.quote_or_value}</span>
+            </div>
+            <div className="factMetaLine">
+              <span>{fact.fact_id}</span>
+              {fact.reviewed_by ? <span>reviewed by {fact.reviewed_by}</span> : null}
+            </div>
             {fact.blocking_reasons.length ? (
               <small>{fact.blocking_reasons.join(", ")}</small>
             ) : null}
@@ -79,7 +129,7 @@ export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelPro
             {fact.write_error ? (
               <small className="factError">Write failed: {fact.write_error}</small>
             ) : null}
-          </article>
+          </button>
         ))}
       </div>
       <GraphTracePanel trace={trace} />

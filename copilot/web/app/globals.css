@@ -597,6 +597,59 @@ h1 {
   opacity: 0.62;
 }
 
+.documentProofStrip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workflowBadge {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-subtle);
+  padding: 8px 9px;
+}
+
+.workflowBadge strong,
+.workflowBadge small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflowBadge strong {
+  font-size: 11px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.workflowBadge small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.workflowBadge.ready {
+  border-color: #a9d5d0;
+  background: var(--accent-soft);
+}
+
+.workflowBadge.ready strong {
+  color: var(--accent-strong);
+}
+
+.workflowBadge.blocked {
+  border-color: #e5c779;
+  background: #fff8e5;
+}
+
+.workflowBadge.blocked strong {
+  color: #825900;
+}
+
 .reviewGrid {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr) minmax(150px, 220px);
@@ -663,7 +716,18 @@ h1 {
 .factCard {
   display: grid;
   gap: 7px;
+  width: 100%;
+  border-color: var(--line);
+  color: var(--text);
+  cursor: pointer;
   padding: 9px;
+  text-align: left;
+}
+
+.factCard:hover,
+.factCard.selected {
+  border-color: var(--accent);
+  box-shadow: 0 1px 6px rgba(15, 118, 110, 0.12);
 }
 
 .factHeader {
@@ -738,12 +802,207 @@ h1 {
   font-size: 11px;
 }
 
+.factChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.factChecks span {
+  border: 1px solid #b9dbd7;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.factChecks span.blocked {
+  border-color: #f2b8b5;
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.factQuote {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid #d97706;
+  background: #fff8e9;
+  padding: 6px 8px;
+}
+
+.factQuote strong {
+  color: #825900;
+  font-size: 10px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.factQuote span,
+.factMetaLine {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.factQuote span {
+  overflow-wrap: anywhere;
+}
+
+.factMetaLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .factCard .factError {
   border-left: 3px solid #b42318;
   background: #fff1f0;
   color: #8a1f14;
   line-height: 1.35;
   padding: 6px 8px;
+}
+
+.approvedEvidencePanel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-subtle);
+  padding: 10px;
+}
+
+.approvedEvidencePanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.approvedEvidencePanel header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.approvedEvidencePanel strong {
+  font-size: 13px;
+}
+
+.approvedEvidencePanel header span,
+.approvedEvidenceEmpty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.approvedEvidencePanel header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approvedEvidencePanel button {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.approvedEvidencePanel button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.approvedEvidencePanel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.approvedEvidenceList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.approvedEvidenceCard {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 9px;
+}
+
+.approvedEvidenceCard > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.approvedEvidenceCard > div:first-child strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approvedEvidenceCard > div:first-child span,
+.approvedEvidenceCard a {
+  border: 1px solid #b9c6d8;
+  border-radius: 999px;
+  color: var(--source);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 3px 7px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.approvedEvidenceCard p,
+.approvedEvidenceEmpty {
+  margin: 0;
+}
+
+.approvedEvidenceCard p {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.approvedEvidenceCard dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.approvedEvidenceCard dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.approvedEvidenceCard dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tracePanel {
@@ -863,6 +1122,34 @@ h1 {
   padding: 3px 7px;
 }
 
+.auditTrace p {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.agentStepList {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agentStepList li {
+  border: 1px solid #d8dee8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 7px;
+}
+
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -941,7 +1228,8 @@ h1 {
   }
 
   .documentControls,
-  .reviewGrid {
+  .reviewGrid,
+  .documentProofStrip {
     grid-template-columns: 1fr;
   }
 }
