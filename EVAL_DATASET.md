@@ -7,13 +7,16 @@ This eval artifact defines the deterministic dataset and reports the latest auto
 Latest local readiness run recorded for this submission package:
 
 ```text
-Date: 2026-05-04
-Command: focused local Week 2 verification
-API tests: 114 passed, 5 skipped
+Date: 2026-05-07
+API tests: 151 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
+Week 2 eval gate: 4 passed, 0 failed with python -m app.w2_eval --enforce
+Web lint: passed
 Web build: passed
-Playwright: 7 passed
+Playwright: 9 passed
+pip-audit: no known vulnerabilities found
+npm audit: 0 vulnerabilities
 ```
 
 Latest deployed checks recorded after the Week 2 redeploy:
@@ -83,11 +86,34 @@ Every automated and manual eval uses these pass/fail rules:
 - Cache failures degrade to live FHIR evidence where safe.
 - OpenEMR authorization failures do not confirm whether a patient or resource exists.
 
+## Week 2 Deterministic Eval Gate
+
+The executable Week 2 gate lives in `copilot/api/app/w2_eval.py`. It runs committed golden cases from `copilot/api/evals/w2_golden_cases.jsonl`, writes the latest case results to `copilot/api/evals/w2_latest_results.jsonl`, and compares hard-gate pass rates against `copilot/api/evals/w2_baseline.json`.
+
+Run it from `copilot/api`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.w2_eval --enforce
+```
+
+Current committed starter cases:
+
+| Case | Fixture | Main proof |
+|---|---|---|
+| `w2-lab-lipids-001` | `example-documents/lab-results/p01-chen-lipid-panel.pdf` | Lab extraction, citations, write approval, duplicate-write prevention, lipid guideline retrieval |
+| `w2-intake-social-001` | `example-documents/intake-forms/p01-chen-intake-typed.pdf` | Intake extraction, citations, approved evidence in chat |
+| `w2-low-confidence-block-001` | `example-documents/lab-results/p02-whitaker-cbc.pdf` | Low-confidence facts block chart writes |
+| `w2-treatment-refusal-001` | none | Treatment/change request refusal |
+
+Hard gates currently enforced: schema validity, citation presence, patient scope, source round trip, bounding boxes, no unapproved chart write, low-confidence write blocking, duplicate Observation prevention, safe refusal, and no raw expected fact fragments in audit payloads. API regression coverage also checks durable source-key reuse after a process-local cache miss.
+
+The gate is executable today. It is still a starter gate: expanding it to the target 50-case GitLab blocking suite remains future work.
+
 ## Automated Test Coverage
 
 | Area | Files | Result |
 |---|---|---|
-| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `114 passed, 5 skipped` API run |
+| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `151 passed, 6 skipped` API run |
 | Patient search and source links | `test_api_patients.py`, `test_api_source.py` | Passed |
 | FHIR client and retry behavior | `test_fhir_client.py`, `test_openemr_auth.py` | Passed |
 | Evidence tools and cache failover | `test_evidence_tools.py`, `test_api_chat_evidence.py` | Passed |
@@ -96,7 +122,8 @@ Every automated and manual eval uses these pass/fail rules:
 | PHI readiness configuration | `test_phi_security.py`, `test_main.py` | Passed |
 | Nightly jobs and reindexing | `test_jobs.py` | Passed |
 | Week 2 document extraction/review/write | `test_document_models.py`, `test_document_extraction.py`, `test_document_api.py` | Passed |
-| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 7 passed |
+| Week 2 deterministic eval gate | `copilot/api/app/w2_eval.py`, `copilot/api/evals/w2_golden_cases.jsonl` | 4 passed, 0 failed |
+| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 9 passed |
 
 ## Manual Demo Acceptance
 

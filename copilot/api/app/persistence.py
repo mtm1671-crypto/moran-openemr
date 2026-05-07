@@ -5,6 +5,7 @@ product/audit data and rebuildable projections: evidence cache, vector index,
 semantic relationships, job status, and encrypted conversation history.
 """
 
+import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
@@ -32,6 +33,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.config import Settings
+from app.document_models import DocumentJobRecord, ExtractedFact, W2FactStatus, W2DocType
+from app.document_storage import StoredDocumentSource, document_fact_to_evidence, document_source_id
 from app.models import EvidenceObject
 from app.security import PhiCipher, assert_metadata_payload_is_phi_safe
 
@@ -146,6 +149,48 @@ job_runs = Table(
     Column("patient_ref", String(64), nullable=True),
     Column("metadata_json", JSON, nullable=False),
     Column("error_code", String(80), nullable=True),
+)
+
+document_sources = Table(
+    "document_sources",
+    metadata,
+    Column("source_id", String(180), primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("patient_ref", String(64), nullable=True),
+    Column("source_sha256", String(64), nullable=False),
+    Column("content_type", String(120), nullable=False),
+    Column("byte_count", Integer, nullable=False),
+    Column("encryption_key_id", String(80), nullable=False),
+    Column("encrypted_source", LargeBinary, nullable=False),
+)
+
+document_jobs = Table(
+    "document_jobs",
+    metadata,
+    Column("job_id", String(80), primary_key=True),
+    Column("source_id", String(180), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("patient_ref", String(64), nullable=True),
+    Column("status", String(40), nullable=False),
+    Column("doc_type", String(40), nullable=False),
+    Column("actor_user_id", String(255), nullable=False),
+    Column("encryption_key_id", String(80), nullable=False),
+    Column("encrypted_job", LargeBinary, nullable=False),
+)
+
+document_facts = Table(
+    "document_facts",
+    metadata,
+    Column("fact_id", String(80), primary_key=True),
+    Column("job_id", String(80), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("patient_ref", String(64), nullable=True),
+    Column("status", String(40), nullable=False),
+    Column("fact_type", String(80), nullable=False),
+    Column("destination", String(80), nullable=False),
+    Column("encryption_key_id", String(80), nullable=False),
+    Column("encrypted_fact", LargeBinary, nullable=False),
 )
 
 semantic_relationships = Table(
@@ -379,6 +424,73 @@ def build_job_run_record(
     }
 
 
+def build_document_source_record(
+    *,
+    settings: Settings,
+    source: StoredDocumentSource,
+) -> dict[str, Any]:
+    cipher = build_phi_cipher(settings)
+    payload = {
+        "source_id": source.source_id,
+        "patient_id": source.patient_id,
+        "doc_type": source.doc_type.value,
+        "filename": source.filename,
+        "content_type": source.content_type,
+        "source_sha256": source.source_sha256,
+        "content_base64": base64.b64encode(source.content).decode("ascii"),
+        "created_at": source.created_at.isoformat(),
+    }
+    return {
+        "source_id": source.source_id,
+        "created_at": source.created_at,
+        "patient_ref": cipher.fingerprint(source.patient_id) if source.patient_id else None,
+        "source_sha256": source.source_sha256,
+        "content_type": source.content_type,
+        "byte_count": len(source.content),
+        "encryption_key_id": cipher.key_id,
+        "encrypted_source": cipher.encrypt_json(payload),
+    }
+
+
+def build_document_job_record(
+    *,
+    settings: Settings,
+    job: DocumentJobRecord,
+) -> dict[str, Any]:
+    cipher = build_phi_cipher(settings)
+    return {
+        "job_id": job.job_id,
+        "source_id": job.source.source_id,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "patient_ref": cipher.fingerprint(job.patient_id) if job.patient_id else None,
+        "status": job.status.value,
+        "doc_type": job.doc_type.value,
+        "actor_user_id": job.actor_user_id,
+        "encryption_key_id": cipher.key_id,
+        "encrypted_job": cipher.encrypt_json(job.model_dump(mode="json")),
+    }
+
+
+def build_document_fact_record(
+    *,
+    settings: Settings,
+    fact: ExtractedFact,
+) -> dict[str, Any]:
+    cipher = build_phi_cipher(settings)
+    return {
+        "fact_id": fact.fact_id,
+        "job_id": fact.document_job_id,
+        "updated_at": datetime.now(tz=UTC),
+        "patient_ref": cipher.fingerprint(fact.patient_id) if fact.patient_id else None,
+        "status": fact.status.value,
+        "fact_type": fact.fact_type.value,
+        "destination": fact.proposed_destination.value,
+        "encryption_key_id": cipher.key_id,
+        "encrypted_fact": cipher.encrypt_json(fact.model_dump(mode="json")),
+    }
+
+
 def build_semantic_relationship_records(
     *,
     settings: Settings,
@@ -443,6 +555,24 @@ async def initialize_phi_schema(settings: Settings) -> None:
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_job_runs_type_status_created "
                     "ON job_runs (job_type, status, created_at)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_document_jobs_patient_status_updated "
+                    "ON document_jobs (patient_ref, status, updated_at)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_document_facts_job_status "
+                    "ON document_facts (job_id, status)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_document_facts_patient_status "
+                    "ON document_facts (patient_ref, status)"
                 )
             )
             await connection.execute(
@@ -540,6 +670,9 @@ async def operational_storage_ready(settings: Settings) -> bool:
                 "conversations",
                 "conversation_messages",
                 "job_runs",
+                "document_sources",
+                "document_jobs",
+                "document_facts",
                 "semantic_relationships",
             ]
             rows = (
@@ -681,6 +814,218 @@ async def read_job_run(settings: Settings, job_id: str) -> JobRunRecord | None:
     if row is None:
         return None
     return _job_run_from_row(dict(row))
+
+
+def document_workflow_persistence_configured(settings: Settings) -> bool:
+    return (
+        settings.document_workflow_persistence_enabled
+        and settings.database_url is not None
+        and settings.encryption_key is not None
+    )
+
+
+async def upsert_document_workflow_snapshot(
+    *,
+    settings: Settings,
+    job: DocumentJobRecord,
+    source: StoredDocumentSource,
+    facts: list[ExtractedFact],
+) -> None:
+    if not document_workflow_persistence_configured(settings):
+        return
+
+    source_record = build_document_source_record(settings=settings, source=source)
+    job_record = build_document_job_record(settings=settings, job=job)
+    fact_records = [build_document_fact_record(settings=settings, fact=fact) for fact in facts]
+
+    engine = _create_engine(settings)
+    try:
+        async with engine.begin() as connection:
+            source_insert = pg_insert(document_sources).values(source_record)
+            await connection.execute(
+                source_insert.on_conflict_do_update(
+                    index_elements=["source_id"],
+                    set_={
+                        "created_at": source_insert.excluded.created_at,
+                        "patient_ref": source_insert.excluded.patient_ref,
+                        "source_sha256": source_insert.excluded.source_sha256,
+                        "content_type": source_insert.excluded.content_type,
+                        "byte_count": source_insert.excluded.byte_count,
+                        "encryption_key_id": source_insert.excluded.encryption_key_id,
+                        "encrypted_source": source_insert.excluded.encrypted_source,
+                    },
+                )
+            )
+
+            job_insert = pg_insert(document_jobs).values(job_record)
+            await connection.execute(
+                job_insert.on_conflict_do_update(
+                    index_elements=["job_id"],
+                    set_={
+                        "source_id": job_insert.excluded.source_id,
+                        "created_at": job_insert.excluded.created_at,
+                        "updated_at": job_insert.excluded.updated_at,
+                        "patient_ref": job_insert.excluded.patient_ref,
+                        "status": job_insert.excluded.status,
+                        "doc_type": job_insert.excluded.doc_type,
+                        "actor_user_id": job_insert.excluded.actor_user_id,
+                        "encryption_key_id": job_insert.excluded.encryption_key_id,
+                        "encrypted_job": job_insert.excluded.encrypted_job,
+                    },
+                )
+            )
+
+            for record in fact_records:
+                fact_insert = pg_insert(document_facts).values(record)
+                await connection.execute(
+                    fact_insert.on_conflict_do_update(
+                        index_elements=["fact_id"],
+                        set_={
+                            "job_id": fact_insert.excluded.job_id,
+                            "updated_at": fact_insert.excluded.updated_at,
+                            "patient_ref": fact_insert.excluded.patient_ref,
+                            "status": fact_insert.excluded.status,
+                            "fact_type": fact_insert.excluded.fact_type,
+                            "destination": fact_insert.excluded.destination,
+                            "encryption_key_id": fact_insert.excluded.encryption_key_id,
+                            "encrypted_fact": fact_insert.excluded.encrypted_fact,
+                        },
+                    )
+                )
+    finally:
+        await engine.dispose()
+
+
+async def read_document_workflow_snapshot(
+    settings: Settings,
+    job_id: str,
+) -> tuple[DocumentJobRecord, StoredDocumentSource, list[ExtractedFact]] | None:
+    if not document_workflow_persistence_configured(settings):
+        return None
+    cipher = build_phi_cipher(settings)
+    engine = _create_engine(settings)
+    try:
+        async with engine.connect() as connection:
+            job_row = (
+                await connection.execute(
+                    select(document_jobs.c.encrypted_job).where(document_jobs.c.job_id == job_id).limit(1)
+                )
+            ).mappings().first()
+            if job_row is None:
+                return None
+            encrypted_job = _row_bytes(job_row["encrypted_job"])
+            job = DocumentJobRecord.model_validate(cipher.decrypt_json(encrypted_job))
+
+            source_row = (
+                await connection.execute(
+                    select(document_sources.c.encrypted_source)
+                    .where(document_sources.c.source_id == job.source.source_id)
+                    .limit(1)
+                )
+            ).mappings().first()
+            if source_row is None:
+                return None
+            source_payload = cipher.decrypt_json(_row_bytes(source_row["encrypted_source"]))
+
+            fact_rows = list(
+                (
+                    await connection.execute(
+                        select(document_facts.c.encrypted_fact)
+                        .where(document_facts.c.job_id == job_id)
+                        .order_by(document_facts.c.fact_id)
+                    )
+                ).mappings()
+            )
+    finally:
+        await engine.dispose()
+
+    source = _stored_document_source_from_payload(source_payload)
+    facts = [
+        ExtractedFact.model_validate(cipher.decrypt_json(_row_bytes(row["encrypted_fact"])))
+        for row in fact_rows
+    ]
+    return job, source, facts
+
+
+async def read_document_workflow_snapshot_by_source_key(
+    *,
+    settings: Settings,
+    patient_id: str | None,
+    doc_type: W2DocType,
+    source_hash: str,
+    content_type: str,
+) -> tuple[DocumentJobRecord, StoredDocumentSource, list[ExtractedFact]] | None:
+    if not document_workflow_persistence_configured(settings):
+        return None
+
+    source_id = document_source_id(
+        patient_id=patient_id,
+        doc_type=doc_type,
+        source_hash=source_hash,
+        content_type=content_type,
+    )
+    engine = _create_engine(settings)
+    try:
+        async with engine.connect() as connection:
+            job_id = await connection.scalar(
+                select(document_jobs.c.job_id)
+                .where(document_jobs.c.source_id == source_id)
+                .where(document_jobs.c.doc_type == doc_type.value)
+                .order_by(document_jobs.c.updated_at.desc())
+                .limit(1)
+            )
+    finally:
+        await engine.dispose()
+
+    if not isinstance(job_id, str):
+        return None
+    return await read_document_workflow_snapshot(settings, job_id)
+
+
+async def read_approved_document_evidence(
+    settings: Settings,
+    patient_id: str,
+) -> list[EvidenceObject]:
+    if not document_workflow_persistence_configured(settings):
+        return []
+
+    cipher = build_phi_cipher(settings)
+    patient_ref = cipher.fingerprint(patient_id)
+    engine = _create_engine(settings)
+    try:
+        async with engine.connect() as connection:
+            rows = list(
+                (
+                    await connection.execute(
+                        select(
+                            document_jobs.c.encrypted_job,
+                            document_facts.c.encrypted_fact,
+                        )
+                        .select_from(
+                            document_facts.join(
+                                document_jobs,
+                                document_facts.c.job_id == document_jobs.c.job_id,
+                            )
+                        )
+                        .where(document_facts.c.patient_ref == patient_ref)
+                        .where(
+                            document_facts.c.status.in_(
+                                [W2FactStatus.approved.value, W2FactStatus.written.value]
+                            )
+                        )
+                        .order_by(document_facts.c.updated_at)
+                    )
+                ).mappings()
+            )
+    finally:
+        await engine.dispose()
+
+    evidence: list[EvidenceObject] = []
+    for row in rows:
+        job = DocumentJobRecord.model_validate(cipher.decrypt_json(_row_bytes(row["encrypted_job"])))
+        fact = ExtractedFact.model_validate(cipher.decrypt_json(_row_bytes(row["encrypted_fact"])))
+        evidence.append(document_fact_to_evidence(job, fact))
+    return evidence
 
 
 async def write_evidence_cache_record(settings: Settings, record: dict[str, Any]) -> None:
@@ -1076,6 +1421,34 @@ def _coerce_embedding(value: Any) -> list[float] | None:
             return None
         embedding.append(float(item))
     return embedding
+
+
+def _stored_document_source_from_payload(payload: dict[str, Any]) -> StoredDocumentSource:
+    created_at = payload.get("created_at")
+    if not isinstance(created_at, str):
+        raise RuntimeError("Document source row had invalid created_at")
+    content_base64 = payload.get("content_base64")
+    if not isinstance(content_base64, str):
+        raise RuntimeError("Document source row had invalid content")
+    patient_id = payload.get("patient_id")
+    if patient_id is not None and not isinstance(patient_id, str):
+        raise RuntimeError("Document source row had invalid patient_id")
+    return StoredDocumentSource(
+        source_id=str(payload["source_id"]),
+        patient_id=patient_id,
+        doc_type=W2DocType(str(payload["doc_type"])),
+        filename=str(payload["filename"]),
+        content_type=str(payload["content_type"]),
+        source_sha256=str(payload["source_sha256"]),
+        content=base64.b64decode(content_base64.encode("ascii")),
+        created_at=datetime.fromisoformat(created_at),
+    )
+
+
+def _row_bytes(value: Any) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    return bytes(value)
 
 
 def _vector_literal(embedding: list[float]) -> str:

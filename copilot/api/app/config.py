@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     vector_index_backend: str = "json"
     evidence_cache_enabled: bool = False
     evidence_cache_ttl_seconds: int = 300
+    document_workflow_persistence_enabled: bool = False
     agent_loop_max_steps: int = 6
     nightly_maintenance_enabled: bool = False
     nightly_maintenance_hour_utc: int = 8
@@ -276,6 +277,10 @@ class Settings(BaseSettings):
                 errors.append("DATABASE_URL is required when evidence cache is enabled")
             if self.evidence_cache_enabled and self.encryption_key is None:
                 errors.append("ENCRYPTION_KEY is required when evidence cache is enabled")
+            if self.document_workflow_persistence_enabled and self.database_url is None:
+                errors.append("DATABASE_URL is required when document workflow persistence is enabled")
+            if self.document_workflow_persistence_enabled and self.encryption_key is None:
+                errors.append("ENCRYPTION_KEY is required when document workflow persistence is enabled")
             return errors
 
         # PHI mode is fail-closed. These checks are intentionally stricter than
@@ -300,6 +305,10 @@ class Settings(BaseSettings):
             errors.append("DATABASE_URL is required when evidence cache is enabled")
         if self.evidence_cache_enabled and self.encryption_key is None:
             errors.append("ENCRYPTION_KEY is required when evidence cache is enabled")
+        if self.document_workflow_persistence_enabled and self.database_url is None:
+            errors.append("DATABASE_URL is required when document workflow persistence is enabled")
+        if self.document_workflow_persistence_enabled and self.encryption_key is None:
+            errors.append("ENCRYPTION_KEY is required when document workflow persistence is enabled")
         if self.openemr_api_log_option != 1:
             errors.append("OPENEMR_API_LOG_OPTION must be 1 when PHI controls are required")
         if uses_openai:

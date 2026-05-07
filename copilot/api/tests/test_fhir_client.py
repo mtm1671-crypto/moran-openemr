@@ -292,3 +292,35 @@ async def test_search_document_references_filters_clinical_notes() -> None:
     assert request.url.params["patient"] == "p1"
     assert request.url.params["category"] == "clinical-note"
     assert request.url.params["_count"] == "4"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_observations_by_identifier_scopes_to_patient_and_fact() -> None:
+    route = respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(
+            200,
+            json={
+                "resourceType": "Bundle",
+                "entry": [
+                    {"resource": {"resourceType": "Observation", "id": "obs-existing"}},
+                    {"resource": {"resourceType": "Condition", "id": "ignored"}},
+                ],
+            },
+        )
+    )
+    settings = Settings(openemr_fhir_base_url="http://openemr.test/apis/default/fhir")
+    client = OpenEMRFhirClient(settings=settings, bearer_token="token-123")
+
+    observations = await client.search_observations_by_identifier(
+        patient_id="p1",
+        system="https://agentforge.dev/fhir/identifier/document-fact",
+        value="w2fact-1",
+    )
+
+    assert observations == [{"resourceType": "Observation", "id": "obs-existing"}]
+    request = route.calls[0].request
+    assert request.url.params["patient"] == "p1"
+    assert request.url.params["identifier"] == (
+        "https://agentforge.dev/fhir/identifier/document-fact|w2fact-1"
+    )

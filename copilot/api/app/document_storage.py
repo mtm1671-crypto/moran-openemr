@@ -58,6 +58,21 @@ def source_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def document_source_id(
+    *,
+    patient_id: str | None,
+    doc_type: W2DocType,
+    source_hash: str,
+    content_type: str,
+) -> str:
+    source_key_digest = hashlib.sha256(
+        f"{patient_id or 'unassigned'}\0{doc_type.value}\0{content_type}\0{source_hash}".encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return f"local-doc-{source_key_digest[:24]}"
+
+
 def find_reusable_job(
     *,
     patient_id: str | None,
@@ -92,12 +107,12 @@ def create_document_workflow(
         if existing is not None:
             return existing, _SOURCES[existing.source.source_id], False
 
-        source_key_digest = hashlib.sha256(
-            f"{patient_id or 'unassigned'}\0{doc_type.value}\0{content_type}\0{digest}".encode(
-                "utf-8"
-            )
-        ).hexdigest()
-        source_id = f"local-doc-{source_key_digest[:24]}"
+        source_id = document_source_id(
+            patient_id=patient_id,
+            doc_type=doc_type,
+            source_hash=digest,
+            content_type=content_type,
+        )
         source = StoredDocumentSource(
             source_id=source_id,
             patient_id=patient_id,
@@ -206,6 +221,45 @@ def update_document_fact(job_id: str, fact: ExtractedFact) -> None:
         raise KeyError(f"Fact was not found: {fact.fact_id}")
 
 
+def document_workflow_snapshot(
+    job_id: str,
+) -> tuple[DocumentJobRecord, StoredDocumentSource, list[ExtractedFact]]:
+    with _STORE_LOCK:
+        job = require_document_job(job_id)
+        source = _SOURCES.get(job.source.source_id)
+        if source is None:
+            raise KeyError(f"Source document was not found: {job.source.source_id}")
+        return job, source, list(_FACTS_BY_JOB.get(job_id, []))
+
+
+def cache_document_workflow(
+    *,
+    job: DocumentJobRecord,
+    source: StoredDocumentSource,
+    facts: list[ExtractedFact],
+) -> None:
+    with _STORE_LOCK:
+        _SOURCES[source.source_id] = source
+        _JOBS[job.job_id] = job
+        _FACTS_BY_JOB[job.job_id] = list(facts)
+        _JOB_BY_SOURCE_KEY[
+            (source.patient_id, source.doc_type, source.source_sha256, source.content_type)
+        ] = job.job_id
+
+
+def append_document_job_trace(job_id: str, trace: str) -> DocumentJobRecord:
+    with _STORE_LOCK:
+        job = require_document_job(job_id)
+        updated = job.model_copy(
+            update={
+                "updated_at": now_utc(),
+                "trace": [*job.trace, trace],
+            }
+        )
+        _JOBS[job_id] = updated
+        return updated
+
+
 def require_document_job(job_id: str) -> DocumentJobRecord:
     job = read_document_job(job_id)
     if job is None:
@@ -232,6 +286,10 @@ def approved_document_evidence(patient_id: str) -> list[EvidenceObject]:
                     continue
                 evidence.append(_fact_to_evidence(job, fact))
         return evidence
+
+
+def document_fact_to_evidence(job: DocumentJobRecord, fact: ExtractedFact) -> EvidenceObject:
+    return _fact_to_evidence(job, fact)
 
 
 def _fact_to_evidence(job: DocumentJobRecord, fact: ExtractedFact) -> EvidenceObject:

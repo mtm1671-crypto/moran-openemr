@@ -22,6 +22,7 @@ from app.document_ingestion import router as document_router
 from app.document_storage import approved_document_evidence
 from app.evidence_tools import EvidenceRetrievalResult, FhirEvidenceService
 from app.fhir_client import OpenEMRFhirClient
+from app.guideline_rag import guideline_hits_to_evidence, retrieve_guideline_chunks
 from app.models import (
     CapabilityResponse,
     ChatRequest,
@@ -45,7 +46,9 @@ from app.persistence import (
     evidence_cache_ready,
     initialize_phi_schema,
     operational_storage_ready,
+    document_workflow_persistence_configured,
     read_evidence_cache_record,
+    read_approved_document_evidence,
     read_job_run,
     vector_store_ready,
     write_audit_event,
@@ -69,7 +72,12 @@ router.include_router(document_router)
 async def initialize_phi_storage(settings: Settings) -> None:
     # These tables are derived/product storage, not OpenEMR truth. They are still
     # required when PHI controls, vector search, or encrypted evidence cache are on.
-    if settings.requires_phi_controls() or settings.vector_search_enabled or settings.evidence_cache_enabled:
+    if (
+        settings.requires_phi_controls()
+        or settings.vector_search_enabled
+        or settings.evidence_cache_enabled
+        or settings.document_workflow_persistence_enabled
+    ):
         await initialize_phi_schema(settings)
 
 
@@ -1189,7 +1197,7 @@ async def _retrieve_evidence(
     if settings.openemr_fhir_base_url is None:
         # Local/demo mode can answer from deterministic fixtures. Production PHI
         # mode requires OpenEMR FHIR, enforced by Settings.runtime_config_errors().
-        document_evidence = approved_document_evidence(request.patient_id)
+        document_evidence = await _approved_document_evidence(settings, request.patient_id)
         retrieval = EvidenceRetrievalResult(
             evidence=_merge_evidence(_demo_evidence(request.patient_id), document_evidence),
             tools=_merge_strings(
@@ -1197,6 +1205,11 @@ async def _retrieve_evidence(
                 ["approved_document_evidence"] if document_evidence else [],
             ),
             limitations=["OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."],
+        )
+        retrieval = _augment_with_guideline_evidence(
+            patient_id=request.patient_id,
+            message=request.message,
+            retrieval=retrieval,
         )
         if settings.vector_search_enabled:
             return await _augment_with_vector_search_with_failover(
@@ -1221,13 +1234,18 @@ async def _retrieve_evidence(
         quick_question_id=request.quick_question_id,
         service=service,
     )
-    document_evidence = approved_document_evidence(request.patient_id)
+    document_evidence = await _approved_document_evidence(settings, request.patient_id)
     if document_evidence:
         retrieval = EvidenceRetrievalResult(
             evidence=_merge_evidence(retrieval.evidence, document_evidence),
             tools=_merge_strings(retrieval.tools, ["approved_document_evidence"]),
             limitations=retrieval.limitations,
         )
+    retrieval = _augment_with_guideline_evidence(
+        patient_id=request.patient_id,
+        message=request.message,
+        retrieval=retrieval,
+    )
     if settings.vector_search_enabled:
         return await _augment_with_vector_search_with_failover(
             settings=settings,
@@ -1237,6 +1255,60 @@ async def _retrieve_evidence(
             service=service,
         )
     return retrieval
+
+
+async def _approved_document_evidence(settings: Settings, patient_id: str) -> list[EvidenceObject]:
+    memory_evidence = approved_document_evidence(patient_id)
+    if not document_workflow_persistence_configured(settings):
+        return memory_evidence
+    persisted_evidence = await read_approved_document_evidence(settings, patient_id)
+    return _merge_evidence(memory_evidence, persisted_evidence)
+
+
+def _augment_with_guideline_evidence(
+    *,
+    patient_id: str,
+    message: str,
+    retrieval: EvidenceRetrievalResult,
+) -> EvidenceRetrievalResult:
+    document_facts = [
+        item.fact
+        for item in retrieval.evidence
+        if item.metadata.get("schema") == "w2_document_fact_v1"
+    ]
+    question_mentions_guidelines = any(
+        token in message.lower()
+        for token in [
+            "guideline",
+            "diabetes",
+            "a1c",
+            "lipid",
+            "ldl",
+            "hypertension",
+            "blood pressure",
+            "pay attention",
+            "changed",
+        ]
+    )
+    if not document_facts and not question_mentions_guidelines:
+        return retrieval
+
+    hits = retrieve_guideline_chunks(
+        question=message,
+        patient_facts=[],
+        extracted_facts=document_facts,
+        limit=3,
+    )
+    if not hits:
+        return retrieval
+    return EvidenceRetrievalResult(
+        evidence=_merge_evidence(
+            retrieval.evidence,
+            guideline_hits_to_evidence(patient_id=patient_id, hits=hits),
+        ),
+        tools=_merge_strings(retrieval.tools, ["guideline_rag"]),
+        limitations=retrieval.limitations,
+    )
 
 
 async def _augment_with_vector_search_with_failover(

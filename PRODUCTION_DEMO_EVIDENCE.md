@@ -14,8 +14,9 @@ Latest deployed Co-Pilot web build used for the walkthrough:
 `8695fc30-ef37-49bc-9fb4-c504929367a7`.
 
 Note: the original deployed walkthrough below proves the Week 1 chat/source-link path.
-The Week 2 document extraction/review workflow is now redeployed, but still needs
-a fresh authenticated browser smoke capture before early submission.
+The Week 2 document extraction/review workflow exists locally and has an
+executable local eval gate, but it still needs a fresh authenticated deployed
+browser smoke capture before early submission.
 
 ## What The Live Walkthrough Proves
 
@@ -124,11 +125,15 @@ Trusted OpenEMR issuer redirects with api:oemr, api:fhir, and FHIR read scopes
 Local regression checks before redeploy:
 
 ```text
-API pytest tests: 114 passed, 5 skipped
+API pytest tests: 151 passed, 6 skipped
 ruff: all checks passed
 mypy: success
+Week 2 eval gate: 4 passed, 0 failed
+npm run lint: passed
 npm run build: passed
-npm run test:e2e: 7 passed
+npm run test:e2e: 9 passed
+pip-audit: no known vulnerabilities found
+npm audit: 0 vulnerabilities
 ```
 
 ## Week 2 Evidence To Recapture After Redeploy
@@ -147,6 +152,9 @@ Capture these additional proof points in the authenticated browser walkthrough:
 1. Co-Pilot document panel visible after OpenEMR launch.
 2. Synthetic intake form upload and extraction.
 3. Extracted facts with source preview and bounding-box highlight.
-4. `Approve all` review action.
-5. Chat answer to `What social barriers are documented?` showing approved document evidence.
-6. Synthetic lab upload, approval, and `Write labs` result.
+4. Supervisor trace entries for extraction/review/routing.
+5. `Approve all` review action.
+6. Chat answer to `What social barriers are documented?` showing approved document evidence.
+7. Guideline-backed evidence in a lab/lipid question.
+8. Synthetic lab upload, approval, and idempotent `Write labs` result.
+9. Production persistence configuration if `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled for the deployed API.

@@ -20,6 +20,9 @@ class ObservationWriteError(RuntimeError):
     pass
 
 
+DOCUMENT_FACT_IDENTIFIER_SYSTEM = "https://agentforge.dev/fhir/identifier/document-fact"
+
+
 async def write_lab_fact_observation(
     *,
     fact: ExtractedFact,
@@ -40,6 +43,9 @@ async def write_lab_fact_observation(
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
+    existing_id = await _find_existing_observation_id(client=client, fact=fact)
+    if existing_id is not None:
+        return existing_id
     created = await client.create_resource("Observation", resource)
     resource_id = created.get("id")
     if not isinstance(resource_id, str) or not resource_id:
@@ -75,6 +81,12 @@ def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
     resource: dict[str, Any] = {
         "resourceType": "Observation",
         "status": "final",
+        "identifier": [
+            {
+                "system": DOCUMENT_FACT_IDENTIFIER_SYSTEM,
+                "value": fact.fact_id,
+            }
+        ],
         "category": [
             {
                 "coding": [
@@ -92,7 +104,7 @@ def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
         "note": [
             {
                 "text": (
-                    "Imported from Week 2 synthetic document review with "
+                    "Imported from Week 2 document review with "
                     f"source citation {fact.citation.field_or_chunk_id}."
                 )
             }
@@ -111,6 +123,25 @@ def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
     if interpretation is not None:
         resource["interpretation"] = [interpretation]
     return resource
+
+
+async def _find_existing_observation_id(
+    *,
+    client: OpenEMRFhirClient,
+    fact: ExtractedFact,
+) -> str | None:
+    if fact.patient_id is None:
+        return None
+    existing = await client.search_observations_by_identifier(
+        patient_id=fact.patient_id,
+        system=DOCUMENT_FACT_IDENTIFIER_SYSTEM,
+        value=fact.fact_id,
+    )
+    for resource in existing:
+        resource_id = resource.get("id")
+        if isinstance(resource_id, str) and resource_id:
+            return resource_id
+    return None
 
 
 def _coerce_float(value: str) -> float | None:

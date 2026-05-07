@@ -28,25 +28,38 @@ from app.document_models import (
     now_utc,
 )
 from app.document_storage import (
+    StoredDocumentSource,
+    append_document_job_trace,
     approved_document_evidence,
     begin_document_write,
+    cache_document_workflow,
     create_document_workflow,
+    document_workflow_snapshot,
     fact_counts,
     read_document_facts,
     read_document_source,
     require_document_job,
     replace_document_facts,
+    source_sha256,
     update_document_fact,
     update_document_job,
 )
 from app.extraction_adapters import ExtractionError
 from app.fhir_client import OpenEMRFhirClient
 from app.extraction_pipeline import extract_document_facts_async
-from app.models import RequestUser, Role
+from app.models import EvidenceObject, RequestUser, Role
 from app.observation_writer import ObservationWriteError, write_lab_fact_observation
 from app.ocr_layout import LayoutExtractionError
 from app.openemr_auth import resolve_fhir_bearer_token
+from app.persistence import (
+    document_workflow_persistence_configured,
+    read_approved_document_evidence,
+    read_document_workflow_snapshot,
+    read_document_workflow_snapshot_by_source_key,
+    upsert_document_workflow_snapshot,
+)
 from app.telemetry import emit_telemetry_event
+from app.w2_graph import W2GraphState, supervisor_route
 
 router = APIRouter(prefix="/api/documents", tags=["week2-documents"])
 
@@ -68,20 +81,20 @@ async def attach_and_extract(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    job, source, was_created = create_document_workflow(
-        patient_id=request.patient_id,
-        doc_type=request.doc_type,
-        filename=request.filename,
-        content_type=request.content_type,
+    job, source, was_created = await _get_or_create_document_workflow(
+        request=request,
         content=content,
         actor_user_id=user.user_id,
+        settings=settings,
     )
     if not was_created or job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
         # Idempotent upload: repeated submits for the same source return the
         # existing job instead of duplicating extraction work.
+        await _persist_document_job(settings, job.job_id)
         return _job_response(job.job_id)
 
     update_document_job(job.job_id, status=W2JobStatus.extracting, trace="extracting_started")
+    await _persist_document_job(settings, job.job_id)
     try:
         facts = await extract_document_facts_async(
             job_id=job.job_id,
@@ -99,6 +112,7 @@ async def attach_and_extract(
             trace="extracting_failed",
             error_code=exc.__class__.__name__,
         )
+        await _persist_document_job(settings, job.job_id)
         emit_telemetry_event(
             settings,
             event="w2_document_extraction_failed",
@@ -112,6 +126,8 @@ async def attach_and_extract(
         status=W2JobStatus.review_required,
         trace=f"extracted_{len(facts)}_facts",
     )
+    _append_supervisor_trace(job.job_id, review_submitted=False)
+    await _persist_document_job(settings, job.job_id)
     emit_telemetry_event(
         settings,
         event="w2_document_extraction_succeeded",
@@ -193,6 +209,8 @@ async def submit_review_decisions(
         status=next_status,
         trace="review_decisions_persisted",
     )
+    _append_supervisor_trace(job.job_id, review_submitted=True)
+    await _persist_document_job(settings, job.job_id)
     emit_telemetry_event(
         settings,
         event="w2_document_review_decisions",
@@ -220,6 +238,7 @@ async def write_approved_facts(
             detail="Assign the document to a patient before writing extracted facts",
         )
     job, write_started = begin_document_write(job.job_id)
+    await _persist_document_job(settings, job.job_id)
     if not write_started:
         # Prevent duplicate write drains from racing each other. Production
         # outbox workers would enforce this with row locks / SKIP LOCKED.
@@ -295,6 +314,8 @@ async def write_approved_facts(
         status=final_status,
         trace="write_finished",
     )
+    _append_supervisor_trace(job.job_id, review_submitted=True)
+    await _persist_document_job(settings, job.job_id)
     emit_telemetry_event(
         settings,
         event="w2_document_write_finished",
@@ -323,6 +344,11 @@ async def approved_evidence(
     _require_document_access(user)
     await _require_patient_access(user=user, patient_id=patient_id, settings=settings)
     evidence = approved_document_evidence(patient_id)
+    if document_workflow_persistence_configured(settings):
+        evidence = _merge_document_evidence(
+            evidence,
+            await read_approved_document_evidence(settings, patient_id),
+        )
     return {
         "patient_id": patient_id,
         "evidence_count": len(evidence),
@@ -336,12 +362,42 @@ def _job_response(job_id: str) -> DocumentJobResponse:
     return DocumentJobResponse(job=job, fact_counts=fact_counts(facts))
 
 
+async def _get_or_create_document_workflow(
+    *,
+    request: DocumentAttachExtractRequest,
+    content: bytes,
+    actor_user_id: str,
+    settings: Settings,
+) -> tuple[DocumentJobRecord, StoredDocumentSource, bool]:
+    if document_workflow_persistence_configured(settings):
+        snapshot = await read_document_workflow_snapshot_by_source_key(
+            settings=settings,
+            patient_id=request.patient_id,
+            doc_type=request.doc_type,
+            source_hash=source_sha256(content),
+            content_type=request.content_type,
+        )
+        if snapshot is not None:
+            job, source, facts = snapshot
+            cache_document_workflow(job=job, source=source, facts=facts)
+            return job, source, False
+
+    return create_document_workflow(
+        patient_id=request.patient_id,
+        doc_type=request.doc_type,
+        filename=request.filename,
+        content_type=request.content_type,
+        content=content,
+        actor_user_id=actor_user_id,
+    )
+
+
 async def _require_job_for_user(
     job_id: str,
     user: RequestUser,
     settings: Settings,
 ) -> DocumentJobRecord:
-    job = require_document_job(job_id)
+    job = await _require_cached_or_persisted_job(job_id, settings)
     source = read_document_source(job.source.source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source document was not found")
@@ -353,6 +409,62 @@ async def _require_job_for_user(
         raise HTTPException(status_code=403, detail="Unassigned document access denied")
     await _require_patient_access(user=user, patient_id=job.patient_id, settings=settings)
     return job
+
+
+async def _require_cached_or_persisted_job(job_id: str, settings: Settings) -> DocumentJobRecord:
+    try:
+        return require_document_job(job_id)
+    except KeyError:
+        if document_workflow_persistence_configured(settings):
+            snapshot = await read_document_workflow_snapshot(settings, job_id)
+            if snapshot is not None:
+                job, source, facts = snapshot
+                cache_document_workflow(job=job, source=source, facts=facts)
+                return job
+        raise HTTPException(status_code=404, detail="Document job was not found")
+
+
+async def _persist_document_job(settings: Settings, job_id: str) -> None:
+    if not document_workflow_persistence_configured(settings):
+        return
+    job, source, facts = document_workflow_snapshot(job_id)
+    await upsert_document_workflow_snapshot(
+        settings=settings,
+        job=job,
+        source=source,
+        facts=facts,
+    )
+
+
+def _append_supervisor_trace(job_id: str, *, review_submitted: bool) -> None:
+    job, _source, facts = document_workflow_snapshot(job_id)
+    state = W2GraphState(
+        document_job_id=job.job_id,
+        patient_id=job.patient_id or "unassigned",
+        extracted_facts=facts,
+        review_submitted=review_submitted,
+        guideline_retrieved=False,
+    )
+    decision = supervisor_route(state)
+    append_document_job_trace(
+        job_id,
+        f"supervisor:{decision.route.value}:{decision.reason}",
+    )
+
+
+def _merge_document_evidence(
+    first: list[EvidenceObject],
+    second: list[EvidenceObject],
+) -> list[EvidenceObject]:
+    merged: list[EvidenceObject] = []
+    seen: set[str] = set()
+    for item in [*first, *second]:
+        evidence_id = getattr(item, "evidence_id", None)
+        if not isinstance(evidence_id, str) or evidence_id in seen:
+            continue
+        merged.append(item)
+        seen.add(evidence_id)
+    return merged
 
 
 def _write_error_message(exc: Exception) -> str:

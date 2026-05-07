@@ -20,6 +20,8 @@ Latest submitted code:
 6e7a3ef5f Implement Week 2 document evidence workflow
 ```
 
+Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, and idempotent Observation writes. Commit hash is pending after final review.
+
 ## Required Artifacts
 
 | Requirement | Artifact |
@@ -57,11 +59,15 @@ Paste the uploaded video link into the submission form.
 Local checks:
 
 ```text
-API tests: 114 passed, 5 skipped
+API tests: 151 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
+Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
+Web lint: passed
 Web build: passed
-Playwright: 7 passed
+Playwright: 9 passed
+pip-audit: no known vulnerabilities found
+npm audit: 0 vulnerabilities
 git diff --check: passed
 ```
 
@@ -113,8 +119,7 @@ LDL Cholesterol 142 mg/dL reference range 0-99 H
 
 - The submission uses synthetic data only.
 - The OpenRouter free Nemotron path is for synthetic demo data, not real PHI.
-- Week 2 document workflow storage is in-memory in this slice; encrypted Postgres persistence is required before real production use.
+- Local/default Week 2 document workflow storage remains in-memory for demo speed. A production path now persists encrypted document sources, jobs, facts, and approved evidence in Postgres when `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` with `DATABASE_URL` and `ENCRYPTION_KEY`; uploads first check durable storage by deterministic source key so a process restart does not create a duplicate workflow. Deployed production still needs that setting verified after redeploy.
 - Synthetic text/PDF extraction is deterministic. Scanned PDF OCR/VLM escalation is designed but not production-complete.
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; current source preview proves citation and bounding-box plumbing inside Co-Pilot.
-- The strict 50-case Week 2 eval gate has utilities and fixture shape, but the blocking GitLab CI gate is not activated yet.
-
+- The Week 2 eval gate is now executable with four committed deterministic cases and a passing baseline. The larger 50-case GitLab blocking gate is not activated yet.

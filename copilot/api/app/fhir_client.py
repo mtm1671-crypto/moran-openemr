@@ -63,6 +63,24 @@ class OpenEMRFhirClient:
         )
         return _resources_from_bundle(bundle, "Observation")
 
+    async def search_observations_by_identifier(
+        self,
+        *,
+        patient_id: str,
+        system: str,
+        value: str,
+        count: int = 1,
+    ) -> list[dict[str, Any]]:
+        bundle = await self.search_bundle(
+            "Observation",
+            params={
+                "patient": patient_id,
+                "identifier": f"{system}|{value}",
+                "_count": str(count),
+            },
+        )
+        return _resources_from_bundle(bundle, "Observation")
+
     async def search_medication_requests(self, patient_id: str, count: int = 20) -> list[dict[str, Any]]:
         bundle = await self.search_bundle(
             "MedicationRequest",

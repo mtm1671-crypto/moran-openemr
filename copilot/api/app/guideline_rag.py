@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from app.models import EvidenceObject
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,36 @@ def retrieve_guideline_chunks(
     return scored[:limit]
 
 
+def guideline_hits_to_evidence(
+    *,
+    patient_id: str,
+    hits: list[GuidelineHit],
+) -> list[EvidenceObject]:
+    retrieved_at = datetime.now(tz=UTC)
+    return [
+        EvidenceObject(
+            evidence_id=f"guideline:{hit.chunk.chunk_id}",
+            patient_id=patient_id,
+            source_type="guideline",
+            source_id=hit.chunk.chunk_id,
+            display_name=f"{hit.chunk.title}: {hit.chunk.section_heading}",
+            fact=(
+                f"Guideline context ({hit.chunk.domain}): "
+                f"{hit.chunk.section_heading}. {hit.chunk.snippet}"
+            ),
+            retrieved_at=retrieved_at,
+            confidence="source_record",
+            source_url=hit.chunk.source_url_or_path,
+            metadata={
+                "schema": "w2_guideline_chunk_v1",
+                "domain": hit.chunk.domain,
+                "score": hit.score,
+            },
+        )
+        for hit in hits
+    ]
+
+
 def _score_chunk(query_tokens: set[str], chunk: GuidelineChunk) -> float:
     chunk_tokens = _tokens(
         " ".join([chunk.domain, chunk.title, chunk.section_heading, chunk.snippet])
@@ -77,4 +110,3 @@ def _score_chunk(query_tokens: set[str], chunk: GuidelineChunk) -> float:
 
 def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", text.lower()))
-

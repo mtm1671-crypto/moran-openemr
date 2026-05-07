@@ -6,15 +6,21 @@ The current implementation slice lives under `copilot/api/app/document_*`,
 `copilot/api/app/extraction_*`, `copilot/api/app/w2_*`, and
 `copilot/web/app/components`.
 
+## Implementation Truth As Of 2026-05-07
+
+Implemented in the current local repo: upload/extract/review/write API routes, deterministic synthetic text/PDF parsers, strict Pydantic fact schemas, citation and bounding-box preview metadata, supervisor trace entries, guideline evidence retrieval for document/domain questions, idempotent lab `Observation` writes using a deterministic identifier and search-before-create, stronger numeric/date citation verification, an executable four-case Week 2 eval gate, and optional encrypted Postgres persistence for document sources, jobs, facts, approved evidence, and durable source-key reuse.
+
+Still not proven as production-complete: deployed authenticated browser capture for the Week 2 flow, OpenEMR `DocumentReference` storage and source-document round trip, the target 50-case GitLab blocking eval suite, a true BM25+dense+rerank guideline stack, scanned-document OCR/VLM beyond the provider adapter path, multi-worker transactional outbox behavior, and full PHI/compliance readiness. Local/default demo storage remains in-memory unless `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled with `DATABASE_URL` and `ENCRYPTION_KEY`.
+
 ## Executive Summary
 
-Week 2 moves the Clinical Co-Pilot from a source-backed structured chart assistant into a production-shaped multimodal evidence agent. The product goal is enterprise-grade architecture while still satisfying the Week 2 PRD exactly: ingest a lab PDF and an intake form, extract structured facts with source citations, write validated lab facts into OpenEMR/FHIR `Observation` records when approved, retrieve diabetes/hypertension/lipid guideline evidence through hybrid RAG, route the work through a supervisor plus two workers, and block regressions with a strict 50-case eval gate in GitLab CI.
+Week 2 moves the Clinical Co-Pilot from a source-backed structured chart assistant into a production-shaped multimodal evidence agent. The product goal is enterprise-grade architecture while still satisfying the Week 2 PRD: ingest a lab PDF and an intake form, extract structured facts with source citations, write validated lab facts into OpenEMR/FHIR `Observation` records when approved, retrieve diabetes/hypertension/lipid guideline evidence, route the work through inspectable supervisor decisions, and block regressions with executable evals.
 
 The implementation remains synthetic-only for Week 2. We will generate synthetic lab PDFs and intake forms, and we will support a small starter set of example documents. The architecture should look production-ready, but it must not claim real-PHI readiness. Real PHI, live patient documents, or provider use beyond synthetic demo data require a later compliance, BAA, data-policy, and operational security review.
 
-The core design decision is to keep OpenEMR authoritative. Source documents are stored in OpenEMR. Patient identity, clinician identity, ACLs, FHIR resources, and source round-trips stay inside the OpenEMR boundary. Co-Pilot owns document extraction, worker routing, review workflow, guideline retrieval, evals, and observability. Lab facts move into OpenEMR only through a write adapter that tries FHIR first and permits a synthetic/demo-only fallback if FHIR write behavior is brittle. Intake form facts are staged as source-backed derived evidence first; they do not silently mutate demographics, medications, allergies, or family history.
+The core design decision is to keep OpenEMR authoritative. Patient identity, clinician identity, ACLs, FHIR resources, and source round-trips should stay inside the OpenEMR boundary. The current implementation stores document workflow state inside Co-Pilot, with optional encrypted Postgres persistence, while OpenEMR `DocumentReference` source storage remains deferred. Lab facts move into OpenEMR only through a write adapter that tries FHIR first and permits a synthetic/demo-only fallback if FHIR write behavior is brittle. Intake form facts are staged as source-backed derived evidence first; they do not silently mutate demographics, medications, allergies, or family history.
 
-Extraction is OCR/layout first, not VLM first. The OCR/layout pass provides text spans and bounding boxes. A deterministic parser handles stable synthetic forms. If confidence or citation coverage is insufficient, the supervisor can escalate to an OpenAI vision adapter for synthetic/demo documents. The model output is never trusted directly: it must validate against strict Pydantic schemas, map every extracted fact back to a source span and PDF bounding box, and pass confidence gates. Low-confidence facts are flagged for human review and do not write to OpenEMR.
+Extraction is parser/layout first for the committed synthetic examples. Text and PDF extraction provide source spans and bounding boxes where available. A deterministic parser handles stable synthetic forms. OCR/VLM escalation exists as a provider-adapter path, but scanned-document production OCR is not complete. The model output is never trusted directly: it must validate against strict Pydantic schemas, map every extracted fact back to source metadata, and pass confidence gates. Low-confidence facts are flagged for human review and do not write to OpenEMR.
 
 The user experience is a side-by-side review screen: PDF preview on one side, extracted facts on the other, bounding-box highlights for each citation, validation/confidence status, and approve/reject controls. Approved high-confidence lab facts can be upserted into OpenEMR Observations with provenance. All approve/reject/write actions are audit logged.
 
@@ -22,17 +28,17 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 
 | Requirement | Production-grade interpretation |
 |---|---|
-| Lab PDF ingestion | Upload synthetic lab PDFs, store source in OpenEMR, extract lab result facts, require citations and bounding boxes. |
-| Intake form ingestion | Upload synthetic intake forms, store source in OpenEMR, extract chief concern, meds, allergies, family history, and demographics with citations. |
+| Lab PDF ingestion | Upload synthetic lab PDFs, store source in Co-Pilot workflow storage, extract lab result facts, require citations and bounding boxes. OpenEMR `DocumentReference` source storage is deferred. |
+| Intake form ingestion | Upload synthetic intake forms, store source in Co-Pilot workflow storage, extract chief concern, meds, allergies, family history, and demographics with citations. OpenEMR `DocumentReference` source storage is deferred. |
 | Strict schemas | Pydantic schemas are required for `lab_pdf` and `intake_form`; schema failure blocks downstream work. |
-| OpenEMR integrity | Source document round-trips through OpenEMR. Lab Observations are written/upserted only after validation and review gates. |
+| OpenEMR integrity | Lab Observations are written only after validation and review gates, with duplicate prevention. OpenEMR source-document round trip remains deferred. |
 | Citation contract | Clinical claims require machine-readable citation metadata: source type, source id, page/section, field/chunk id, quote/value, and bbox when document-derived. |
 | PDF bounding boxes | Document citations must show a visual overlay in the PDF preview. |
-| Hybrid RAG | Diabetes, hypertension, and lipid guideline corpus with sparse retrieval, dense pgvector retrieval, and rerank. |
-| Supervisor + 2 workers | Inspectable graph with one supervisor, `intake-extractor`, and `evidence-retriever`. |
-| 50-case eval suite | Synthetic golden set with boolean rubrics and committed baseline results. |
-| PR-blocking CI | GitLab-first hook/CI gate. Safety failures block on any single failure. |
-| Deployed app | Railway app exposes upload, extraction, review, citations, RAG answer, trace, eval summary, and cost/latency data. |
+| Hybrid RAG | Diabetes, hypertension, and lipid guideline retrieval is wired into chat evidence. Full sparse+dense+rerank production retrieval is deferred. |
+| Supervisor + 2 workers | Rule-based supervisor routing and trace metadata are wired. A full LangGraph-style multi-worker runtime remains deferred. |
+| Eval suite | Four committed synthetic golden cases with boolean rubrics and passing baseline results. The target 50-case suite remains deferred. |
+| PR-blocking CI | Local executable gate exists. GitLab blocking CI is deferred. |
+| Deployed app | Railway app has the document UI/routes from the last redeploy, but the authenticated Week 2 browser capture still needs to be recorded. |
 | Cost/latency report | Capture actual development spend, p50/p95 latency, bottlenecks, provider usage, and production scaling assumptions. |
 
 ## Presearch Decisions
@@ -46,11 +52,11 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 | Intake persistence | Intake facts stay as Co-Pilot derived evidence first; no silent chart mutation. |
 | Human review | Full side-by-side review UI with approve/reject before chart write. |
 | Low confidence | Flag as `human_review_required`; no OpenEMR write. |
-| Extraction | OCR/layout first, deterministic parser where possible, OpenAI vision escalation through adapter. |
+| Extraction | Parser/layout first for committed synthetic examples; OCR/vision escalation remains a provider-adapter path. |
 | Write strategy | FHIR first, synthetic/demo-only fallback if FHIR writes are brittle. |
 | Guideline RAG | Diabetes + hypertension + lipids. |
-| CI | GitLab first. |
-| Safety gate | Strict hard gate for safety, schema, citation, patient scope, PHI logging, and unapproved writes. |
+| CI | Local executable gate first; GitLab blocking gate is the target. |
+| Safety gate | Current hard gate covers schema, citation, patient scope, source round trip, bounding boxes, PHI-safe audit payloads, low-confidence blocking, duplicate writes, and unapproved writes. |
 
 ## Source Material Reviewed
 
@@ -71,29 +77,29 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 
 ## Week 2 Scope Delineation
 
-The architecture in this document is the production target. Week 2 ships a deliberate subset; the rest is deferred and explicitly called out per section. This table is the contract — graders reading the deliverable should be able to map every "missing" piece to a row here.
+The architecture in this document is the production target. Week 2 ships a deliberate subset; the rest is deferred and explicitly called out per section. This table is the contract: graders reading the deliverable should be able to map every missing piece to a row here.
 
 | Component | Week 2 ships | Deferred |
 |---|---|---|
-| Document ingestion | Async POST + 202, Binary + DocumentReference store, idempotent re-upload, SSE event stream, validation rules | Multi-region upload affinity, signed URL upload for large files |
-| Extraction — OCR | Mistral OCR on every upload | Template-match-first cache |
-| Extraction — parser | Deterministic parser for the lab and intake templates | Additional document types |
-| Extraction — vision | Per-field crop fallback for low-confidence fields; full-page fallback when no candidate region exists | Multi-model vision ensemble |
-| Extraction — provenance | `ExtractedFact` append-only with `superseded_by`, hard rejection rules | Confidence-aware retry beyond one round |
-| Schemas | Pure value objects + `LoincCode` / `UcumCode` / `RxNormCode` / `PhoneNumber` / `Quantity` / `PatientId` domain primitives | Additional code systems (SNOMED, ICD-10) |
+| Document ingestion | Async POST + 202-style job flow, Co-Pilot source/job/fact storage, optional encrypted Postgres persistence, deterministic source-key reuse, validation rules | OpenEMR Binary + DocumentReference storage, SSE event stream, multi-region upload affinity, signed URL upload for large files |
+| Extraction OCR | Deterministic text/PDF extraction for committed synthetic examples; OCR provider adapter path exists | Mistral/OCR on every upload, scanned-PDF production coverage, template-match-first cache |
+| Extraction parser | Deterministic parser for the lab and intake templates | Additional document types |
+| Extraction vision | Provider adapter path for synthetic/demo escalation | Per-field crop fallback, full-page fallback, multi-model vision ensemble |
+| Extraction provenance | `ExtractedFact` records with citations, bounding boxes, review status, and trace entries | Append-only supersession model and confidence-aware retry beyond one round |
+| Schemas | Pydantic document job/source/fact/review/write models with strict literals, quantities, confidence, citations, and status gates | Richer domain primitives and additional code systems (SNOMED, ICD-10) |
 | Supervisor | Rule-based state machine + typed `RoutingDecision` + closed `reason_code` enum | LLM-disambiguated routing for genuinely ambiguous user intents |
-| Workers | `intake-extractor`, `evidence-retriever`, `answer-composer` with typed input/output/error contracts | Critic agent (PRD calls it extension work) |
-| Hybrid RAG | ParadeDB BM25 + pgvector HNSW + RRF + Cohere Rerank v3 | Rerank skip-on-confidence-gap |
-| Verification | Typed rule pipeline with the 25 codes; `verification_runs` GIN-indexed | Additional rule codes as failure modes surface |
-| Eval gate | 50 cases, deterministic rubric computation, frozen baseline JSON, three regression conditions, three planted-regression dry-runs, githook + GitLab CI | LLM-judge calibration tooling |
-| Write adapter | Transactional outbox + single drain worker, deterministic identifier + `If-None-Exist`, `Observation` + `Provenance`, round-trip verification, retry/circuit-breaker/dead-letter | Multi-worker `SKIP LOCKED` drain, per-tenant slot table, sampled round-trip verification, Kafka-backed outbox |
+| Workers | Worker roles are represented in supervisor route decisions, traces, extraction, evidence retrieval, and answer composition orchestration | Full independent worker runtime and critic agent |
+| Hybrid RAG | Patient-scoped vector evidence plus guideline evidence retrieval for diabetes, hypertension, and lipids | ParadeDB BM25 + pgvector HNSW + RRF + Cohere Rerank v3, rerank skip-on-confidence-gap |
+| Verification | Patient-scope/source/citation verification plus stricter numeric/date support checks | Full typed rule catalog and persisted verification run analytics |
+| Eval gate | Four committed cases, deterministic rubric computation, frozen baseline JSON, local enforce command | 50 cases, planted-regression dry-runs, githook + GitLab CI, LLM-judge calibration tooling |
+| Write adapter | Deterministic identifier, search-before-create duplicate prevention, FHIR `Observation` write path, demo fallback | Transactional outbox, `If-None-Exist`, `Provenance`, round-trip verification, retry/circuit-breaker/dead-letter, multi-worker `SKIP LOCKED` drain, per-tenant slot table, Kafka-backed outbox |
 | Observability | Typed Postgres tables, `StructuredLogger` emitting OTel-shaped JSON to stdout, `/api/status` panel | OpenTelemetry collector + Tempo + Loki + Mimir + Langfuse + Grafana, SLO-derived Alertmanager rules + PagerDuty, continuous synthetic monitoring |
 | Compliance | None of the compliance audit ships in Week 2 | `phi_access_log` with insert-only app role and monthly WORM archival to S3 Object Lock; Year-2 hardening may add per-tenant hash chains and KMS-signed Merkle attestation |
 | Provider failover | Single primary per role | Circuit-breaker provider routing with named fallbacks |
 | Tenancy | Single-tenant Week 2 demo deployment | Multi-tenant `org_id` provisioning workflow |
 | Database operations | Schema migrations via Alembic, single Postgres instance | Read replicas, partition automation via pg_partman, PITR backups |
 
-The dividing principle: anything required by the PRD's grading rubric or the Eval Gate ships in Week 2. Anything that is purely scale, ops, or compliance hardening is deferred and described in this document for production parity.
+The dividing principle: the current repo ships enough to prove the local Week 2 workflow and its hard safety gates. Production-scale retrieval, compliance, multi-worker durability, OpenEMR source-document round trip, and GitLab blocking coverage remain explicit follow-on work.
 
 ## Architecture Cross-Cutting Concerns
 
@@ -2130,7 +2136,7 @@ Railway remains the demo deployment target unless changed later. README must cle
 
 ## Implementation Milestones
 
-These align with the PRD's four checkpoints and the Week 2 Scope Delineation table at the top of this document.
+These are the intended Week 2 checkpoints. Status here is explicit so this document does not overstate the current repo.
 
 ### Architecture Defense (4 hours)
 
@@ -2142,26 +2148,22 @@ These align with the PRD's four checkpoints and the Week 2 Scope Delineation tab
 
 ### MVP (Tuesday 11:59 PM)
 
-- Alembic bootstrap migration: `pgcrypto`, `pgvector`, `pg_search` (ParadeDB) extensions enabled.
-- Synthetic OpenEMR Docker stack runnable from `docker compose up`; seed script populates synthetic patients and documents.
-- `POST /api/documents/attach-and-extract` + the SSE events endpoint.
-- Mistral OCR + deterministic parser produce `ExtractedFact` rows for the lab template.
-- `extraction_jobs`, `extracted_facts`, `routing_decisions` tables operational.
-- First guideline corpus chunk indexed with BM25 + HNSW; first retrieval returns a hit.
-- Side-by-side review shell renders `ExtractedFact[]` from a real job.
+- Done: synthetic OpenEMR demo stack and seed scripts.
+- Done: document upload/extract/review/write API routes.
+- Done: deterministic parser produces `ExtractedFact` rows for committed lab and intake examples.
+- Done: optional encrypted Postgres document source/job/fact persistence.
+- Done: guideline evidence retrieval returns diabetes/hypertension/lipid evidence hits.
+- Deferred: Alembic migration files, OpenEMR Binary/DocumentReference source storage, SSE events endpoint, Mistral OCR on every upload, and BM25 + HNSW guideline indexing.
 
 ### Early Submission (Thursday 11:59 PM)
 
-- Rule-based supervisor with both trigger paths.
-- `intake-extractor`, `evidence-retriever`, `answer-composer` workers operational.
-- Vision per-field crop fallback wired (full-page fallback included).
-- Verifier with the 25 rule codes; `verification_runs` GIN-indexed.
-- `ClinicalAnswer` with two-bundle separation rendered in the chat UI; click-to-source for both bundles.
-- 50-case eval suite authored; baseline JSON committed.
-- Pre-push githook + GitLab CI `eval_gate` stage enforce regression rules.
-- Three planted-regression CI jobs configured.
-- Outbox + single drain worker writes Observations to OpenEMR with Provenance + round-trip verification.
-- Deployed app accessible via public URL.
+- Done locally: rule-based supervisor routing and trace metadata.
+- Done locally: extraction, evidence retrieval, answer composition, approval, and write orchestration.
+- Done locally: verifier checks citation/source/patient scope plus numeric/date support.
+- Done locally: four-case deterministic eval suite with committed passing baseline.
+- Done locally: idempotent Observation write path with deterministic identifier and search-before-create.
+- Deployed: public Railway app exists, and unauthenticated route/web smoke checks passed after the prior redeploy.
+- Still pending: authenticated deployed browser capture for Week 2, full independent worker runtime, vision per-field crop fallback, 25-code persisted verification catalog, 50-case eval suite, pre-push/GitLab blocking gate, planted-regression CI jobs, transactional outbox, Provenance write, and OpenEMR source-document round trip.
 
 ### Final (Sunday Noon)
 

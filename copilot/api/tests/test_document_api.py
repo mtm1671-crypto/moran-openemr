@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.config import Settings, get_settings
-from app.document_storage import reset_document_workflow_store
+from app.document_models import W2DocType, W2JobStatus
+from app.document_storage import (
+    create_document_workflow,
+    document_workflow_snapshot,
+    reset_document_workflow_store,
+    update_document_job,
+)
 from app.api import _retrieve_evidence
 from app.main import app
 from app.models import ChatRequest, EvidenceObject, RequestUser, Role
@@ -93,6 +99,9 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
                 "issue": [{"code": "forbidden", "diagnostics": "insufficient_scope"}],
             },
         )
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(200, json={"resourceType": "Bundle", "entry": []})
     )
     client = TestClient(app)
     upload = client.post(
@@ -248,6 +257,57 @@ def test_approved_intake_facts_are_available_as_source_backed_chat_evidence() ->
     assert chat.status_code == 200
     assert "Misses doses when work shifts change" in final["answer"]
     assert "approved_document_evidence" in final["audit"]["tools"]
+
+
+def test_durable_source_lookup_reuses_persisted_document_after_cache_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"Hemoglobin A1c 8.6 % reference range 4.0-5.6 H"
+    persisted_job, _source, _created = create_document_workflow(
+        patient_id="p1",
+        doc_type=W2DocType.lab_pdf,
+        filename="synthetic.txt",
+        content_type="text/plain",
+        content=content,
+        actor_user_id="dev-doctor",
+    )
+    update_document_job(
+        persisted_job.job_id,
+        status=W2JobStatus.review_required,
+        trace="extracted_0_facts",
+    )
+    snapshot = document_workflow_snapshot(persisted_job.job_id)
+    reset_document_workflow_store()
+
+    async def fake_lookup(**_kwargs: object) -> object:
+        return snapshot
+
+    async def fail_if_extraction_runs(**_kwargs: object) -> object:
+        raise AssertionError("persisted document should not be extracted again")
+
+    async def fake_persist(**_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.document_ingestion.document_workflow_persistence_configured", lambda _settings: True)
+    monkeypatch.setattr("app.document_ingestion.read_document_workflow_snapshot_by_source_key", fake_lookup)
+    monkeypatch.setattr("app.document_ingestion.extract_document_facts_async", fail_if_extraction_runs)
+    monkeypatch.setattr("app.document_ingestion.upsert_document_workflow_snapshot", fake_persist)
+
+    response = TestClient(app).post(
+        "/api/documents/attach-and-extract",
+        json={
+            "patient_id": "p1",
+            "doc_type": "lab_pdf",
+            "filename": "synthetic.txt",
+            "content_type": "text/plain",
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["job"]["job_id"] == persisted_job.job_id
+    assert body["job"]["status"] == "review_required"
 
 
 @respx.mock

@@ -14,15 +14,21 @@ Implemented locally:
 - Approved lab facts can write demo/FHIR `Observation` resources through the write adapter.
 - Approved intake facts become chat evidence and vector-index seed evidence.
 - Safety/access check verifies the selected OpenEMR patient before document attach/review/write when FHIR is configured.
+- Week 2 evals are executable from committed fixtures and baseline with `python -m app.w2_eval --enforce`.
+- Production-mode document workflow persistence is available through encrypted Postgres when explicitly enabled.
 
 Latest local verification:
 
 ```text
-API tests: 114 passed, 5 skipped
+API tests: 151 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
+Week 2 eval: 4 passed, 0 failed
+Web lint: passed
 Web build: passed
-Playwright: 7 passed
+Playwright: 9 passed
+pip-audit: no known vulnerabilities found
+npm audit: 0 vulnerabilities
 git diff --check: passed
 ```
 
@@ -36,7 +42,7 @@ git diff --check: passed
 | Production smoke test | Partial | Demo | API `/readyz` is 200 and web root is 200; full OpenEMR auth walkthrough still needs browser capture |
 | Week 2 document smoke test | Partial | Demo | Deployed document API route is present and web panel is present; authenticated upload/review/chat path still needs browser capture |
 | Screenshot/video evidence update | Not done | Submission | New screenshots or video segment show document extraction, review, bbox preview, and evidence-backed chat |
-| Eval doc refresh | Local done, deployed pending | Repo | `EVAL_DATASET.md` records latest local and deployed checks |
+| Eval doc refresh | Local done, deployed pending | Repo | `EVAL_DATASET.md` records latest local eval gate and deployed checks |
 
 Post-redeploy endpoint checks:
 
@@ -64,10 +70,10 @@ Add this Week 2 section after the existing chat/source-link walkthrough:
 
 ## Production Caveats To State Clearly
 
-- Week 2 document workflow currently uses in-memory workflow storage in this slice. It is suitable for demo and automated smoke tests, but persistent encrypted Postgres storage is still required before real production use.
+- Local/default Week 2 document workflow uses in-memory storage for demo and tests. Production-mode workflow persistence now exists through encrypted Postgres, but it must be enabled and verified in the deployed environment before any production claim.
 - Synthetic text/PDF extraction is deterministic. Scanned PDF OCR/VLM escalation is designed but not production-complete in this slice.
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; the current source preview proves citation/bounding-box plumbing inside Co-Pilot.
-- The 50-case Week 2 eval gate has utility scaffolding and initial fixture shape, but the blocking GitLab CI gate is not activated yet.
+- The executable Week 2 eval gate currently has four deterministic committed cases and a passing baseline. The 50-case blocking GitLab CI gate is not activated yet.
 
 ## Remaining Manual Submission Work
 
@@ -83,8 +89,10 @@ cd copilot/api
 .\.venv\Scripts\python.exe -m pytest tests
 .\.venv\Scripts\python.exe -m ruff check app tests
 .\.venv\Scripts\python.exe -m mypy app
+.\.venv\Scripts\python.exe -m app.w2_eval --enforce
 
 cd ..\web
+npm run lint
 npm run build
 $env:PLAYWRIGHT_API_PORT='8126'; $env:PLAYWRIGHT_WEB_PORT='3126'; $env:PLAYWRIGHT_OPENEMR_MOCK_PORT='9926'; npm run test:e2e
 ```

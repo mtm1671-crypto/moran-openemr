@@ -79,21 +79,31 @@ Working in the deployed demo:
 - Answers include citations and source links.
 - Unsupported treatment recommendation requests are refused.
 - OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
-- Local Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, human approval, lab write adapter, and approved document facts in chat evidence.
+- Local Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, supervisor trace events, human approval, idempotent lab `Observation` writes, guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence.
 
-Latest API verification:
+Latest local verification, run on 2026-05-07:
 
 ```text
-pytest: 114 passed, 5 skipped
+pytest: 151 passed, 6 skipped
 ruff: all checks passed
 mypy: success
+Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
 pip-audit: no known vulnerabilities found
 npm audit: no known vulnerabilities found
+web lint: passed
 web build: passed
-Playwright: 7 passed
+Playwright: 9 passed
+git diff --check: passed
+```
+
+Latest deployed smoke checks, recorded after the 2026-05-04 Railway redeploy:
+
+```text
 production /readyz: ok
 openrouter_configured: true
 pgvector_backend: true
+document route without auth: 401
+web document panel markup: present
 ```
 
 ## Demo Data
