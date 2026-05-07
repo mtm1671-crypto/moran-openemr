@@ -10,13 +10,14 @@ Captured: 2026-04-29 22:39 America/Chicago / 2026-04-30T03:39Z
 | Co-Pilot web | https://copilot-web-production.up.railway.app |
 | Co-Pilot API | https://copilot-api-production-9f84.up.railway.app |
 
-Latest deployed Co-Pilot web build used for the walkthrough:
-`8695fc30-ef37-49bc-9fb4-c504929367a7`.
+Latest deployed Co-Pilot web deployment checked for Week 2 visibility:
+`dab3baaf-a3be-4864-8579-40f6600b78b5` on 2026-05-07.
 
-Note: the original deployed walkthrough below proves the Week 1 chat/source-link path.
-The Week 2 document extraction/review workflow exists locally and has an
-executable local eval gate, but it still needs a fresh authenticated deployed
-browser smoke capture before early submission.
+Note: the original screenshot walkthrough below proves the Week 1 chat/source-link path.
+As of 2026-05-07, the deployed web UI also exposes the Week 2 document workflow
+proof panels. A fresh authenticated screenshot capture is still needed before
+submission, but the production app now visibly surfaces storage readiness,
+extraction details, approved patient evidence, and chat route trace.
 
 ## What The Live Walkthrough Proves
 
@@ -103,6 +104,33 @@ Clinician browser
 11. Ask `What medication changes should I make?`.
 12. Show the read-only treatment recommendation refusal.
 
+## Week 2 Manual Visibility Script
+
+Use `https://copilot-web-production.up.railway.app` after launching/signing in from OpenEMR.
+
+1. Confirm the `Document evidence` panel appears below quick chart actions.
+2. Point to the workflow proof strip:
+   - `Storage` should show durable storage ready in production.
+   - `Assignment` shows the selected patient or `unassigned`.
+   - `Source` shows filename and source SHA-256 prefix after upload.
+   - `Extraction` shows fact count and review count.
+   - `Persistence` shows retrievable approved evidence count.
+   - `Write` shows written/failed Observation write counts.
+3. Upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
+4. Click `Extract`.
+5. Show the extracted fact card:
+   - normalized value
+   - schema/citation/bbox checks
+   - source quote
+   - fact id
+   - selected bounding-box preview
+   - supervisor trace
+6. Click `Approve all`.
+7. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
+8. Ask `What social barriers are documented?`.
+9. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
+10. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
+
 ## Health And Security Smoke Checks
 
 Latest deployed checks after the web proxy fix:
@@ -136,9 +164,9 @@ pip-audit: no known vulnerabilities found
 npm audit: 0 vulnerabilities
 ```
 
-## Week 2 Evidence To Recapture After Redeploy
+## Week 2 Production Checks
 
-Post-durable-persistence redeploy endpoint checks on 2026-05-07:
+Post-durable-persistence API checks on 2026-05-07:
 
 ```text
 Co-Pilot API /readyz: 200
@@ -149,6 +177,7 @@ Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
+Co-Pilot web /api/capabilities document_workflow_persistence_ready: true
 ```
 
 Capture these additional proof points in the authenticated browser walkthrough:
