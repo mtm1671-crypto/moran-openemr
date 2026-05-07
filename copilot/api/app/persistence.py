@@ -657,6 +657,32 @@ async def evidence_cache_ready(settings: Settings) -> bool:
         await engine.dispose()
 
 
+async def document_workflow_storage_ready(settings: Settings) -> bool:
+    if not settings.document_workflow_persistence_enabled:
+        return True
+    if settings.database_url is None or settings.encryption_key is None:
+        return False
+
+    engine = _create_engine(settings)
+    table_names = ["document_sources", "document_jobs", "document_facts"]
+    try:
+        async with engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ANY(:table_names)"
+                    ),
+                    {"table_names": table_names},
+                )
+            ).scalars()
+        return set(rows) == set(table_names)
+    except Exception:
+        return False
+    finally:
+        await engine.dispose()
+
+
 async def operational_storage_ready(settings: Settings) -> bool:
     if not settings.requires_phi_controls() and not settings.conversation_persistence_enabled:
         return True

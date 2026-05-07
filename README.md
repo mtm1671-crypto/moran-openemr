@@ -84,7 +84,7 @@ Working in the deployed demo:
 Latest local verification, run on 2026-05-07:
 
 ```text
-pytest: 151 passed, 6 skipped
+pytest: 155 passed, 6 skipped
 ruff: all checks passed
 mypy: success
 Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
@@ -104,6 +104,7 @@ openrouter_configured: true
 pgvector_backend: true
 document route without auth: 401
 web document panel markup: present
+document_workflow_persistence_ready: pending redeploy with DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true
 ```
 
 ## Demo Data

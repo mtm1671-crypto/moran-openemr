@@ -118,6 +118,20 @@ def test_evidence_cache_requires_database_and_encryption_key() -> None:
     assert "ENCRYPTION_KEY is required when evidence cache is enabled" in errors
 
 
+def test_document_workflow_persistence_requires_database_and_encryption_key() -> None:
+    settings = Settings(
+        app_env="local",
+        document_workflow_persistence_enabled=True,
+        database_url=None,
+        encryption_key=None,
+    )
+
+    errors = settings.runtime_config_errors()
+
+    assert "DATABASE_URL is required when document workflow persistence is enabled" in errors
+    assert "ENCRYPTION_KEY is required when document workflow persistence is enabled" in errors
+
+
 def test_production_config_rejects_openai_without_api_key() -> None:
     settings = _phi_ready_settings(
         llm_provider="openai",
@@ -331,6 +345,83 @@ def test_readyz_reports_runtime_checks() -> None:
     assert payload["checks"]["runtime_config"] is True
 
 
+def test_readyz_reports_document_workflow_storage_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def storage_ready(_settings: Settings) -> bool:
+        return True
+
+    async def database_is_ready(_settings: Settings) -> bool:
+        return True
+
+    async def operational_is_ready(_settings: Settings) -> bool:
+        return True
+
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        database_url="postgresql://copilot:secret@db.example.test:5432/copilot",
+        encryption_key=TEST_FERNET_KEY,
+        document_workflow_persistence_enabled=True,
+    )
+    monkeypatch.setattr("app.api.database_ready", database_is_ready)
+    monkeypatch.setattr("app.api.document_workflow_storage_ready", storage_ready)
+    monkeypatch.setattr("app.api.operational_storage_ready", operational_is_ready)
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = TestClient(app).get("/readyz")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["checks"]["document_workflow_persistence_enabled"] is True
+    assert payload["checks"]["document_workflow_database_configured"] is True
+    assert payload["checks"]["document_workflow_encryption_configured"] is True
+    assert payload["checks"]["document_workflow_storage"] is True
+    assert payload["checks"]["document_workflow_persistence_ready"] is True
+
+
+def test_readyz_fails_when_document_workflow_tables_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def storage_not_ready(_settings: Settings) -> bool:
+        return False
+
+    async def database_is_ready(_settings: Settings) -> bool:
+        return True
+
+    async def operational_is_ready(_settings: Settings) -> bool:
+        return True
+
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        database_url="postgresql://copilot:secret@db.example.test:5432/copilot",
+        encryption_key=TEST_FERNET_KEY,
+        document_workflow_persistence_enabled=True,
+    )
+    monkeypatch.setattr("app.api.database_ready", database_is_ready)
+    monkeypatch.setattr("app.api.document_workflow_storage_ready", storage_not_ready)
+    monkeypatch.setattr("app.api.operational_storage_ready", operational_is_ready)
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = TestClient(app).get("/readyz")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["checks"]["document_workflow_storage"] is False
+    assert payload["checks"]["document_workflow_persistence_ready"] is False
+    assert (
+        "document workflow storage schema did not pass readiness check"
+        in payload["errors"]
+    )
+
+
 def test_readyz_reports_openrouter_config_for_ocr_only() -> None:
     settings = Settings(app_env="local", ocr_provider="openrouter")
     app.dependency_overrides[get_settings] = lambda: settings
@@ -397,6 +488,33 @@ def test_capabilities_expose_llm_callable_tool_schemas() -> None:
     assert search_schema["properties"]["query"]["minLength"] == 2
     assert "evidence_cache_enabled" in payload["providers"]
     assert "vision_ocr_enabled" in payload["providers"]
+    assert "document_workflow_persistence_ready" in payload["providers"]
+
+
+def test_capabilities_report_document_workflow_persistence_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def storage_ready(_settings: Settings) -> bool:
+        return True
+
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        database_url="postgresql://copilot:secret@db.example.test:5432/copilot",
+        encryption_key=TEST_FERNET_KEY,
+        document_workflow_persistence_enabled=True,
+    )
+    monkeypatch.setattr("app.api.document_workflow_storage_ready", storage_ready)
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = TestClient(app).get("/api/capabilities")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    providers = response.json()["providers"]
+    assert providers["document_workflow_persistence_enabled"] is True
+    assert providers["document_workflow_persistence_ready"] is True
 
 
 def test_vector_status_reports_default_disabled_state() -> None:

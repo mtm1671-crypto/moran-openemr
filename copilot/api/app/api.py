@@ -43,10 +43,11 @@ from app.persistence import (
     build_audit_event,
     build_evidence_cache_record,
     database_ready,
+    document_workflow_persistence_configured,
+    document_workflow_storage_ready,
     evidence_cache_ready,
     initialize_phi_schema,
     operational_storage_ready,
-    document_workflow_persistence_configured,
     read_evidence_cache_record,
     read_approved_document_evidence,
     read_job_run,
@@ -131,7 +132,12 @@ async def healthz(settings: Settings = Depends(get_settings)) -> HealthResponse:
 async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessResponse:
     errors = settings.runtime_config_errors()
     database_ok = True
-    if settings.requires_phi_controls() or settings.vector_search_enabled or settings.evidence_cache_enabled:
+    if (
+        settings.requires_phi_controls()
+        or settings.vector_search_enabled
+        or settings.evidence_cache_enabled
+        or settings.document_workflow_persistence_enabled
+    ):
         database_ok = await database_ready(settings)
         if not database_ok:
             errors = [*errors, "DATABASE_URL did not pass connectivity check"]
@@ -141,8 +147,15 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
     cache_ok = await evidence_cache_ready(settings)
     if settings.evidence_cache_enabled and not cache_ok:
         errors = [*errors, "evidence cache schema did not pass readiness check"]
+    document_workflow_storage_ok = await document_workflow_storage_ready(settings)
+    if settings.document_workflow_persistence_enabled and not document_workflow_storage_ok:
+        errors = [*errors, "document workflow storage schema did not pass readiness check"]
     operational_ok = True
-    if settings.requires_phi_controls() or settings.database_url is not None:
+    if (
+        settings.requires_phi_controls()
+        or settings.database_url is not None
+        or settings.document_workflow_persistence_enabled
+    ):
         operational_ok = await operational_storage_ready(settings)
         if not operational_ok:
             errors = [*errors, "operational PHI storage schema did not pass readiness check"]
@@ -188,6 +201,13 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
             "pgvector_backend": settings.vector_index_backend == "pgvector",
             "evidence_cache_enabled": settings.evidence_cache_enabled,
             "evidence_cache": cache_ok,
+            "document_workflow_persistence_enabled": settings.document_workflow_persistence_enabled,
+            "document_workflow_database_configured": settings.database_url is not None,
+            "document_workflow_encryption_configured": settings.encryption_key is not None,
+            "document_workflow_storage": document_workflow_storage_ok,
+            "document_workflow_persistence_ready": (
+                settings.document_workflow_persistence_enabled and document_workflow_storage_ok
+            ),
             "operational_storage": operational_ok,
             "audit_persistence": operational_ok,
             "conversation_persistence": operational_ok and settings.conversation_persistence_enabled,
@@ -307,6 +327,10 @@ async def job_status(
 @router.get("/api/capabilities", response_model=CapabilityResponse)
 async def capabilities(settings: Settings = Depends(get_settings)) -> CapabilityResponse:
     tool_schemas = _clinical_tool_schemas()
+    document_workflow_ready = (
+        settings.document_workflow_persistence_enabled
+        and await document_workflow_storage_ready(settings)
+    )
     return CapabilityResponse(
         roles=[Role.doctor, Role.np_pa, Role.nurse, Role.ma, Role.admin],
         tools=list(tool_schemas),
@@ -327,6 +351,8 @@ async def capabilities(settings: Settings = Depends(get_settings)) -> Capability
             "openrouter_demo_data_only": settings.openrouter_demo_data_only,
             "vector_index_backend_pgvector": settings.vector_index_backend == "pgvector",
             "evidence_cache_enabled": settings.evidence_cache_enabled,
+            "document_workflow_persistence_enabled": settings.document_workflow_persistence_enabled,
+            "document_workflow_persistence_ready": document_workflow_ready,
             "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
             "nightly_reindex_enabled": settings.nightly_reindex_enabled,
             "service_account_enabled": settings.openemr_service_account_enabled,

@@ -125,7 +125,7 @@ Trusted OpenEMR issuer redirects with api:oemr, api:fhir, and FHIR read scopes
 Local regression checks before redeploy:
 
 ```text
-API pytest tests: 151 passed, 6 skipped
+API pytest tests: 155 passed, 6 skipped
 ruff: all checks passed
 mypy: success
 Week 2 eval gate: 4 passed, 0 failed
@@ -158,3 +158,5 @@ Capture these additional proof points in the authenticated browser walkthrough:
 7. Guideline-backed evidence in a lab/lipid question.
 8. Synthetic lab upload, approval, and idempotent `Write labs` result.
 9. Production persistence configuration if `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled for the deployed API.
+10. `/readyz` checks show `document_workflow_persistence_enabled=true`, `document_workflow_storage=true`, and `document_workflow_persistence_ready=true`.
+11. `/api/capabilities` providers show `document_workflow_persistence_ready=true`.

@@ -8,7 +8,7 @@ Latest local readiness run recorded for this submission package:
 
 ```text
 Date: 2026-05-07
-API tests: 151 passed, 6 skipped
+API tests: 155 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
 Week 2 eval gate: 4 passed, 0 failed with python -m app.w2_eval --enforce
@@ -113,7 +113,8 @@ The gate is executable today. It is still a starter gate: expanding it to the ta
 
 | Area | Files | Result |
 |---|---|---|
-| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `151 passed, 6 skipped` API run |
+| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `155 passed, 6 skipped` API run |
+| Runtime readiness and capabilities | `copilot/api/tests/test_main.py` | `/readyz` and `/api/capabilities` expose document workflow persistence readiness |
 | Patient search and source links | `test_api_patients.py`, `test_api_source.py` | Passed |
 | FHIR client and retry behavior | `test_fhir_client.py`, `test_openemr_auth.py` | Passed |
 | Evidence tools and cache failover | `test_evidence_tools.py`, `test_api_chat_evidence.py` | Passed |

@@ -16,11 +16,12 @@ Implemented locally:
 - Safety/access check verifies the selected OpenEMR patient before document attach/review/write when FHIR is configured.
 - Week 2 evals are executable from committed fixtures and baseline with `python -m app.w2_eval --enforce`.
 - Production-mode document workflow persistence is available through encrypted Postgres when explicitly enabled.
+- `/readyz` and `/api/capabilities` expose document workflow persistence readiness for deployed proof.
 
 Latest local verification:
 
 ```text
-API tests: 151 passed, 6 skipped
+API tests: 155 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 4 passed, 0 failed
@@ -39,7 +40,7 @@ git diff --check: passed
 | Commit Week 2 implementation | Done | Repo | Commit `6e7a3ef5f` contains document workflow, tests, docs, and diagram |
 | Push to GitHub/GitLab | Done | Repo | GitHub and GitLab `master` contain commit `6e7a3ef5f` |
 | Redeploy Railway API/web | Done | Railway | API and web were redeployed from clean service packages on 2026-05-04 |
-| Production smoke test | Partial | Demo | API `/readyz` is 200 and web root is 200; full OpenEMR auth walkthrough still needs browser capture |
+| Production smoke test | Partial | Demo | API `/readyz` is 200 and web root is 200; document workflow persistence readiness must be recaptured after redeploy |
 | Week 2 document smoke test | Partial | Demo | Deployed document API route is present and web panel is present; authenticated upload/review/chat path still needs browser capture |
 | Screenshot/video evidence update | Not done | Submission | New screenshots or video segment show document extraction, review, bbox preview, and evidence-backed chat |
 | Eval doc refresh | Local done, deployed pending | Repo | `EVAL_DATASET.md` records latest local eval gate and deployed checks |

@@ -59,7 +59,7 @@ Paste the uploaded video link into the submission form.
 Local checks:
 
 ```text
-API tests: 151 passed, 6 skipped
+API tests: 155 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
