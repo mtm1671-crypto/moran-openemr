@@ -75,6 +75,10 @@ Deployed endpoint checks after Railway redeploy:
 
 ```text
 Co-Pilot API /readyz: 200
+Co-Pilot API document_workflow_persistence_enabled: true
+Co-Pilot API document_workflow_storage: true
+Co-Pilot API document_workflow_persistence_ready: true
+Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present

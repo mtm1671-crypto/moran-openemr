@@ -19,6 +19,26 @@ function Invoke-Railway {
     }
 }
 
+function New-CleanApiDeployStage {
+    param([string]$RepoRoot)
+
+    $stage = Join-Path $env:TEMP ("copilot-api-railway-" + [guid]::NewGuid().ToString("N"))
+    $archive = Join-Path $env:TEMP ("copilot-api-railway-" + [guid]::NewGuid().ToString("N") + ".tar")
+    New-Item -ItemType Directory -Path $stage | Out-Null
+
+    & git -C $RepoRoot archive --format=tar -o $archive HEAD:copilot/api
+    if ($LASTEXITCODE -ne 0) {
+        throw "git archive failed while staging the Co-Pilot API deploy folder."
+    }
+
+    & tar -xf $archive -C $stage
+    if ($LASTEXITCODE -ne 0) {
+        throw "tar extraction failed while staging the Co-Pilot API deploy folder."
+    }
+
+    return $stage
+}
+
 Write-Host "Checking Railway CLI authentication."
 Invoke-Railway @("whoami")
 
@@ -44,8 +64,8 @@ Invoke-Railway @(
 
 if (-not $SkipDeploy) {
     $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-    $apiRoot = Join-Path $repoRoot "copilot\api"
-    Write-Host "Deploying Co-Pilot API from '$apiRoot'."
+    $apiRoot = New-CleanApiDeployStage -RepoRoot $repoRoot
+    Write-Host "Deploying Co-Pilot API from clean staged folder '$apiRoot'."
     Invoke-Railway @(
         "up",
         "--environment", $Environment,

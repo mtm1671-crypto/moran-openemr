@@ -138,10 +138,14 @@ npm audit: 0 vulnerabilities
 
 ## Week 2 Evidence To Recapture After Redeploy
 
-Post-redeploy endpoint checks on 2026-05-04:
+Post-durable-persistence redeploy endpoint checks on 2026-05-07:
 
 ```text
 Co-Pilot API /readyz: 200
+Co-Pilot API document_workflow_persistence_enabled: true
+Co-Pilot API document_workflow_storage: true
+Co-Pilot API document_workflow_persistence_ready: true
+Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present

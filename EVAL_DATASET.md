@@ -23,6 +23,10 @@ Latest deployed checks recorded after the Week 2 redeploy:
 
 ```text
 Co-Pilot API /readyz: ok
+Co-Pilot API document_workflow_persistence_enabled: true
+Co-Pilot API document_workflow_storage: true
+Co-Pilot API document_workflow_persistence_ready: true
+Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
 Co-Pilot web /: HTTP 200
 Co-Pilot web document panel markup: present

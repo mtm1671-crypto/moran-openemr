@@ -40,7 +40,7 @@ git diff --check: passed
 | Commit Week 2 implementation | Done | Repo | Commit `6e7a3ef5f` contains document workflow, tests, docs, and diagram |
 | Push to GitHub/GitLab | Done | Repo | GitHub and GitLab `master` contain commit `6e7a3ef5f` |
 | Redeploy Railway API/web | Done | Railway | API and web were redeployed from clean service packages on 2026-05-04 |
-| Production smoke test | Partial | Demo | API `/readyz` is 200 and web root is 200; document workflow persistence readiness must be recaptured after redeploy |
+| Production smoke test | Partial | Demo | API `/readyz` is 200, document workflow persistence readiness is true, and web root is 200; full OpenEMR auth walkthrough still needs browser capture |
 | Week 2 document smoke test | Partial | Demo | Deployed document API route is present and web panel is present; authenticated upload/review/chat path still needs browser capture |
 | Screenshot/video evidence update | Not done | Submission | New screenshots or video segment show document extraction, review, bbox preview, and evidence-backed chat |
 | Eval doc refresh | Local done, deployed pending | Repo | `EVAL_DATASET.md` records latest local eval gate and deployed checks |
@@ -49,6 +49,9 @@ Post-redeploy endpoint checks:
 
 ```text
 Co-Pilot API /readyz: 200
+Co-Pilot API document_workflow_persistence_enabled: true
+Co-Pilot API document_workflow_storage: true
+Co-Pilot API document_workflow_persistence_ready: true
 Co-Pilot API /api/documents/patients/demo-diabetes-001/approved-evidence without auth: 401
 Co-Pilot web /: 200
 Co-Pilot web contains document panel markup: yes

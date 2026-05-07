@@ -104,7 +104,9 @@ openrouter_configured: true
 pgvector_backend: true
 document route without auth: 401
 web document panel markup: present
-document_workflow_persistence_ready: pending redeploy with DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true
+document_workflow_persistence_enabled: true
+document_workflow_storage: true
+document_workflow_persistence_ready: true
 ```
 
 ## Demo Data
