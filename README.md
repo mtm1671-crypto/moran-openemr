@@ -329,6 +329,15 @@ railway up --service copilot-api .\copilot\api --path-as-root
 railway up --service copilot-web .\copilot\web --path-as-root
 ```
 
+Enable and verify durable document workflow persistence on the deployed API:
+
+```powershell
+railway login
+.\copilot\scripts\enable-railway-document-workflow-persistence.ps1 -LinkProject
+```
+
+The script sets `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true`, deploys `copilot-api`, and verifies `/readyz` plus `/api/capabilities` both report `document_workflow_persistence_ready=true`.
+
 If Windows file locks or ignored folders block `railway up`, stage only the service files into a temp directory and deploy that staged folder with `--no-gitignore --path-as-root`.
 
 Key API variables:
@@ -360,6 +369,7 @@ VECTOR_SEARCH_LIMIT=6
 VECTOR_CANDIDATE_LIMIT=200
 EVIDENCE_CACHE_ENABLED=true
 EVIDENCE_CACHE_TTL_SECONDS=300
+DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true
 AGENT_LOOP_MAX_STEPS=10
 NIGHTLY_MAINTENANCE_ENABLED=true
 NIGHTLY_MAINTENANCE_HOUR_UTC=8

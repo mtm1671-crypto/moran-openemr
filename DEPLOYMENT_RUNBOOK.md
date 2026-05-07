@@ -209,6 +209,22 @@ railway up --service copilot-web .\copilot\web --path-as-root
 railway domain --service copilot-web
 ```
 
+Enable and verify durable Week 2 document workflow persistence on `copilot-api`:
+
+```powershell
+railway login
+.\copilot\scripts\enable-railway-document-workflow-persistence.ps1 -LinkProject
+```
+
+Expected proof after deploy:
+
+```text
+/readyz checks.document_workflow_persistence_enabled: true
+/readyz checks.document_workflow_storage: true
+/readyz checks.document_workflow_persistence_ready: true
+/api/capabilities providers.document_workflow_persistence_ready: true
+```
+
 Finally point the deployed OpenEMR bridge to the hosted web app:
 
 ```powershell
