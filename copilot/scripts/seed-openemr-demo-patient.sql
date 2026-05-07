@@ -172,27 +172,28 @@ INSERT INTO patient_data (
     allow_imm_reg_use, allow_imm_info_share, allow_health_info_ex, allow_patient_portal,
     deceased_reason, cmsportal_login, county, created_by, updated_by
 ) SELECT
-    UNHEX(REPLACE(@patient_uuid, '-', '')), 'Mr.', 'English', '', 'Marcus', 'Chen', '',
-    '1959-02-07', '222 West Erie Street', '60654', 'Chicago', 'IL', 'US', '', '',
-    '312-555-0210', '', '', '312-555-0211', 'active', '', NOW(), 'Male', '', '',
-    1, 'marcus.chen@example.invalid', '', '', 'asian', 'not_hispanic_or_latino',
+    UNHEX(REPLACE(@patient_uuid, '-', '')), 'Ms.', 'English', '', 'Margaret', 'Chen', 'L',
+    '1967-08-14', '4421 Magnolia Ave, Apt 3B', '94705', 'Berkeley', 'CA', 'US', '', '',
+    '510-555-0148', '', '', '510-555-0148', 'active', '', NOW(), 'Female', '', '',
+    1, 'mchen.demo@example.test', '', '', 'asian', 'not_hispanic_or_latino',
     '', '', '', '', '', '', @pubpid, @pid, '', '', '', '', 'YES', 'YES', 'YES',
     'YES', 'YES', 'NO', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
     '', '', NOW(), 'NO', '', '', '', '', '', 'YES', '', '', 'Cook', 1, 1
 WHERE @existing_pid IS NULL;
 
 UPDATE patient_data
-SET fname = 'Marcus',
+SET fname = 'Margaret',
     lname = 'Chen',
-    DOB = '1959-02-07',
-    sex = 'Male',
-    street = '222 West Erie Street',
-    city = 'Chicago',
-    state = 'IL',
-    postal_code = '60654',
-    phone_home = '312-555-0210',
-    phone_cell = '312-555-0211',
-    email = 'marcus.chen@example.invalid',
+    mname = 'L',
+    DOB = '1967-08-14',
+    sex = 'Female',
+    street = '4421 Magnolia Ave, Apt 3B',
+    city = 'Berkeley',
+    state = 'CA',
+    postal_code = '94705',
+    phone_home = '510-555-0148',
+    phone_cell = '510-555-0148',
+    email = 'mchen.demo@example.test',
     providerID = 1,
     date = NOW(),
     updated_by = 1
@@ -200,33 +201,33 @@ WHERE pid = @pid;
 
 INSERT INTO lists (uuid, date, type, title, begdate, activity, diagnosis, comments, pid, user, groupname, verification)
 VALUES
-    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Chronic obstructive pulmonary disease', '2014-10-03', 1, 'ICD10:J44.9', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed'),
-    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Chronic diastolic heart failure', '2021-06-18', 1, 'ICD10:I50.32', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed'),
-    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Paroxysmal atrial fibrillation', '2022-02-11', 1, 'ICD10:I48.0', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed');
+    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Type 2 diabetes mellitus', '2020-03-16', 1, 'ICD10:E11.9', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed'),
+    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Essential hypertension', '2018-05-21', 1, 'ICD10:I10', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed'),
+    (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medical_problem', 'Hyperlipidemia', '2022-02-09', 1, 'ICD10:E78.5', 'AgentForge MVP seed: active problem', @pid, 'admin', 'Default', 'confirmed');
 
 INSERT INTO lists (uuid, date, type, title, begdate, activity, diagnosis, comments, pid, user, groupname, verification)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medication', 'Albuterol 90 mcg/actuation inhaler', '2015-04-16', 1, '', 'AgentForge MVP seed: active medication', @pid, 'admin', 'Default', 'confirmed');
-SET @albuterol_list_id := LAST_INSERT_ID();
+VALUES (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medication', 'Metformin 500 mg tablet', '2020-03-16', 1, '', 'AgentForge MVP seed: active medication', @pid, 'admin', 'Default', 'confirmed');
+SET @metformin_list_id := LAST_INSERT_ID();
 
 INSERT INTO lists_medication (
     list_id, drug_dosage_instructions, usage_category, usage_category_title,
     request_intent, request_intent_title, prescription_id, is_primary_record,
     reporting_source_record_id
 ) VALUES (
-    @albuterol_list_id, 'Inhale 2 puffs every 4 to 6 hours as needed for wheezing.',
+    @metformin_list_id, 'Take 1 tablet by mouth twice daily.',
     'community', 'Home/Community', 'plan', 'Plan', NULL, 1, 1
 );
 
 INSERT INTO lists (uuid, date, type, title, begdate, activity, diagnosis, comments, pid, user, groupname, verification)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medication', 'Apixaban 5 mg tablet', '2022-02-11', 1, '', 'AgentForge MVP seed: active medication', @pid, 'admin', 'Default', 'confirmed');
-SET @apixaban_list_id := LAST_INSERT_ID();
+VALUES (UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'medication', 'Atorvastatin 20 mg tablet', '2022-02-09', 1, '', 'AgentForge MVP seed: active medication', @pid, 'admin', 'Default', 'confirmed');
+SET @atorvastatin_list_id := LAST_INSERT_ID();
 
 INSERT INTO lists_medication (
     list_id, drug_dosage_instructions, usage_category, usage_category_title,
     request_intent, request_intent_title, prescription_id, is_primary_record,
     reporting_source_record_id
 ) VALUES (
-    @apixaban_list_id, 'Take 1 tablet by mouth twice daily.',
+    @atorvastatin_list_id, 'Take 1 tablet by mouth at bedtime.',
     'community', 'Home/Community', 'plan', 'Plan', NULL, 1, 1
 );
 
@@ -234,7 +235,7 @@ INSERT INTO lists (
     uuid, date, type, title, begdate, activity, diagnosis, comments,
     pid, user, groupname, reaction, verification, severity_al
 ) VALUES (
-    UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'allergy', 'Sulfa antibiotics', '2009-09-14', 1, '',
+    UNHEX(REPLACE(UUID(), '-', '')), NOW(), 'allergy', 'Penicillin', '1999-06-01', 1, '',
     'AgentForge MVP seed: active allergy', @pid, 'admin', 'Default',
     'unassigned', 'confirmed', 'moderate'
 );
@@ -245,24 +246,24 @@ INSERT INTO procedure_order (
     lab_id, specimen_type, specimen_location, date_transmitted, clinical_hx,
     procedure_order_type, order_intent, location_id
 ) VALUES (
-    UNHEX(REPLACE(UUID(), '-', '')), 1, @pid, 0, '2026-04-25 09:10:00', '2026-04-25 09:00:00',
-    'routine', 'complete', '', 1, CONCAT(@pubpid, '-LAB-20260425'), 0, 'blood', '',
-    '2026-04-25 09:15:00', 'Cardiopulmonary follow-up labs', 'laboratory_test', 'order', 3
+    UNHEX(REPLACE(UUID(), '-', '')), 1, @pid, 0, '2026-04-22 07:42:00', '2026-04-22 07:30:00',
+    'routine', 'complete', '', 1, CONCAT(@pubpid, '-LAB-20260423'), 0, 'blood', '',
+    '2026-04-22 07:50:00', 'Hyperlipidemia, hypertension, and type 2 diabetes follow-up labs', 'laboratory_test', 'order', 3
 );
 SET @order_id := LAST_INSERT_ID();
 
 INSERT INTO procedure_order_code (procedure_order_id, procedure_order_seq, procedure_code, procedure_name, procedure_source, procedure_order_title, procedure_type)
-VALUES (@order_id, 1, '30934-4', 'Cardiopulmonary laboratory panel', '1', 'Cardiopulmonary follow-up laboratory panel', 'laboratory');
+VALUES (@order_id, 1, '57698-3', 'Lipid panel with direct LDL', '1', 'Lipid and diabetes follow-up laboratory panel', 'laboratory');
 
 INSERT INTO procedure_report (uuid, procedure_order_id, procedure_order_seq, date_collected, date_report, source, specimen_num, report_status, review_status, report_notes)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), @order_id, 1, '2026-04-25 09:10:00', '2026-04-25 12:30:00', 0, 'AF-MVP-SPEC-002', 'final', 'reviewed', 'AgentForge MVP seed: cardiopulmonary lab report');
+VALUES (UNHEX(REPLACE(UUID(), '-', '')), @order_id, 1, '2026-04-22 07:42:00', '2026-04-23 09:05:00', 0, 'PDX-26041815', 'final', 'reviewed', 'AgentForge MVP seed: Margaret Chen lipid and diabetes lab report');
 SET @report_id := LAST_INSERT_ID();
 
 INSERT INTO procedure_result (uuid, procedure_report_id, result_data_type, result_code, result_text, date, facility, units, result, `range`, abnormal, comments, result_status)
 VALUES
-    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '30934-4', 'Natriuretic peptide B [Mass/volume] in Serum or Plasma', '2026-04-25 12:30:00', 'Your Clinic Name Here', 'pg/mL', '412', '<100', 'high', 'AgentForge MVP seed: elevated BNP for demo context', 'final'),
-    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '2160-0', 'Creatinine [Mass/volume] in Serum or Plasma', '2026-04-25 12:30:00', 'Your Clinic Name Here', 'mg/dL', '1.05', '0.74-1.35', '', 'AgentForge MVP seed: stable renal function', 'final'),
-    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '2823-3', 'Potassium [Moles/volume] in Serum or Plasma', '2026-04-25 12:30:00', 'Your Clinic Name Here', 'mmol/L', '4.8', '3.5-5.1', '', 'AgentForge MVP seed: normal potassium', 'final');
+    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '4548-4', 'Hemoglobin A1c/Hemoglobin.total in Blood', '2026-04-23 09:05:00', 'Pacific Diagnostics Lab', '%', '7.6', '4.0-5.6', 'high', 'AgentForge MVP seed: diabetes follow-up context for Margaret Chen', 'final'),
+    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '13457-7', 'Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation', '2026-04-23 09:05:00', 'Pacific Diagnostics Lab', 'mg/dL', '142', '<100', 'high', 'AgentForge MVP seed: baseline LDL before scanned panel review', 'final'),
+    (UNHEX(REPLACE(UUID(), '-', '')), @report_id, 'N', '2160-0', 'Creatinine [Mass/volume] in Serum or Plasma', '2026-04-23 09:05:00', 'Pacific Diagnostics Lab', 'mg/dL', '0.91', '0.57-1.00', '', 'AgentForge MVP seed: renal function context for diabetes follow-up', 'final');
 
 SET @pubpid := 'AF-MVP-003';
 SET @patient_uuid := 'f0d8bb04-8d8f-4e66-8f59-ecf2d8d98f34';

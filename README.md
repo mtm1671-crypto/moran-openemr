@@ -64,6 +64,9 @@ What social barriers are documented?
 
 ## Current Status
 
+Live working/limited/blocked capability visibility is available in the web app at `/status`
+or from the `System status` link in the Co-Pilot header.
+
 Working in the deployed demo:
 
 - OpenEMR runs on Railway.
@@ -116,7 +119,7 @@ The Railway seed script refreshes 15 synthetic patients. Each has demographics, 
 | Public ID | Patient | Search |
 |---|---|---|
 | AF-MVP-001 | Elena Morrison | `mo` |
-| AF-MVP-002 | Marcus Chen | `chen` |
+| AF-MVP-002 | Margaret Chen | `chen` |
 | AF-MVP-003 | Priya Shah | `priya` |
 | AF-MVP-004 | Rosa Alvarez | `rosa` |
 | AF-MVP-005 | Daniel Okafor | `okafor` |
@@ -436,6 +439,7 @@ The root README is the source of truth for final submission. The remaining Markd
 | [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Earlier deployed walkthrough screenshots and proof notes |
 | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) | Week 2 early submission blockers, smoke path, and deployment checklist |
 | [DEMO_PLAN.md](DEMO_PLAN.md) | Demo script and talk track |
+| [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) | Manual scan/extract/approve/retrieve demo for Margaret Chen |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Longer deployment notes and environment checklists |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Deeper architecture plan and future-state design |
 | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |

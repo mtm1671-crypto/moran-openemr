@@ -83,7 +83,7 @@ Search term: mo
 FHIR patient id: c3888c9f-432d-11f1-a700-7a0f44501ceb
 Data: demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent labs, 4 clinical notes
 
-Name: Marcus Chen
+Name: Margaret Chen
 OpenEMR public id: AF-MVP-002
 Search term: chen
 FHIR patient id: 5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02

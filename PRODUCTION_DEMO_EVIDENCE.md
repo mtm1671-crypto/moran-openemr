@@ -116,20 +116,21 @@ Use `https://copilot-web-production.up.railway.app` after launching/signing in f
    - `Extraction` shows fact count and review count.
    - `Persistence` shows retrievable approved evidence count.
    - `Write` shows written/failed Observation write counts.
-3. Upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
-4. Click `Extract`.
-5. Show the extracted fact card:
+3. For the Margaret Chen scan demo, use [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) and upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
+4. For a short intake-only proof, upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
+5. Click `Extract`.
+6. Show the extracted fact card:
    - normalized value
    - schema/citation/bbox checks
    - source quote
    - fact id
    - selected bounding-box preview
    - supervisor trace
-6. Click `Approve all`.
-7. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
-8. Ask `What social barriers are documented?`.
-9. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
-10. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
+7. Click `Approve all`.
+8. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
+9. Ask `What social barriers are documented?` or `What changed and what should I pay attention to for diabetes or lipids?`.
+10. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
+11. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
 
 ## Health And Security Smoke Checks
 

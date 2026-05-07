@@ -121,9 +121,9 @@ def test_patient_roster_lists_authorized_patients_without_name_query() -> None:
                         "resource": {
                             "resourceType": "Patient",
                             "id": "p2",
-                            "name": [{"given": ["Marcus"], "family": "Chen"}],
-                            "birthDate": "1959-02-07",
-                            "gender": "male",
+                            "name": [{"given": ["Margaret"], "family": "Chen"}],
+                            "birthDate": "1967-08-14",
+                            "gender": "female",
                         }
                     },
                 ],
@@ -139,7 +139,7 @@ def test_patient_roster_lists_authorized_patients_without_name_query() -> None:
     assert response.status_code == 200
     assert [patient["display_name"] for patient in response.json()] == [
         "Elena Morrison",
-        "Marcus Chen",
+        "Margaret Chen",
     ]
     assert patient_route.calls[0].request.headers["authorization"] == "Bearer user-token"
     assert "name" not in patient_route.calls[0].request.url.params

@@ -44,7 +44,7 @@ The live Railway demo is seeded with 15 synthetic patients by `copilot/scripts/s
 | Public ID | Patient | Primary eval focus |
 |---|---|---|
 | AF-MVP-001 | Elena Morrison | Diabetes, adherence barriers, recent A1c, source-link verification |
-| AF-MVP-002 | Marcus Chen | Hypertension, renal function trend, medication context |
+| AF-MVP-002 | Margaret Chen | Diabetes, hypertension, lipid panel review, scanned-lab persistence |
 | AF-MVP-003 | Priya Shah | Asthma history, recent note retrieval |
 | AF-MVP-004 | Rosa Alvarez | Preventive care and social history summary |
 | AF-MVP-005 | Daniel Okafor | Polypharmacy summary and allergy handling |

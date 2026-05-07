@@ -157,6 +157,18 @@ test("modern patient dashboard renders OpenEMR FHIR clinical cards", async ({ pa
   );
 });
 
+test("system status page shows working and limited capability truth", async ({ page }) => {
+  await page.goto("/status");
+
+  await expect(page.getByRole("heading", { name: "Co-Pilot Status" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Working" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Limited" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Blocked" })).toBeVisible();
+  await expect(page.getByText("Document persistence")).toBeVisible();
+  await expect(page.getByText("Observation writes")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Co-Pilot" })).toHaveAttribute("href", "/");
+});
+
 test("document extraction approval feeds the chat evidence flow", async ({ page }) => {
   await page.goto("/");
 

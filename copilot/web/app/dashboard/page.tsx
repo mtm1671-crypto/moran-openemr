@@ -200,6 +200,9 @@ export default function PatientDashboard() {
           <a className="secondaryLink" href={chatHref}>
             Ask Co-Pilot
           </a>
+          <a className="secondaryLink" href="/status">
+            System status
+          </a>
           <button
             disabled={!selectedPatient || isLoading}
             onClick={() => setRefreshCounter((value) => value + 1)}

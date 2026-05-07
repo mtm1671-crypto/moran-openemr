@@ -122,7 +122,7 @@ For the synthetic Co-Pilot demo patient, seed Railway OpenEMR after first boot a
 .\copilot\scripts\seed-openemr-railway-demo-patient.ps1
 ```
 
-Expected result: 15 synthetic patients are searchable. Start with `mo` for Elena Morrison, `chen` for Marcus Chen, `priya` for Priya Shah, then use `rosa`, `okafor`, `tanaka`, `andre`, `nadia`, `brooks`, `leah`, `jamal`, `owen`, `aisha`, `victor`, and `grace` for the expanded panel. Each seeded patient has 3 problems, 2 active medications, 1 allergy, 3 recent lab results, and 2 synthetic clinical notes exposed through FHIR `DocumentReference`. The script uses the Railway MySQL TCP proxy with injected database variables; it does not print database credentials.
+Expected result: 15 synthetic patients are searchable. Start with `mo` for Elena Morrison, `chen` for Margaret Chen, `priya` for Priya Shah, then use `rosa`, `okafor`, `tanaka`, `andre`, `nadia`, `brooks`, `leah`, `jamal`, `owen`, `aisha`, `victor`, and `grace` for the expanded panel. Each seeded patient has 3 problems, 2 active medications, 1 allergy, 3 recent lab results, and 4 synthetic clinical notes exposed through FHIR `DocumentReference`. The script uses the Railway MySQL TCP proxy with injected database variables; it does not print database credentials.
 
 ### Why this Dockerfile shape
 

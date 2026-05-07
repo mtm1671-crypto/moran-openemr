@@ -452,6 +452,9 @@ export default function Home() {
           <a className="inlineNavLink" href={dashboardHref}>
             Open patient dashboard
           </a>
+          <a className="inlineNavLink" href="/status">
+            System status
+          </a>
         </div>
 
         <div className="patientHeaderIdentity">

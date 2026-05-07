@@ -9,6 +9,8 @@ are not real patient records and should still be handled as PHI-shaped data.
 - `lab-results/*.pdf`: embedded-text lab reports used by the deterministic extraction tests.
 - `*.png`: scanned/image-style examples. The local deterministic pipeline intentionally fails
   closed for image files until an OCR or vision provider is configured.
+- `p01-chen-*`: Margaret Chen synthetic examples used for the manual durable-storage
+  demo and Week 2 golden cases.
 
 ## Verification
 
