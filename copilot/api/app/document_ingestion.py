@@ -1,3 +1,9 @@
+"""Week 2 document ingestion, extraction, review, and write routes.
+
+Documents are treated as staged evidence. Extraction can propose facts, but a
+human review decision is required before lab facts are written to OpenEMR.
+"""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -71,6 +77,8 @@ async def attach_and_extract(
         actor_user_id=user.user_id,
     )
     if not was_created or job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
+        # Idempotent upload: repeated submits for the same source return the
+        # existing job instead of duplicating extraction work.
         return _job_response(job.job_id)
 
     update_document_job(job.job_id, status=W2JobStatus.extracting, trace="extracting_started")
@@ -142,6 +150,8 @@ async def submit_review_decisions(
     _require_document_access(user)
     job = await _require_job_for_user(job_id, user, settings)
     if job.patient_id is None and any(decision.action == "approve" for decision in request.decisions):
+        # We allow extraction without a patient so example docs can be tested,
+        # but approved facts cannot enter patient evidence until scoped.
         raise HTTPException(
             status_code=422,
             detail="Assign the document to a patient before approving extracted facts",
@@ -211,6 +221,8 @@ async def write_approved_facts(
         )
     job, write_started = begin_document_write(job.job_id)
     if not write_started:
+        # Prevent duplicate write drains from racing each other. Production
+        # outbox workers would enforce this with row locks / SKIP LOCKED.
         if job.status == W2JobStatus.writing:
             raise HTTPException(status_code=409, detail="Document write already in progress")
         return DocumentWriteResult(
@@ -235,6 +247,8 @@ async def write_approved_facts(
         try:
             resource_id = await write_lab_fact_observation(fact=fact, user=user, settings=settings)
         except (ObservationWriteError, httpx.HTTPError) as exc:
+            # Keep per-fact write diagnostics visible to the reviewer. This is
+            # how the UI can explain whether scope, value mapping, or FHIR failed.
             write_error = _write_error_message(exc)
             failed_count += 1
             update_document_fact(

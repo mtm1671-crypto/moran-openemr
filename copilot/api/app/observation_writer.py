@@ -1,3 +1,10 @@
+"""FHIR Observation write adapter for approved extracted lab facts.
+
+This is the narrow write boundary for Week 2. Extraction does not mutate the
+chart directly; only reviewed lab facts proposed for OpenEMR Observations reach
+this adapter.
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -26,6 +33,7 @@ async def write_lab_fact_observation(
 
     resource = build_observation_resource(fact)
     if settings.openemr_fhir_base_url is None:
+        # Demo-only fallback. PHI mode requires a real OpenEMR FHIR endpoint.
         if settings.requires_phi_controls():
             raise ObservationWriteError("OPENEMR_FHIR_BASE_URL is required before writing PHI")
         return f"demo-observation-{fact.fact_id}"
@@ -43,6 +51,8 @@ def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
     if fact.patient_id is None:
         raise ObservationWriteError("Fact must be assigned to a patient before writing")
 
+    # Map the extracted fact into a minimal FHIR Observation. Keep provenance in
+    # the note so a reviewer can trace the chart write back to the source span.
     payload = fact.payload
     value_text = str(payload.get("value") or fact.normalized_value.split()[0])
     numeric_value = _coerce_float(value_text)

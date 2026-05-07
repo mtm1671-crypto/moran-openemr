@@ -1,3 +1,10 @@
+"""Encrypted Co-Pilot persistence and derived read-model storage.
+
+OpenEMR is still the clinical system of record. The tables here store Co-Pilot
+product/audit data and rebuildable projections: evidence cache, vector index,
+semantic relationships, job status, and encrypted conversation history.
+"""
+
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
@@ -30,6 +37,8 @@ from app.security import PhiCipher, assert_metadata_payload_is_phi_safe
 
 metadata = MetaData()
 
+# PHI-safe audit metadata for Co-Pilot operations. Future production compliance
+# audit can move to a stricter insert-only/WORM surface without changing callers.
 audit_events = Table(
     "audit_events",
     metadata,
@@ -45,6 +54,8 @@ audit_events = Table(
     Column("metadata_json", JSON, nullable=False),
 )
 
+# Short-lived encrypted evidence bundles. These speed repeated questions but are
+# not final-answer cache and are not a substitute for OpenEMR source truth.
 evidence_cache = Table(
     "evidence_cache",
     metadata,
@@ -59,6 +70,9 @@ evidence_cache = Table(
     Column("encrypted_payload", LargeBinary, nullable=False),
 )
 
+# Patient-scoped vector projection for unstructured or semi-structured evidence.
+# The encrypted payload lets search return source-backed evidence without putting
+# raw chart text in logs or process metadata.
 evidence_vector_index = Table(
     "evidence_vector_index",
     metadata,
@@ -88,6 +102,7 @@ evidence_vector_index = Table(
     ),
 )
 
+# Product memory. Conversations are encrypted and expire by retention policy.
 conversations = Table(
     "conversations",
     metadata,
@@ -115,6 +130,8 @@ conversation_messages = Table(
     Column("metadata_json", JSON, nullable=False),
 )
 
+# Background/document workflow state. Jobs make long-running work observable and
+# retryable instead of hiding OCR/reindex/write work inside a browser request.
 job_runs = Table(
     "job_runs",
     metadata,

@@ -26,6 +26,7 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 | Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
 | User document and use cases | [USER.md](USER.md) |
 | Agent architecture document with one-page summary | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Guided codebase walkthrough | [WALKTHROUGH.md](WALKTHROUGH.md) |
 | Week 2 architecture design | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
 | Early submission readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
 | Demo video plan and walkthrough checklist | [DEMO_PLAN.md](DEMO_PLAN.md) and [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
@@ -414,6 +415,7 @@ The root README is the source of truth for final submission. The remaining Markd
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Longer deployment notes and environment checklists |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Deeper architecture plan and future-state design |
 | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |
+| [WALKTHROUGH.md](WALKTHROUGH.md) | Learning guide for Co-Pilot files, request flows, data patterns, and debugging paths |
 | [USER.md](USER.md) | Primary user, supporting users, use cases, and MVP non-goals |
 | [MVP_STATUS.md](MVP_STATUS.md) | Historical MVP status and roadmap notes |
 | [EVAL_PLAN.md](EVAL_PLAN.md) | Eval and fixture plan |

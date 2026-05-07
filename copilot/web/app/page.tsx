@@ -1,5 +1,10 @@
 "use client";
 
+// Main clinician workspace. The server owns auth, patient access, retrieval,
+// model calls, and verification; this component keeps the browser state small:
+// authenticated user, authorized patient roster, selected patient, chat stream,
+// and document review controls.
+
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DocumentUploadPanel } from "./components/DocumentUploadPanel";
@@ -55,6 +60,8 @@ const API_REQUEST_TIMEOUT_MS = 20_000;
 const CHAT_STALL_TIMEOUT_MS = 45_000;
 
 const quickQuestions = [
+  // These are intentionally common chart-review intents. They keep the first
+  // interaction fast and encourage source-backed questions over free-form orders.
   {
     id: "pre_room_brief",
     label: "Pre-room brief",

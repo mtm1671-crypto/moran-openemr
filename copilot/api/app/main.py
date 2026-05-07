@@ -14,6 +14,8 @@ from app.scheduler import nightly_maintenance_loop
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # Config validation is part of startup. Unsafe PHI/provider/storage settings
+    # fail before the API can serve requests.
     settings.assert_runtime_config()
 
     @asynccontextmanager
@@ -21,6 +23,8 @@ def create_app() -> FastAPI:
         await initialize_phi_storage(settings)
         maintenance_task: asyncio.Task[None] | None = None
         if settings.nightly_maintenance_enabled:
+            # Single-service demo can run maintenance in-process. Production can
+            # move the same logic to the Railway worker/cron service.
             maintenance_task = asyncio.create_task(nightly_maintenance_loop(settings))
         try:
             yield

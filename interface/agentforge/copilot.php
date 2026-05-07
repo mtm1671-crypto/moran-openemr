@@ -36,6 +36,8 @@ $launchParams = [
     'openemr_site' => (string) $session->get('site_id'),
 ];
 $fhirUrl = (new ServerConfig())->getFhirUrl();
+// SMART issuer/audience come from OpenEMR's configured FHIR endpoint. The
+// Co-Pilot web app still validates these before OAuth discovery.
 $launchParams['iss'] = $fhirUrl;
 $launchParams['aud'] = $fhirUrl;
 
@@ -67,6 +69,8 @@ if ($appointmentEid !== null) {
 if ($pid !== null) {
     $patientContext = getPatientLaunchContext($pid);
     $launchParams = array_merge($launchParams, $patientContext);
+    // Patient-context launches use an OpenEMR SMART launch token so the web/API
+    // side can preselect the patient without trusting arbitrary query params.
     $smartLaunch = new SMARTLaunchToken($patientContext['patient_id']);
     $smartLaunch->setIntent(
         $launchParams['launch_context'] === 'schedule'

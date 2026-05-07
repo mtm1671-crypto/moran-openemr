@@ -1,3 +1,10 @@
+"""Runtime configuration and safety gates.
+
+Settings are not just convenience flags in this app. They are the first
+production-readiness guardrail: PHI mode refuses unsafe auth bypasses, plaintext
+URLs, missing encryption, missing audit storage, or unapproved model egress.
+"""
+
 import base64
 import binascii
 from functools import lru_cache
@@ -19,6 +26,7 @@ class Settings(BaseSettings):
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
 
+    # Deployment and storage controls.
     app_env: str = "local"
     phi_mode: bool = False
     public_base_url: str = "http://localhost:3000"
@@ -26,6 +34,7 @@ class Settings(BaseSettings):
     encryption_key: SecretStr | None = None
     encryption_key_id: str = "primary"
 
+    # OpenEMR remains the source of truth for auth, ACLs, patients, and FHIR data.
     openemr_base_url: AnyHttpUrl | None = None
     openemr_site: str = "default"
     openemr_fhir_base_url: AnyHttpUrl | None = None
@@ -51,6 +60,8 @@ class Settings(BaseSettings):
         "user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
     )
 
+    # Model/provider controls. Demo egress and real-PHI egress are intentionally
+    # separate so a synthetic OpenRouter setup cannot become a PHI path by accident.
     llm_provider: str = "mock"
     embedding_provider: str = "none"
     openai_api_key: SecretStr | None = None
@@ -79,6 +90,8 @@ class Settings(BaseSettings):
     openai_ocr_max_output_tokens: int = 2500
     openrouter_ocr_model: str = "baidu/qianfan-ocr-fast:free"
     openrouter_ocr_max_tokens: int = 2500
+    # Derived read-model controls. Vector/cache rows are rebuildable projections
+    # over OpenEMR evidence, not the clinical source of truth.
     vector_search_enabled: bool = False
     vector_embedding_provider: str = "hash"
     vector_embedding_dimensions: int = 256
@@ -104,6 +117,7 @@ class Settings(BaseSettings):
         "user/Patient.read user/Practitioner.read user/Observation.read user/Observation.write user/Condition.read "
         "user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
     )
+    # Persistence and PHI guardrails.
     structured_logging_enabled: bool = True
     audit_persistence_required: bool = True
     conversation_persistence_enabled: bool = True
@@ -252,6 +266,8 @@ class Settings(BaseSettings):
             _require_https("OPENEMR_SERVICE_TOKEN_URL", self.openemr_service_token_url, errors)
 
         if not self.requires_phi_controls():
+            # Local/demo mode may run with fewer controls, but vector/cache still
+            # require storage and encryption because they can carry chart content.
             if self.vector_search_enabled and self.database_url is None:
                 errors.append("DATABASE_URL is required when vector search is enabled")
             if self.vector_search_enabled and self.encryption_key is None:
@@ -262,6 +278,8 @@ class Settings(BaseSettings):
                 errors.append("ENCRYPTION_KEY is required when evidence cache is enabled")
             return errors
 
+        # PHI mode is fail-closed. These checks are intentionally stricter than
+        # local defaults because a misconfigured deployment is a security bug.
         if self.dev_auth_bypass:
             errors.append("DEV_AUTH_BYPASS must be false when PHI controls are required")
         if self.openemr_dev_password_grant:

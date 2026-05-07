@@ -23,6 +23,9 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try {
     const search = request.nextUrl.searchParams;
+    // The issuer/audience may arrive from OpenEMR launch context, but they are
+    // still untrusted input. Resolve against the configured allowlist before
+    // SMART discovery so client secrets never post to an attacker endpoint.
     const issuer = resolveTrustedSmartUrl(optionalParam(search.get("iss")), "SMART issuer");
     const audience =
       resolveTrustedSmartUrl(optionalParam(search.get("aud")), "SMART audience") ?? issuer;
@@ -33,6 +36,8 @@ export async function GET(request: NextRequest) {
     const state = randomUrlSafe(24);
     const codeVerifier = randomUrlSafe(64);
 
+    // PKCE binds the callback to this browser-started authorization request.
+    // The sealed state cookie also remembers where the user should return.
     const authUrl = new URL(endpoints.authorizationEndpoint);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("client_id", resolveClientId());

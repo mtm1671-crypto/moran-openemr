@@ -1,3 +1,10 @@
+"""Patient-scoped vector indexing for derived evidence search.
+
+This module deliberately treats vectors as a rebuildable projection over
+OpenEMR-backed evidence. All searches are filtered by selected patient before
+ranking, and vector hits are hydrated/verified before final answers.
+"""
+
 import hashlib
 import re
 from typing import Protocol
@@ -30,6 +37,12 @@ class EvidenceVectorizer(Protocol):
 
 
 class HashEmbeddingAdapter:
+    """Deterministic local embedding adapter for tests and synthetic demos.
+
+    It is not semantically strong, but it avoids external PHI egress and gives
+    predictable behavior for CI and smoke tests.
+    """
+
     def __init__(self, dimensions: int) -> None:
         if dimensions <= 0:
             raise VectorStoreError("Hash embedding dimensions must be positive")
@@ -79,6 +92,8 @@ async def index_and_search_evidence(
     query: str,
     evidence: list[EvidenceObject],
 ) -> list[EvidenceObject]:
+    # Warm the selected-patient projection from source-backed evidence, then
+    # search the projection. The caller owns source hydration and verification.
     if evidence:
         await index_patient_evidence(settings=settings, evidence=evidence)
     return await search_patient_evidence(settings=settings, patient_id=patient_id, query=query)
@@ -138,6 +153,8 @@ async def search_patient_evidence(
 
 
 def evidence_search_text(evidence: EvidenceObject) -> str:
+    # Keep the searchable text compact. Prompt-size control starts before the
+    # model call, at retrieval/indexing time.
     return f"{evidence.source_type}: {evidence.display_name}. {evidence.fact}"
 
 

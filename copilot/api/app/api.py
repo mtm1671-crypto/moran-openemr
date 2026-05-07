@@ -1,3 +1,11 @@
+"""FastAPI routes for the Clinical Co-Pilot.
+
+This module is the API orchestrator. It keeps the model on a short leash:
+authenticate the OpenEMR user, lock the selected patient, retrieve evidence,
+optionally search derived vector evidence, call the configured model provider,
+verify citations, and only then stream a final answer.
+"""
+
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -59,6 +67,8 @@ router.include_router(document_router)
 
 
 async def initialize_phi_storage(settings: Settings) -> None:
+    # These tables are derived/product storage, not OpenEMR truth. They are still
+    # required when PHI controls, vector search, or encrypted evidence cache are on.
     if settings.requires_phi_controls() or settings.vector_search_enabled or settings.evidence_cache_enabled:
         await initialize_phi_schema(settings)
 
@@ -817,6 +827,8 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
     started_at = datetime.now(tz=UTC)
     yield _sse("status", {"message": "checking access", "role": user.role})
 
+    # The MVP is deliberately read-only. Treatment-plan or medication-change
+    # requests are refused before any retrieval or model call can happen.
     if _is_treatment_advice_request(request.message):
         yield _sse("status", {"message": "enforcing read-only MVP policy"})
         payload = {
@@ -849,6 +861,8 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
     yield _sse("status", {"message": "retrieving evidence", "patient_id": request.patient_id})
 
     try:
+        # Evidence retrieval is the boundary between OpenEMR truth and Co-Pilot
+        # derived read models. The model never chooses the patient or source ids.
         retrieval = await _retrieve_evidence(request=request, user=user, settings=settings)
     except HTTPException as exc:
         payload = {
@@ -994,6 +1008,8 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
 
     provider = _provider_for_settings(settings)
     try:
+        # Provider output is treated as a draft. It must survive schema/citation
+        # parsing and the verifier below before the UI sees it.
         answer = await provider.answer(
             patient_id=request.patient_id,
             user_message=request.message,
@@ -1028,6 +1044,8 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
     }
 
     try:
+        # Final safety gate: every factual claim must cite selected-patient
+        # evidence. Failure becomes a refusal, not a partially trusted answer.
         verify_answer(answer, retrieval.evidence, request.patient_id)
     except VerificationError as exc:
         payload = {
@@ -1098,6 +1116,8 @@ async def _persist_and_annotate_chat_payload(
         return payload
 
     try:
+        # Conversation rows are useful product memory, but audit is the safety
+        # dependency. In PHI mode, audit persistence failure withholds the answer.
         if settings.conversation_persistence_enabled:
             conversation_id = await append_chat_messages(
                 settings=settings,
@@ -1167,6 +1187,8 @@ async def _retrieve_evidence(
     settings: Settings,
 ) -> EvidenceRetrievalResult:
     if settings.openemr_fhir_base_url is None:
+        # Local/demo mode can answer from deterministic fixtures. Production PHI
+        # mode requires OpenEMR FHIR, enforced by Settings.runtime_config_errors().
         document_evidence = approved_document_evidence(request.patient_id)
         retrieval = EvidenceRetrievalResult(
             evidence=_merge_evidence(_demo_evidence(request.patient_id), document_evidence),
@@ -1189,6 +1211,8 @@ async def _retrieve_evidence(
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     service = FhirEvidenceService(client)
+    # Structured FHIR evidence is collected before vector search so common
+    # factual questions do not need semantic search or a larger model context.
     retrieval = await _collect_evidence_with_cache(
         settings=settings,
         user=user,
@@ -1232,6 +1256,8 @@ async def _augment_with_vector_search_with_failover(
             service=service,
         )
     except (VectorStoreError, httpx.HTTPError) as exc:
+        # Vector search is a derived projection. If it is unavailable, keep the
+        # live OpenEMR evidence path alive and surface the limitation in audit.
         emit_telemetry_event(
             settings,
             event="vector_search_degraded",
@@ -1268,6 +1294,8 @@ async def _collect_evidence_with_cache(
             quick_question_id=quick_question_id,
         )
 
+    # Cache key includes actor, role, scopes, patient, and normalized question.
+    # That prevents one clinician/context from reusing another context's evidence.
     cache_key = _evidence_cache_key(
         user=user,
         patient_id=patient_id,
@@ -1342,6 +1370,8 @@ async def _augment_with_vector_search(
     service: FhirEvidenceService | None,
 ) -> EvidenceRetrievalResult:
     try:
+        # Search existing patient-scoped vectors first. If the index is warm,
+        # this avoids re-embedding the same source evidence on every turn.
         existing_vector_evidence = await search_patient_evidence(
             settings=settings,
             patient_id=patient_id,
@@ -1370,6 +1400,8 @@ async def _augment_with_vector_search(
     index_evidence = retrieval.evidence
     limitations = list(retrieval.limitations)
     if service is not None:
+        # Cold index path: collect a broader selected-patient evidence set, write
+        # the derived vector rows, then search the projection.
         seed_retrieval = await service.collect_patient_index_evidence(patient_id)
         index_evidence = _merge_evidence(retrieval.evidence, seed_retrieval.evidence)
         limitations = _merge_strings(limitations, seed_retrieval.limitations)

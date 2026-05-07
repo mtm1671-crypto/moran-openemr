@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const returnedState = request.nextUrl.searchParams.get("state");
   if (!oauthState || !code || !returnedState || returnedState !== oauthState.state) {
+    // State mismatch means the callback cannot be trusted. Clear state and send
+    // the user back through a fresh SMART launch instead of guessing.
     return redirectWithAuthError(request, redirectTo, "invalid_oauth_state");
   }
 
@@ -51,6 +53,8 @@ export async function GET(request: NextRequest) {
     const now = Date.now();
     const expiresIn = numericExpiresIn(token.expires_in);
     const accessToken = typeof token.access_token === "string" ? token.access_token : "";
+    // The web layer stores the bearer in an encrypted HttpOnly cookie. Browser
+    // code never reads the token directly; same-origin API proxying injects it.
     const session: TokenSession = {
       accessToken,
       tokenType: typeof token.token_type === "string" ? token.token_type : "Bearer",

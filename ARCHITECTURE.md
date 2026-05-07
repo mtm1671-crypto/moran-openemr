@@ -167,6 +167,93 @@ Postgres contains three categories of data:
 
 OpenEMR remains the record of authority. Postgres is a search, evidence, audit, and product database.
 
+## Data-Intensive Application Patterns
+
+The main scaling principle is to separate authoritative clinical records from derived, rebuildable views. OpenEMR is the system of record. Co-Pilot maintains query-optimized projections that can be rebuilt, expired, or replaced without changing the clinical truth.
+
+### Data Ownership And Rebuildability
+
+Every table, cache, and index should declare whether it is authoritative, derived, or ephemeral. This keeps scale decisions honest: authoritative data needs strict durability and audit controls; derived data needs freshness markers and rebuild jobs; ephemeral data can live in Redis or memory.
+
+| Data surface | Class | Source of truth | Partition key | Freshness rule | Rebuild / failure behavior |
+|---|---|---|---|---|---|
+| OpenEMR Patient, Observation, Condition, Medication, Allergy, DocumentReference | Authoritative clinical record | OpenEMR | OpenEMR tenant/site and patient | Always read through current OpenEMR authorization | If unavailable, fail closed or show explicit source-unavailable state. |
+| Co-Pilot conversations/messages | Product/audit-adjacent record | Co-Pilot Postgres | `created_at`, `actor_user_id`, `patient_ref` | Retained for configured window; encrypted at rest | If persistence is required and unavailable, chat answer is withheld. |
+| Audit events / future `phi_access_log` | Compliance record | Co-Pilot Postgres plus WORM archive | `created_at`, `org_id`, `actor_user_id` | Append-only; never cache as a substitute | Insert-only role, monthly archive; failure blocks PHI answer when required. |
+| Evidence cache | Derived read model | OpenEMR FHIR plus selected-patient policy | `patient_ref`, `cache_key_ref`, `expires_at` | Short TTL plus source hydration before answer | On miss/failure, use live OpenEMR FHIR if safe; never return stale facts silently. |
+| Evidence vector index | Derived search projection | Evidence objects generated from OpenEMR | `patient_ref`, `embedding_model`, `expires_at` | `source_updated_at`, `indexed_at`, `chunk_hash`, `embedding_model` must match policy | Reindex selected patient or fall back to structured FHIR evidence. |
+| Document extraction jobs | Operational workflow record | Uploaded OpenEMR document plus extraction pipeline | `created_at`, `job_id`, `patient_ref` | Job status is current; extracted facts are staged until reviewed | Retry transient stages; dead-letter permanent failures with human-visible reasons. |
+| Approved extracted facts | Derived/staged facts | Source document and human review | `patient_ref`, `source_document_id` | Must cite source span/bbox and review decision | Recompute from document; writes to OpenEMR go through outbox/write adapter. |
+| Observation write outbox | Durable command queue | Human-approved extracted fact | `created_at`, `org_id`, `patient_ref` | Pending until written and round-trip verified | Retry with idempotency key; dead-letter with exact FHIR error. |
+| Redis auth/roster/lock/rate-limit state | Ephemeral coordination | OpenEMR, Postgres, request stream | Key TTL, `org_id`, `actor_user_id` | Seconds to minutes only | Safe to drop; rebuild from source. Never stores final clinical answers. |
+| Cost, retrieval, verification, routing telemetry | Operational analytics | Runtime events | `created_at`, `org_id`, `provider`, `model` | Append per event; roll up for dashboards | Partition and archive; lost telemetry should degrade observability, not clinical truth. |
+
+### CQRS And Derived Read Models
+
+The clinical write path and the question-answer read path should stay separate. OpenEMR handles authoritative clinical mutations. Co-Pilot creates read models for fast agent retrieval: encrypted evidence cache rows, semantic relationship rows, vector chunks, retrieval runs, and approved extracted facts.
+
+This means the system can scale read-heavy chat traffic without adding pressure to OpenEMR for every repeated question. It also means every derived row must be traceable back to the OpenEMR source record, source timestamp, and selected-patient authorization context.
+
+### Event Log, Outbox, And Idempotency
+
+Long-running or side-effecting work should be represented as durable events before a worker performs it:
+
+- Document extraction starts as an `extraction_job`.
+- Approved lab facts become outbox commands before writing Observations.
+- Patient reindex requests use stable source ids and content hashes.
+- Observation writes use deterministic identifiers and `If-None-Exist` where OpenEMR supports it.
+
+The request path should return a job id or streamed progress instead of hiding slow work inside a browser request. Workers can then retry transient failures, dead-letter permanent errors, and expose exactly why a write or extraction failed.
+
+### Bounded Staleness
+
+Cache hits are useful only when the system knows how stale they are. Derived evidence should carry enough metadata to decide whether it can be used:
+
+```text
+source_updated_at
+indexed_at
+retrieved_at
+chunk_hash
+embedding_provider
+embedding_model
+index_version
+expires_at
+```
+
+When staleness cannot be checked, the answer should either hydrate through live OpenEMR FHIR or tell the clinician that current source verification was unavailable. It should not present stale index text as current chart truth.
+
+### Backpressure And Bulkheads
+
+At scale, the bottlenecks are usually external dependencies: OpenEMR FHIR latency, model-provider rate limits, OCR throughput, and database index contention. The system should isolate those pressure points:
+
+- API replicas handle auth, patient search, chat streaming, and cheap deterministic evidence.
+- Worker queues handle OCR, extraction, reindex, and write retries.
+- Redis holds tenant concurrency budgets and distributed locks when replicas exceed one.
+- Model routing sheds or downgrades expensive calls before it degrades deterministic clinical reads.
+- `/api/status` exposes queue depth, provider health, cache readiness, vector readiness, and verifier health.
+
+The production rule is graceful load shedding: keep safe source-backed paths available, queue expensive paths, and refuse rather than hallucinate when evidence or verification is unavailable.
+
+### Partitioning And Retention
+
+Append-heavy tables should be partitioned before they become painful: audit events, cost events, retrieval runs, routing decisions, verification runs, job runs, extracted facts, and outbox records. The default partition key is `created_at`; tenant-aware queries also index `org_id` or the hashed tenant/site equivalent.
+
+Hot partitions support recent debugging and active workflows. Cold partitions move to cheaper storage or WORM archive depending on whether they are operational telemetry or compliance records. Dashboards should read rollups rather than scanning raw event tables.
+
+### Stable Interfaces For Swappable Infrastructure
+
+The agent should call stable internal interfaces rather than directly depending on one database or provider shape:
+
+```text
+search_patient_evidence(patient_id, query)
+collect_structured_evidence(patient_id, intent)
+write_approved_observation(fact_id)
+record_cost_event(provider, model, tokens, latency)
+verify_answer(answer, evidence_bundle)
+```
+
+Today those interfaces can be backed by Postgres, pgvector, and OpenEMR FHIR. Later, guideline vectors can move to Qdrant, reranking can move providers, or telemetry can move to a full OTel backend without rewriting the agent loop.
+
 ## Patient And Auth Model
 
 Authentication uses OpenEMR-issued identity. The preferred flow is SMART/OAuth login against OpenEMR. FastAPI validates JWTs against OpenEMR JWKS on every request and builds a request-scoped user object:
