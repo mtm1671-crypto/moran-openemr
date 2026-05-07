@@ -419,6 +419,10 @@ export default function Home() {
     return "Checking auth";
   }
 
+  const dashboardHref = selectedPatient?.patient_id
+    ? `/dashboard?patient_id=${encodeURIComponent(selectedPatient.patient_id)}`
+    : "/dashboard";
+
   function patientOptionLabel(patient: PatientSummary) {
     const details = [patient.birth_date, patient.gender].filter(Boolean).join(" - ");
     return details ? `${patient.display_name} (${details})` : patient.display_name;
@@ -433,6 +437,9 @@ export default function Home() {
           <p className="eyebrow">OpenEMR workspace</p>
           <h1>AgentForge Clinical Co-Pilot</h1>
           <p className="sessionLine">{sessionLabel()}</p>
+          <a className="inlineNavLink" href={dashboardHref}>
+            Open patient dashboard
+          </a>
         </div>
 
         <div className="patientHeaderIdentity">

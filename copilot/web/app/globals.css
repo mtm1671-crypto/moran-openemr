@@ -113,6 +113,18 @@ h1 {
   padding: 4px 9px;
 }
 
+.inlineNavLink {
+  width: fit-content;
+  color: var(--source);
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.inlineNavLink:hover {
+  text-decoration: underline;
+}
+
 .headerLabel,
 .patientSwitcher label {
   color: var(--muted);
@@ -159,6 +171,273 @@ h1 {
   color: var(--muted);
   cursor: not-allowed;
   opacity: 0.74;
+}
+
+.dashboardShell {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.dashboardTopbar,
+.dashboardPatientBar {
+  display: grid;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  padding: 14px 24px;
+}
+
+.dashboardTopbar {
+  grid-template-columns: minmax(260px, 1fr) auto;
+}
+
+.dashboardActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dashboardActions button,
+.secondaryLink {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.dashboardActions button:hover,
+.secondaryLink:hover {
+  border-color: var(--accent);
+}
+
+.dashboardActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.dashboardPatientBar {
+  grid-template-columns: minmax(240px, 380px) minmax(280px, 1fr);
+  background: var(--panel-subtle);
+}
+
+.dashboardPatientSelect {
+  max-width: 420px;
+}
+
+.dashboardStatus {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sourceBadge,
+.activeBadge,
+.inactiveBadge {
+  width: fit-content;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.sourceBadge {
+  border: 1px solid #b9dbd7;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.sourceBadge.stale {
+  border-color: #e3c06d;
+  background: #fff7df;
+  color: #8a5b00;
+}
+
+.patientIdentityPanel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(420px, 2fr);
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+  padding: 20px 24px;
+}
+
+.patientIdentityPanel h2 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.patientIdentityPanel dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.patientIdentityPanel dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.patientIdentityPanel dd {
+  overflow-wrap: anywhere;
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.activeBadge {
+  border: 1px solid #a7d6bd;
+  background: #e8f6ed;
+  color: #17623a;
+}
+
+.inactiveBadge {
+  border: 1px solid #dda9a9;
+  background: #fff0f0;
+  color: #8a2525;
+}
+
+.dashboardWarning {
+  margin: 12px 24px 0;
+  border: 1px solid #e3c06d;
+  border-radius: 6px;
+  background: #fff7df;
+  color: #765000;
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 24px 24px;
+}
+
+.clinicalCard {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 1px 4px rgba(23, 32, 51, 0.04);
+}
+
+.clinicalCard header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
+.clinicalCard h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.clinicalCard header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.clinicalCard header > strong {
+  display: inline-grid;
+  min-width: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-items: center;
+  border-radius: 999px;
+  background: #eaf0f8;
+  color: #24548f;
+  font-size: 13px;
+}
+
+.clinicalCard ul {
+  display: grid;
+  gap: 0;
+  max-height: 340px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clinicalCard li {
+  display: grid;
+  gap: 6px;
+  border-bottom: 1px solid #edf0f5;
+  padding: 12px 14px;
+}
+
+.clinicalCard li:last-child {
+  border-bottom: 0;
+}
+
+.clinicalCard li strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.clinicalCard li p,
+.clinicalCard li span,
+.cardEmpty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.clinicalCard li p {
+  overflow-wrap: anywhere;
+  margin: 3px 0 0;
+}
+
+.cardEmpty {
+  margin: 0;
+  padding: 14px;
+}
+
+.dashboardEmpty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 320px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.dashboardEmpty h2,
+.dashboardEmpty p {
+  margin: 0;
+}
+
+.dashboardEmpty h2 {
+  color: var(--text);
+  font-size: 20px;
 }
 
 .actionBar {
@@ -639,6 +918,20 @@ h1 {
     grid-template-columns: minmax(240px, 1fr) minmax(220px, 280px);
   }
 
+  .dashboardGrid,
+  .patientIdentityPanel dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .patientIdentityPanel,
+  .dashboardPatientBar {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardStatus {
+    justify-content: flex-start;
+  }
+
   .patientSwitcher {
     grid-column: 1 / -1;
   }
@@ -654,10 +947,33 @@ h1 {
 }
 
 @media (max-width: 720px) {
-  .topbar {
+  .topbar,
+  .dashboardTopbar {
     grid-template-columns: 1fr;
     gap: 12px;
     padding: 12px 14px;
+  }
+
+  .dashboardPatientBar,
+  .patientIdentityPanel,
+  .dashboardGrid {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .dashboardGrid,
+  .patientIdentityPanel dl {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardActions {
+    justify-content: stretch;
+  }
+
+  .dashboardActions button,
+  .secondaryLink {
+    flex: 1;
+    text-align: center;
   }
 
   h1 {

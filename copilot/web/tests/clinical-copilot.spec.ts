@@ -94,6 +94,69 @@ test("OpenEMR launch context preselects a patient", async ({ page }) => {
   await expect(page.getByText(patientId)).toBeVisible();
 });
 
+test("modern patient dashboard renders OpenEMR FHIR clinical cards", async ({ page }) => {
+  const patientId = "demo-diabetes-001";
+
+  await page.route("**/api/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        role: "doctor",
+        scopes: ["openid", "api:fhir", "user/Patient.read"],
+        user_id: "dev-doctor"
+      })
+    });
+  });
+  await page.route("**/api/patients?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          birth_date: "1972-04-14",
+          display_name: "Demo Patient",
+          gender: "female",
+          patient_id: patientId
+        }
+      ])
+    });
+  });
+  await page.route("**/api/dashboard/fhir/**", async (route) => {
+    const url = new URL(route.request().url());
+    const resource = url.pathname.split("/").at(-1);
+    const body = dashboardFhirFixture(resource ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/fhir+json",
+      body: JSON.stringify(body)
+    });
+  });
+
+  await page.goto(`/dashboard?patient_id=${patientId}`);
+
+  await expect(page.getByRole("heading", { name: "Modern Patient Dashboard" })).toBeVisible();
+  await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByLabel("Dashboard patient")).toHaveValue(patientId);
+  await expect(page.getByRole("heading", { name: "Demo Patient" })).toBeVisible();
+  await expect(page.getByText("MRN-1001")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Allergies" })).toBeVisible();
+  await expect(page.getByText("Peanuts")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Problem List" })).toBeVisible();
+  await expect(page.getByText("Type 2 diabetes mellitus")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Medications" })).toBeVisible();
+  await expect(page.getByText("Metformin 500 mg tablet").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Care Team" })).toBeVisible();
+  await expect(page.getByText("Dr. Ada Clinician").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent Labs" })).toBeVisible();
+  await expect(page.getByText("Hemoglobin A1c")).toBeVisible();
+  await expect(page.getByText("8.6 %")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ask Co-Pilot" })).toHaveAttribute(
+    "href",
+    `/?patient_id=${patientId}`
+  );
+});
+
 test("document extraction approval feeds the chat evidence flow", async ({ page }) => {
   await page.goto("/");
 
@@ -257,3 +320,93 @@ test("SMART callback rejects token responses without an access token", async ({ 
     `${redirectTo}&auth_error=invalid_token_response`
   );
 });
+
+function dashboardFhirFixture(resource: string) {
+  if (resource === "demo-diabetes-001") {
+    return {
+      active: true,
+      birthDate: "1972-04-14",
+      gender: "female",
+      id: "demo-diabetes-001",
+      identifier: [{ type: { coding: [{ code: "MR" }] }, value: "MRN-1001" }],
+      name: [{ family: "Patient", given: ["Demo"] }],
+      resourceType: "Patient"
+    };
+  }
+  if (resource === "AllergyIntolerance") {
+    return bundle([
+      {
+        clinicalStatus: { coding: [{ code: "active", display: "Active" }] },
+        code: { text: "Peanuts" },
+        criticality: "high",
+        id: "allergy-1",
+        reaction: [{ manifestation: [{ text: "Hives" }] }],
+        recordedDate: "2026-04-01",
+        resourceType: "AllergyIntolerance"
+      }
+    ]);
+  }
+  if (resource === "Condition") {
+    return bundle([
+      {
+        clinicalStatus: { coding: [{ code: "active", display: "Active" }] },
+        code: { text: "Type 2 diabetes mellitus" },
+        id: "condition-1",
+        onsetDateTime: "2018-01-01",
+        resourceType: "Condition"
+      }
+    ]);
+  }
+  if (resource === "MedicationRequest") {
+    return bundle([
+      {
+        authoredOn: "2026-04-02",
+        dosageInstruction: [{ text: "Take one tablet twice daily" }],
+        id: "medrx-1",
+        intent: "order",
+        medicationCodeableConcept: { text: "Metformin 500 mg tablet" },
+        requester: { display: "Dr. Ada Clinician" },
+        resourceType: "MedicationRequest",
+        status: "active"
+      }
+    ]);
+  }
+  if (resource === "CareTeam") {
+    return bundle([
+      {
+        id: "careteam-1",
+        participant: [
+          {
+            member: { display: "Dr. Ada Clinician" },
+            role: [{ text: "Primary care physician" }]
+          }
+        ],
+        resourceType: "CareTeam",
+        status: "active"
+      }
+    ]);
+  }
+  if (resource === "Observation") {
+    return bundle([
+      {
+        code: { text: "Hemoglobin A1c" },
+        effectiveDateTime: "2026-04-03",
+        id: "observation-1",
+        interpretation: [{ coding: [{ code: "H", display: "High" }] }],
+        resourceType: "Observation",
+        status: "final",
+        valueQuantity: { unit: "%", value: 8.6 }
+      }
+    ]);
+  }
+  return bundle([]);
+}
+
+function bundle(resources: object[]) {
+  return {
+    entry: resources.map((resource) => ({ resource })),
+    resourceType: "Bundle",
+    total: resources.length,
+    type: "searchset"
+  };
+}
