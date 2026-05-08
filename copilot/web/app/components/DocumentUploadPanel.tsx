@@ -61,6 +61,7 @@ export function DocumentUploadPanel({
   const [extractUnassigned, setExtractUnassigned] = useState(false);
   const [persistenceReady, setPersistenceReady] = useState<boolean | null>(null);
   const [capabilityStatus, setCapabilityStatus] = useState("Checking storage readiness.");
+  const [observationWriteSupported, setObservationWriteSupported] = useState<boolean | null>(null);
   const [approvedEvidence, setApprovedEvidence] = useState<ApprovedEvidence[]>([]);
   const [approvedEvidenceStatus, setApprovedEvidenceStatus] = useState(
     "No approved document evidence loaded."
@@ -76,10 +77,13 @@ export function DocumentUploadPanel({
       const providers = payload.providers ?? {};
       const enabled = providers.document_workflow_persistence_enabled ?? false;
       const ready = providers.document_workflow_persistence_ready ?? false;
+      const observationCreateSupported = providers.openemr_observation_create_supported ?? false;
       setPersistenceReady(ready);
+      setObservationWriteSupported(observationCreateSupported);
       setCapabilityStatus(ready ? "Durable storage ready." : enabled ? "Storage configured, not ready." : "Memory-only document workflow.");
     } catch (error) {
       setPersistenceReady(null);
+      setObservationWriteSupported(null);
       setCapabilityStatus(errorMessage(error, "Storage readiness unavailable"));
     }
   }, [apiBase]);
@@ -212,6 +216,10 @@ export function DocumentUploadPanel({
       onStatus("Re-authorize OpenEMR with user/Observation.write before writing labs.");
       return;
     }
+    if (observationWriteSupported === false) {
+      onStatus("This OpenEMR deployment does not expose FHIR Observation.create; approved evidence remains retrievable, but lab writeback is unavailable.");
+      return;
+    }
     setIsWorking(true);
     try {
       const response = await fetch(`${apiBase}/api/documents/${job.job_id}/write`, {
@@ -249,6 +257,12 @@ export function DocumentUploadPanel({
   const writtenCount = facts.filter((fact) => fact.status === "written").length;
   const failedWriteCount = facts.filter((fact) => fact.status === "write_failed").length;
   const sourceDigest = job?.source.source_sha256.slice(0, 12) ?? "pending";
+  const writeDisabledReason = !canWriteObservations
+    ? "Re-authorize OpenEMR with user/Observation.write before writing labs."
+    : observationWriteSupported === false
+      ? "This OpenEMR deployment does not expose FHIR Observation.create."
+      : undefined;
+  const canAttemptWrite = canWriteObservations && observationWriteSupported !== false;
 
   return (
     <section className="documentPanel" aria-label="Document evidence workflow">
@@ -260,8 +274,8 @@ export function DocumentUploadPanel({
               ? `${job.patient_id ? "assigned" : "unassigned"} - ${job.status} - ${facts.length} facts`
               : "Upload lab PDF, image, or intake form"}
           </span>
-          {!canWriteObservations && hasWritableFacts ? (
-            <span>Re-authorize OpenEMR before writing labs</span>
+          {!canAttemptWrite && hasWritableFacts ? (
+            <span>{writeDisabledReason}</span>
           ) : null}
         </div>
         <select
@@ -301,15 +315,11 @@ export function DocumentUploadPanel({
             disabled ||
             isWorking ||
             !job?.patient_id ||
-            !canWriteObservations ||
+            !canAttemptWrite ||
             !hasWritableFacts
           }
           onClick={writeApproved}
-          title={
-            canWriteObservations
-              ? undefined
-              : "Re-authorize OpenEMR with user/Observation.write before writing labs."
-          }
+          title={writeDisabledReason}
           type="button"
         >
           {hasOnlyRetryableFailures ? "Retry writes" : "Write labs"}
@@ -343,8 +353,12 @@ export function DocumentUploadPanel({
         />
         <WorkflowBadge
           label="Write"
-          state={failedWriteCount ? "blocked" : writtenCount ? "ready" : "checking"}
-          value={`${writtenCount} written, ${failedWriteCount} failed`}
+          state={observationWriteSupported === false || failedWriteCount ? "blocked" : writtenCount ? "ready" : "checking"}
+          value={
+            observationWriteSupported === false
+              ? "Observation.create unavailable"
+              : `${writtenCount} written, ${failedWriteCount} failed`
+          }
         />
       </div>
       {job ? <ExtractionReviewPanel facts={facts} trace={trace} /> : null}

@@ -82,7 +82,7 @@ Working in the deployed demo:
 - Answers include citations and source links.
 - Unsupported treatment recommendation requests are refused.
 - OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
-- Local Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, supervisor trace events, human approval, idempotent lab `Observation` writes, guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence.
+- Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, supervisor trace events, human approval, guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. The lab write adapter is idempotent, but the current deployed OpenEMR FHIR endpoint exposes `Observation` read/search only, not `Observation.create`, so production writeback is shown as unavailable instead of claimed as complete.
 
 Latest local verification, run on 2026-05-07:
 

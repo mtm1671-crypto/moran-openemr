@@ -81,8 +81,8 @@ Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
 LDL Cholesterol 142 mg/dL reference range 0-99 H
 ```
 
-33. Click `Extract`, `Approve all`, and `Write labs`.
-34. Explain that only approved lab facts are eligible for Observation writes.
+33. Click `Extract` and `Approve all`.
+34. Point out the `Write` badge. In the current deployed OpenEMR, FHIR `Observation.create` is not exposed, so lab writeback is unavailable while approved evidence retrieval still works.
 
 ## Product Placement Talk Track
 

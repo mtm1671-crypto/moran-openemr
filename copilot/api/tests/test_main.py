@@ -489,6 +489,7 @@ def test_capabilities_expose_llm_callable_tool_schemas() -> None:
     assert "evidence_cache_enabled" in payload["providers"]
     assert "vision_ocr_enabled" in payload["providers"]
     assert "document_workflow_persistence_ready" in payload["providers"]
+    assert payload["providers"]["openemr_observation_create_supported"] is True
 
 
 def test_capabilities_report_document_workflow_persistence_ready(

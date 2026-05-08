@@ -69,7 +69,7 @@ Add this Week 2 section after the existing chat/source-link walkthrough:
 6. Ask `What social barriers are documented?`.
 7. Show the answer citing approved document evidence.
 8. Upload a synthetic lab document.
-9. Click `Extract`, `Approve all`, and `Write labs`.
+9. Click `Extract` and `Approve all`; show that `Write labs` is unavailable when the deployed OpenEMR FHIR endpoint does not expose `Observation.create`.
 10. Show write result and explain that only approved lab facts are eligible for `Observation` writes.
 
 ## Production Caveats To State Clearly

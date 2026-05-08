@@ -20,7 +20,7 @@ Latest submitted code:
 6e7a3ef5f Implement Week 2 document evidence workflow
 ```
 
-Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, and idempotent Observation writes. Commit hash is pending after final review.
+Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, an idempotent Observation write adapter, and explicit detection that the current deployed OpenEMR FHIR endpoint does not expose `Observation.create`.
 
 ## Required Artifacts
 
@@ -103,7 +103,7 @@ Record or verify these in the final video:
 13. Click `Approve all`.
 14. Ask `What social barriers are documented?` and show approved document evidence in the answer.
 15. Upload a synthetic lab text file.
-16. Click `Extract`, `Approve all`, and `Write labs`.
+16. Click `Extract` and `Approve all`; show that `Write labs` is unavailable unless OpenEMR exposes FHIR `Observation.create`.
 
 Suggested synthetic intake file:
 

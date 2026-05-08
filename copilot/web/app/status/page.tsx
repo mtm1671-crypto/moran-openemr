@@ -199,6 +199,7 @@ function buildStatusItems(state: StatusState): StatusItem[] {
     sessionScope.includes("patient/Observation.write") ||
     sessionScope.includes("user/Observation.cud") ||
     sessionScope.includes("patient/Observation.cud");
+  const observationCreateSupported = providers.openemr_observation_create_supported !== false;
 
   return [
     item("API readiness", Boolean(state.ready?.ok), "FastAPI /readyz returns ok."),
@@ -217,10 +218,12 @@ function buildStatusItems(state: StatusState): StatusItem[] {
     item("Conversation persistence", checks.conversation_persistence, "Conversation rows can be persisted."),
     {
       label: "Observation writes",
-      detail: hasObservationWrite
+      detail: !observationCreateSupported
+        ? "This OpenEMR deployment does not expose FHIR Observation.create; approved evidence retrieval still works."
+        : hasObservationWrite
         ? "Current SMART session has Observation write scope."
         : "Requires SMART Observation.write scope before Write labs is enabled.",
-      state: hasObservationWrite ? "working" : "limited"
+      state: !observationCreateSupported ? "blocked" : hasObservationWrite ? "working" : "limited"
     },
     {
       label: "Service-account reindex",

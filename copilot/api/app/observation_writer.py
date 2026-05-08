@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from app.config import Settings
 from app.document_models import ExtractedFact, W2FactType, W2ProposedDestination
 from app.fhir_client import OpenEMRFhirClient
@@ -21,6 +23,10 @@ class ObservationWriteError(RuntimeError):
 
 
 DOCUMENT_FACT_IDENTIFIER_SYSTEM = "https://agentforge.dev/fhir/identifier/document-fact"
+OBSERVATION_CREATE_UNAVAILABLE_MESSAGE = (
+    "OpenEMR FHIR Observation.create is not exposed by this OpenEMR deployment; "
+    "approved document evidence is retained, but chart lab writeback is unavailable."
+)
 
 
 async def write_lab_fact_observation(
@@ -43,6 +49,7 @@ async def write_lab_fact_observation(
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
+    await _require_observation_create_supported(client)
     existing_id = await _find_existing_observation_id(client=client, fact=fact)
     if existing_id is not None:
         return existing_id
@@ -51,6 +58,29 @@ async def write_lab_fact_observation(
     if not isinstance(resource_id, str) or not resource_id:
         raise ObservationWriteError("OpenEMR did not return an Observation id")
     return resource_id
+
+
+async def openemr_observation_create_supported(settings: Settings) -> bool:
+    if settings.openemr_fhir_base_url is None:
+        return True
+    client = OpenEMRFhirClient(settings=settings)
+    try:
+        return await client.supports_create("Observation")
+    except httpx.HTTPError:
+        return False
+
+
+async def _require_observation_create_supported(client: OpenEMRFhirClient) -> None:
+    try:
+        supported = await client.supports_create("Observation")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {401, 403, 404}:
+            return
+        raise
+    except httpx.HTTPError:
+        return
+    if not supported:
+        raise ObservationWriteError(OBSERVATION_CREATE_UNAVAILABLE_MESSAGE)
 
 
 def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:

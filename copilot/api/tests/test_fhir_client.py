@@ -3,7 +3,7 @@ import respx
 from httpx import Response
 
 from app.config import Settings
-from app.fhir_client import OpenEMRFhirClient
+from app.fhir_client import OpenEMRFhirClient, capability_statement_supports_create
 
 
 @pytest.mark.asyncio
@@ -324,3 +324,29 @@ async def test_search_observations_by_identifier_scopes_to_patient_and_fact() ->
     assert request.url.params["identifier"] == (
         "https://agentforge.dev/fhir/identifier/document-fact|w2fact-1"
     )
+
+
+def test_capability_statement_reports_observation_create_support() -> None:
+    metadata = {
+        "resourceType": "CapabilityStatement",
+        "rest": [
+            {
+                "resource": [
+                    {
+                        "type": "Observation",
+                        "interaction": [{"code": "search-type"}, {"code": "read"}],
+                    },
+                    {
+                        "type": "Patient",
+                        "interaction": [{"code": "create"}],
+                    },
+                ]
+            }
+        ],
+    }
+
+    assert capability_statement_supports_create(metadata, "Observation") is False
+
+    metadata["rest"][0]["resource"][0]["interaction"].append({"code": "create"})
+
+    assert capability_statement_supports_create(metadata, "Observation") is True

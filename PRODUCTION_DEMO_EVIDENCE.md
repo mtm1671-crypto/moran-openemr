@@ -116,7 +116,7 @@ Use `https://copilot-web-production.up.railway.app` after launching/signing in f
    - `Source` shows filename and source SHA-256 prefix after upload.
    - `Extraction` shows fact count and review count.
    - `Persistence` shows retrievable approved evidence count.
-   - `Write` shows written/failed Observation write counts.
+   - `Write` shows whether FHIR Observation writeback is available.
 4. For the Margaret Chen scan demo, use [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) and upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
 5. For a short intake-only proof, upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
 6. Click `Extract`.
@@ -131,7 +131,7 @@ Use `https://copilot-web-production.up.railway.app` after launching/signing in f
 9. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
 10. Ask `What social barriers are documented?` or `What changed and what should I pay attention to for diabetes or lipids?`.
 11. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
-12. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
+12. Upload the synthetic lab text from `DEMO_PLAN.md` and approve it. The current deployed OpenEMR FHIR endpoint does not expose `Observation.create`, so the UI should show writeback as unavailable rather than returning raw 404 failures.
 
 ## Health And Security Smoke Checks
 
@@ -191,7 +191,7 @@ Capture these additional proof points in the authenticated browser walkthrough:
 5. `Approve all` review action.
 6. Chat answer to `What social barriers are documented?` showing approved document evidence.
 7. Guideline-backed evidence in a lab/lipid question.
-8. Synthetic lab upload, approval, and idempotent `Write labs` result.
+8. Synthetic lab upload, approval, and explicit `Observation.create` unavailable state.
 9. Production persistence configuration if `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled for the deployed API.
 10. `/readyz` checks show `document_workflow_persistence_enabled=true`, `document_workflow_storage=true`, and `document_workflow_persistence_ready=true`.
 11. `/api/capabilities` providers show `document_workflow_persistence_ready=true`.

@@ -23,6 +23,9 @@ class OpenEMRFhirClient:
     async def metadata(self) -> dict[str, Any]:
         return await self._request_json("GET", "/metadata")
 
+    async def supports_create(self, resource_type: str) -> bool:
+        return capability_statement_supports_create(await self.metadata(), resource_type)
+
     async def read_resource(self, resource_type: str, resource_id: str) -> dict[str, Any]:
         return await self._request_json("GET", f"/{resource_type}/{resource_id}")
 
@@ -173,3 +176,26 @@ def _resources_from_bundle(bundle: dict[str, Any], resource_type: str) -> list[d
         if isinstance(resource, dict) and resource.get("resourceType") == resource_type:
             resources.append(resource)
     return resources
+
+
+def capability_statement_supports_create(metadata: dict[str, Any], resource_type: str) -> bool:
+    rest_entries = metadata.get("rest", [])
+    if not isinstance(rest_entries, list):
+        return False
+    for rest_entry in rest_entries:
+        if not isinstance(rest_entry, dict):
+            continue
+        resources = rest_entry.get("resource", [])
+        if not isinstance(resources, list):
+            continue
+        for resource in resources:
+            if not isinstance(resource, dict) or resource.get("type") != resource_type:
+                continue
+            interactions = resource.get("interaction", [])
+            if not isinstance(interactions, list):
+                return False
+            return any(
+                isinstance(interaction, dict) and interaction.get("code") == "create"
+                for interaction in interactions
+            )
+    return False

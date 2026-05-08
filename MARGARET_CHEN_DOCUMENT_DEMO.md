@@ -47,7 +47,7 @@ Refresh deployed OpenEMR demo data after `railway login`:
 12. Verify approved evidence still appears. That is the browser-visible proof that it was not only in React state.
 13. Ask: `What changed and what should I pay attention to for diabetes or lipids?`
 14. Verify the answer cites approved document evidence and the audit trace includes `approved_document_evidence`.
-15. If your OpenEMR authorization includes `user/Observation.write`, click `Write labs`; otherwise leave it disabled and call out that write-scope gating is working.
+15. Check the `Write` badge. In the current deployed OpenEMR, FHIR `Observation.create` is not exposed, so `Write labs` should remain unavailable even if approved evidence retrieval works.
 
 ## Persistent Storage Proof
 
@@ -83,5 +83,5 @@ The selected patient id is visible in the patient switcher and in the document w
 ## Current Limits To Say Out Loud
 
 - Image-only scans need OCR configured. The production synthetic demo has OCR capability configured, but local deterministic mode fails closed for PNG/JPEG unless OCR is enabled.
-- Writing labs into OpenEMR requires the clinician session to include `user/Observation.write`.
+- Writing labs into OpenEMR requires both clinician `user/Observation.write` scope and an OpenEMR FHIR endpoint that exposes `Observation.create`. The current deployed OpenEMR exposes Observation read/search, so lab writeback is intentionally blocked in the UI.
 - The UI proves approved evidence retrieval; a full production proof should still capture screenshots after authentication.

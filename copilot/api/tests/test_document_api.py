@@ -88,6 +88,9 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
         openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
     )
     app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
     respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
         return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
     )
@@ -151,6 +154,57 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
     assert retry_body["failed_count"] == 0
     assert retry_body["facts"][0]["status"] == "written"
     assert retry_body["facts"][0]["written_resource_id"] == "obs-retry"
+
+
+@respx.mock
+def test_write_reports_when_openemr_observation_create_is_unavailable() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=False))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    observation_create = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(201, json={"resourceType": "Observation", "id": "should-not-create"})
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="Hemoglobin A1c 8.6 % reference range 4.0-5.6 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 0
+    assert body["failed_count"] == 1
+    assert body["facts"][0]["status"] == "write_failed"
+    assert "Observation.create is not exposed" in body["facts"][0]["write_error"]
+    assert observation_create.call_count == 0
 
 
 def test_unassigned_document_can_extract_but_not_approve_or_write() -> None:
@@ -396,6 +450,26 @@ def _document_payload(
         "filename": filename,
         "content_type": "text/plain",
         "content_base64": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+    }
+
+
+def _capability_statement(*, create_observation: bool) -> dict[str, Any]:
+    interactions = [{"code": "search-type"}, {"code": "read"}]
+    if create_observation:
+        interactions.append({"code": "create"})
+    return {
+        "resourceType": "CapabilityStatement",
+        "rest": [
+            {
+                "mode": "server",
+                "resource": [
+                    {
+                        "type": "Observation",
+                        "interaction": interactions,
+                    }
+                ],
+            }
+        ],
     }
 
 

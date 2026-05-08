@@ -38,6 +38,7 @@ from app.models import (
 )
 from app.jobs import run_patient_reindex
 from app.openemr_auth import resolve_fhir_bearer_token
+from app.observation_writer import openemr_observation_create_supported
 from app.persistence import (
     append_chat_messages,
     build_audit_event,
@@ -353,6 +354,7 @@ async def capabilities(settings: Settings = Depends(get_settings)) -> Capability
             "evidence_cache_enabled": settings.evidence_cache_enabled,
             "document_workflow_persistence_enabled": settings.document_workflow_persistence_enabled,
             "document_workflow_persistence_ready": document_workflow_ready,
+            "openemr_observation_create_supported": await openemr_observation_create_supported(settings),
             "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
             "nightly_reindex_enabled": settings.nightly_reindex_enabled,
             "service_account_enabled": settings.openemr_service_account_enabled,
