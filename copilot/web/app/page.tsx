@@ -127,11 +127,30 @@ export default function Home() {
     }
   ]);
   const [isSending, setIsSending] = useState(false);
+  const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const documentCloseRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [lines]);
+
+  useEffect(() => {
+    if (!isDocumentDialogOpen) return;
+    documentCloseRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDocumentDialogOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isDocumentDialogOpen]);
 
   const beginSmartAuth = useCallback((launchParams: URLSearchParams) => {
     setAuthStatus("authenticating");
@@ -507,13 +526,63 @@ export default function Home() {
         ))}
       </nav>
 
-      <DocumentUploadPanel
-        apiBase={apiBase}
-        canWriteObservations={canWriteObservations(session)}
-        disabled={!isAuthenticated}
-        patientId={selectedPatient?.patient_id ?? null}
-        onStatus={(text) => setLines((current) => [...current, { role: "status", text }])}
-      />
+      <section className="documentLauncher" aria-label="Document workflow launcher">
+        <div>
+          <strong>Documents</strong>
+          <span>
+            {selectedPatient
+              ? `${selectedPatient.display_name} - scanned evidence and lab writeback`
+              : "Select a patient for scanned evidence"}
+          </span>
+        </div>
+        <button
+          disabled={!isAuthenticated}
+          onClick={() => setIsDocumentDialogOpen(true)}
+          type="button"
+        >
+          Open document workflow
+        </button>
+      </section>
+
+      <div
+        className="modalOverlay"
+        hidden={!isDocumentDialogOpen}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            setIsDocumentDialogOpen(false);
+          }
+        }}
+      >
+        <section
+          aria-labelledby="document-dialog-title"
+          aria-modal={isDocumentDialogOpen}
+          className="documentDialog"
+          role="dialog"
+        >
+          <header className="documentDialogHeader">
+            <div>
+              <p className="eyebrow">Document workflow</p>
+              <h2 id="document-dialog-title">Document evidence</h2>
+              <span>{selectedPatient?.display_name ?? "No patient selected"}</span>
+            </div>
+            <button
+              aria-label="Close document workflow"
+              onClick={() => setIsDocumentDialogOpen(false)}
+              ref={documentCloseRef}
+              type="button"
+            >
+              Close
+            </button>
+          </header>
+          <DocumentUploadPanel
+            apiBase={apiBase}
+            canWriteObservations={canWriteObservations(session)}
+            disabled={!isAuthenticated}
+            patientId={selectedPatient?.patient_id ?? null}
+            onStatus={(text) => setLines((current) => [...current, { role: "status", text }])}
+          />
+        </section>
+      </div>
 
       <section className="chat" aria-label="Chat">
         <div className="messages">

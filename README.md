@@ -48,7 +48,7 @@ The final walkthrough should prove the complete product path, not just a standal
 8. Ask an unstructured-note question.
 9. Click citations/source links.
 10. Ask a treatment recommendation question and show the read-only refusal.
-11. Upload a synthetic intake/lab document.
+11. Click `Open document workflow` and upload a synthetic intake/lab document.
 12. Show extraction, bounding-box source preview, approval, and approved document evidence in chat.
 
 Recommended demo prompts:

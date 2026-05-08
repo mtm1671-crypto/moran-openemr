@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const openemrMockPort = Number(process.env.PLAYWRIGHT_OPENEMR_MOCK_PORT ?? "9821");
 let openemrMockServer: Server;
@@ -173,6 +173,8 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await page.goto("/");
 
   await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByLabel("Document evidence workflow")).toBeHidden();
+  await openDocumentWorkflow(page);
   await expect(page.getByLabel("Document workflow proof").getByText("Memory-only document workflow.")).toBeVisible();
   await page.getByLabel("Document type").selectOption("intake_form");
   await page.getByLabel("Document file").setInputFiles({
@@ -189,6 +191,8 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await expect(page.getByText(/document facts approved/i)).toBeVisible();
   await expect(page.getByLabel("Approved patient document evidence").getByText("Approved patient evidence")).toBeVisible();
   await expect(page.getByText(/1 approved evidence objects/)).toBeVisible();
+  await page.getByRole("button", { name: "Close document workflow" }).click();
+  await expect(page.getByRole("dialog", { name: "Document evidence" })).toBeHidden();
 
   await page.getByRole("textbox", { name: "Message" }).fill("What social barriers are documented?");
   await page.getByRole("button", { name: "Send" }).click();
@@ -202,6 +206,7 @@ test("document extraction can stay unassigned until a patient match is known", a
   await page.goto("/");
 
   await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await openDocumentWorkflow(page);
   await page.getByLabel("Document type").selectOption("intake_form");
   await page.getByLabel("Extract unassigned").check();
   await page.getByLabel("Document file").setInputFiles({
@@ -216,6 +221,11 @@ test("document extraction can stay unassigned until a patient match is known", a
   await expect(page.getByRole("button", { name: "Approve all" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Write labs" })).toBeDisabled();
 });
+
+async function openDocumentWorkflow(page: Page) {
+  await page.getByRole("button", { name: "Open document workflow" }).click();
+  await expect(page.getByRole("dialog", { name: "Document evidence" })).toBeVisible();
+}
 
 test("missing bearer session starts SMART authorization with launch context", async ({ page }) => {
   await page.route("**/api/me", async (route) => {

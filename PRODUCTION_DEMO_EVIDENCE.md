@@ -108,29 +108,30 @@ Clinician browser
 
 Use `https://copilot-web-production.up.railway.app` after launching/signing in from OpenEMR.
 
-1. Confirm the `Document evidence` panel appears below quick chart actions.
-2. Point to the workflow proof strip:
+1. Confirm the main page shows a compact `Open document workflow` button below quick chart actions.
+2. Click `Open document workflow` and confirm the `Document evidence` popup appears.
+3. Point to the workflow proof strip:
    - `Storage` should show durable storage ready in production.
    - `Assignment` shows the selected patient or `unassigned`.
    - `Source` shows filename and source SHA-256 prefix after upload.
    - `Extraction` shows fact count and review count.
    - `Persistence` shows retrievable approved evidence count.
    - `Write` shows written/failed Observation write counts.
-3. For the Margaret Chen scan demo, use [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) and upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
-4. For a short intake-only proof, upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
-5. Click `Extract`.
-6. Show the extracted fact card:
+4. For the Margaret Chen scan demo, use [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) and upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
+5. For a short intake-only proof, upload a synthetic intake text file with `Social History: Misses doses when work shifts change`.
+6. Click `Extract`.
+7. Show the extracted fact card:
    - normalized value
    - schema/citation/bbox checks
    - source quote
    - fact id
    - selected bounding-box preview
    - supervisor trace
-7. Click `Approve all`.
-8. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
-9. Ask `What social barriers are documented?` or `What changed and what should I pay attention to for diabetes or lipids?`.
-10. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
-11. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
+8. Click `Approve all`.
+9. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
+10. Ask `What social barriers are documented?` or `What changed and what should I pay attention to for diabetes or lipids?`.
+11. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
+12. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs` if the OpenEMR token includes Observation write scope.
 
 ## Health And Security Smoke Checks
 

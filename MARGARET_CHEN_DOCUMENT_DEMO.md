@@ -25,28 +25,29 @@ Refresh deployed OpenEMR demo data after `railway login`:
 
 1. Open OpenEMR and launch Co-Pilot from the OpenEMR Co-Pilot tab or patient context.
 2. In Co-Pilot, search `chen` and select `Margaret Chen`.
-3. In `Document evidence`, choose `Lab PDF`.
-4. Upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
-5. Click `Extract`.
-6. Verify the proof strip:
+3. Click `Open document workflow`.
+4. In the `Document evidence` popup, choose `Lab PDF`.
+5. Upload `example-documents/lab-results/p01-chen-lipid-panel.pdf`.
+6. Click `Extract`.
+7. Verify the proof strip:
    - `Storage` says durable storage is ready in production.
    - `Assignment` shows Margaret's selected patient id.
    - `Source` shows the uploaded filename and SHA-256 prefix.
    - `Extraction` shows extracted lipid facts.
-7. Verify the extracted fact cards show:
+8. Verify the extracted fact cards show:
    - `Total Cholesterol`
    - `HDL Cholesterol`
    - `LDL Cholesterol`
    - `Triglycerides`
    - schema/citation/bbox checks
    - quoted source values from the scanned PDF
-8. Click `Approve all`.
-9. Verify `Approved patient evidence` shows retrievable evidence objects.
-10. Reload the Co-Pilot page, reselect Margaret Chen, and click `Refresh evidence`.
-11. Verify approved evidence still appears. That is the browser-visible proof that it was not only in React state.
-12. Ask: `What changed and what should I pay attention to for diabetes or lipids?`
-13. Verify the answer cites approved document evidence and the audit trace includes `approved_document_evidence`.
-14. If your OpenEMR authorization includes `user/Observation.write`, click `Write labs`; otherwise leave it disabled and call out that write-scope gating is working.
+9. Click `Approve all`.
+10. Verify `Approved patient evidence` shows retrievable evidence objects.
+11. Reload the Co-Pilot page, reselect Margaret Chen, reopen `Open document workflow`, and click `Refresh evidence`.
+12. Verify approved evidence still appears. That is the browser-visible proof that it was not only in React state.
+13. Ask: `What changed and what should I pay attention to for diabetes or lipids?`
+14. Verify the answer cites approved document evidence and the audit trace includes `approved_document_evidence`.
+15. If your OpenEMR authorization includes `user/Observation.write`, click `Write labs`; otherwise leave it disabled and call out that write-scope gating is working.
 
 ## Persistent Storage Proof
 
