@@ -187,7 +187,7 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await expect(page.getByText(/Document extracted:/)).toBeVisible();
   await expect(page.getByText("Misses doses when work shifts change").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Approve all" }).click();
+  await page.getByRole("button", { name: "Save evidence" }).click();
   await expect(page.getByText(/document facts approved/i)).toBeVisible();
   await expect(page.getByLabel("Approved patient document evidence").getByText("Approved patient evidence")).toBeVisible();
   await expect(page.getByText(/1 approved evidence objects/)).toBeVisible();
@@ -322,7 +322,7 @@ test("document extraction can stay unassigned until a patient match is known", a
 
   await expect(page.getByText(/Unassigned document extracted:/)).toBeVisible();
   await expect(page.getByText("Recently moved and needs transportation help").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve all" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save evidence" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Write labs" })).toBeDisabled();
 });
 

@@ -281,8 +281,13 @@ def approved_document_evidence(patient_id: str) -> list[EvidenceObject]:
             job = _JOBS.get(job_id)
             if job is None or job.patient_id is None or job.patient_id != patient_id:
                 continue
+            retained_statuses = {
+                W2FactStatus.approved,
+                W2FactStatus.written,
+                W2FactStatus.write_failed,
+            }
             for fact in facts:
-                if fact.status not in {W2FactStatus.approved, W2FactStatus.written}:
+                if fact.status not in retained_statuses:
                     continue
                 evidence.append(_fact_to_evidence(job, fact))
         return evidence
@@ -312,6 +317,8 @@ def _fact_to_evidence(job: DocumentJobRecord, fact: ExtractedFact) -> EvidenceOb
             "doc_type": job.doc_type.value,
             "citation": fact.citation.model_dump(mode="json"),
             "proposed_destination": fact.proposed_destination.value,
+            "review_status": fact.status.value,
             "written_resource_id": fact.written_resource_id,
+            "write_error": fact.write_error,
         },
     )

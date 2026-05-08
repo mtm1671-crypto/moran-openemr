@@ -1048,7 +1048,11 @@ async def read_approved_document_evidence(
                         .where(document_facts.c.patient_ref == patient_ref)
                         .where(
                             document_facts.c.status.in_(
-                                [W2FactStatus.approved.value, W2FactStatus.written.value]
+                                [
+                                    W2FactStatus.approved.value,
+                                    W2FactStatus.written.value,
+                                    W2FactStatus.write_failed.value,
+                                ]
                             )
                         )
                         .order_by(document_facts.c.updated_at)

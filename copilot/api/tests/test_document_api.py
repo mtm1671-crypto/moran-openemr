@@ -114,6 +114,13 @@ def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() ->
     assert body["facts"][0]["status"] == "write_failed"
     assert "Observation writeback is disabled while demo auth bypass is active" in body["facts"][0]["write_error"]
 
+    approved = client.get("/api/documents/patients/p1/approved-evidence")
+    assert approved.status_code == 200
+    approved_body = approved.json()
+    assert approved_body["evidence_count"] == 1
+    assert approved_body["evidence"][0]["metadata"]["review_status"] == "write_failed"
+    assert "Observation writeback is disabled" in approved_body["evidence"][0]["metadata"]["write_error"]
+
 
 @respx.mock
 def test_write_failure_reports_missing_observation_write_scope() -> None:

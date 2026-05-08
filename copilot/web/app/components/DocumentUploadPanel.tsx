@@ -241,7 +241,7 @@ export function DocumentUploadPanel({
       if (currentPatientIdRef.current !== startedPatientId) {
         return;
       }
-      onStatus(`${reviewable.length} document facts approved for this patient.`);
+      onStatus(`${reviewable.length} document facts approved and saved to durable evidence storage.`);
     } catch (error) {
       if (currentPatientIdRef.current !== startedPatientId) {
         return;
@@ -362,7 +362,7 @@ export function DocumentUploadPanel({
           {isWorking ? "Working" : "Extract"}
         </button>
         <button disabled={disabled || isWorking || !job?.patient_id || !facts.length} onClick={approveAll} type="button">
-          Approve all
+          Save evidence
         </button>
         <button
           disabled={
@@ -507,7 +507,7 @@ function writeStatusMessage(payload: {
   failed_count: number;
   facts: DocumentFact[];
 }) {
-  const base = `Document write finished: ${payload.written_count} written, ${payload.skipped_count} skipped, ${payload.failed_count} failed.`;
+  const base = `Chart write finished: ${payload.written_count} written to OpenEMR, ${payload.skipped_count} skipped, ${payload.failed_count} failed. Approved evidence remains saved in durable storage.`;
   const failures = payload.facts.filter((fact) => fact.status === "write_failed" && fact.write_error);
   if (!failures.length) return base;
   const first = failures[0];
