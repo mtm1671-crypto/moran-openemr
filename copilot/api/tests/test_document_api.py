@@ -80,7 +80,7 @@ def test_attach_review_and_write_lab_document() -> None:
     assert all(fact["written_resource_id"].startswith("demo-observation-") for fact in write_body["facts"])
 
 
-def test_demo_auth_bypass_writes_lab_document_without_openemr_token() -> None:
+def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="production",
         dev_auth_bypass=False,
@@ -109,9 +109,10 @@ def test_demo_auth_bypass_writes_lab_document_without_openemr_token() -> None:
 
     assert write.status_code == 200
     body = write.json()
-    assert body["written_count"] == 1
-    assert body["failed_count"] == 0
-    assert body["facts"][0]["written_resource_id"].startswith("demo-observation-")
+    assert body["written_count"] == 0
+    assert body["failed_count"] == 1
+    assert body["facts"][0]["status"] == "write_failed"
+    assert "Observation writeback is disabled while demo auth bypass is active" in body["facts"][0]["write_error"]
 
 
 @respx.mock

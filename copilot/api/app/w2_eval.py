@@ -120,7 +120,12 @@ def run_golden_cases(cases: list[W2GoldenCase]) -> list[EvalCaseResult]:
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
     reset_document_workflow_store()
-    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url=None,
+        structured_logging_enabled=False,
+    )
     app.dependency_overrides[get_settings] = lambda: settings
     try:
         client = TestClient(app)
@@ -186,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
             baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
             enforce_regression_thresholds(summary, baseline)
 
+    passed_cases = sum(
+        1 for result in results if all(result.rubric.get(key, False) for key in HARD_GATE_KEYS)
+    )
+    failed_cases = len(results) - passed_cases
+    print(f"Week 2 eval gate: {passed_cases} passed, {failed_cases} failed")
     print(json.dumps(summary_payload(summary), indent=2, sort_keys=True))
     return 0
 
