@@ -39,6 +39,18 @@ COPY interface/patient_tracker/patient_tracker.php \
      /var/www/localhost/htdocs/openemr/interface/patient_tracker/patient_tracker.php
 COPY library/globals.inc.php \
      /var/www/localhost/htdocs/openemr/library/globals.inc.php
+COPY apis/routes/_rest_routes_fhir_r4_us_core_3_1_0.inc.php \
+     /var/www/localhost/htdocs/openemr/apis/routes/_rest_routes_fhir_r4_us_core_3_1_0.inc.php
+COPY src/RestControllers/FHIR/FhirGenericRestController.php \
+     /var/www/localhost/htdocs/openemr/src/RestControllers/FHIR/FhirGenericRestController.php
+COPY src/RestControllers/RestControllerHelper.php \
+     /var/www/localhost/htdocs/openemr/src/RestControllers/RestControllerHelper.php
+COPY src/Services/FHIR/FhirObservationService.php \
+     /var/www/localhost/htdocs/openemr/src/Services/FHIR/FhirObservationService.php
+COPY src/Services/FHIR/Observation/FhirObservationLaboratoryService.php \
+     /var/www/localhost/htdocs/openemr/src/Services/FHIR/Observation/FhirObservationLaboratoryService.php
+COPY src/Services/ProcedureService.php \
+     /var/www/localhost/htdocs/openemr/src/Services/ProcedureService.php
 COPY src/Services/Globals/GlobalConnectorsEnum.php \
      /var/www/localhost/htdocs/openemr/src/Services/Globals/GlobalConnectorsEnum.php
 

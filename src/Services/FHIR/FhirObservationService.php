@@ -5,6 +5,8 @@ namespace OpenEMR\Services\FHIR;
 use OpenEMR\BC\ServiceContainer;
 use OpenEMR\Common\Uuid\UuidMapping;
 use OpenEMR\Common\Uuid\UuidRegistry;
+use OpenEMR\FHIR\R4\FHIRDomainResource\FHIRObservation;
+use OpenEMR\FHIR\R4\FHIRResource\FHIRDomainResource;
 use OpenEMR\Services\BaseService;
 use OpenEMR\Services\FHIR\Observation\FhirObservationAdvanceDirectiveService;
 use OpenEMR\Services\FHIR\Observation\FhirObservationCareExperiencePreferenceService;
@@ -84,6 +86,7 @@ class FhirObservationService extends FhirServiceBase implements IResourceSearcha
             'category' => new FhirSearchParameterDefinition('category', SearchFieldType::TOKEN, ['category']),
             'date' => new FhirSearchParameterDefinition('date', SearchFieldType::DATETIME, ['date']),
             '_id' => new FhirSearchParameterDefinition('_id', SearchFieldType::TOKEN, ['uuid']),
+            'identifier' => new FhirSearchParameterDefinition('identifier', SearchFieldType::TOKEN, ['identifier']),
             '_lastUpdated' => $this->getLastModifiedSearchField()
         ];
     }
@@ -145,7 +148,17 @@ class FhirObservationService extends FhirServiceBase implements IResourceSearcha
                     $services = $codeMap;
                 }
             }
-            if (empty($services)) {
+            $identifierFilterApplied = isset($fhirSearchParameters['identifier']);
+            if ($identifierFilterApplied) {
+                $identifierServices = [];
+                foreach ($this->getMappedServices() as $service) {
+                    if (!empty($service->getSupportedSearchParams(['identifier' => $fhirSearchParameters['identifier']]))) {
+                        $identifierServices[$service::class] = $service;
+                    }
+                }
+                $services = empty($services) ? $identifierServices : array_intersect_key($services, $identifierServices);
+            }
+            if (empty($services) && !$identifierFilterApplied) {
                 $services = $this->getMappedServices();
             }
             $fhirSearchResult = $this->searchServices($services, $fhirSearchParameters, $puuidBind);
@@ -157,6 +170,42 @@ class FhirObservationService extends FhirServiceBase implements IResourceSearcha
             $fhirSearchResult->setValidationMessages([$exception->getField() => $exception->getMessage()]);
         }
         return $fhirSearchResult;
+    }
+
+    public function insert(FHIRDomainResource $fhirResource): ProcessingResult
+    {
+        $processingResult = new ProcessingResult();
+        if (!$fhirResource instanceof FHIRObservation) {
+            $processingResult->setValidationMessages(['resourceType' => 'Observation resource is required']);
+            return $processingResult;
+        }
+
+        foreach ($this->getObservationCategoryCodes($fhirResource) as $categoryCode) {
+            foreach ($this->getMappedServices() as $service) {
+                if ($service instanceof FhirObservationLaboratoryService && $service->supportsCategory($categoryCode)) {
+                    return $service->insert($fhirResource);
+                }
+            }
+        }
+
+        $processingResult->setValidationMessages([
+            'category' => 'Observation.create currently supports reviewed laboratory observations only'
+        ]);
+        return $processingResult;
+    }
+
+    private function getObservationCategoryCodes(FHIRObservation $observation): array
+    {
+        $codes = [];
+        foreach ($observation->getCategory() ?? [] as $category) {
+            foreach ($category->getCoding() ?? [] as $coding) {
+                $code = (string)$coding->getCode();
+                if ($code !== '') {
+                    $codes[] = $code;
+                }
+            }
+        }
+        return $codes;
     }
 
     /**

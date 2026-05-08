@@ -26,6 +26,7 @@ use OpenEMR\Services\Search\TokenSearchField;
 use OpenEMR\Services\Search\TokenSearchValue;
 use OpenEMR\Validators\BaseValidator;
 use OpenEMR\Validators\ProcessingResult;
+use Ramsey\Uuid\Uuid;
 
 class ProcedureService extends BaseService
 {
@@ -37,6 +38,7 @@ class ProcedureService extends BaseService
     private const PROCEDURE_REPORT_TABLE = "procedure_report";
     private const PROCEDURE_RESULT_TABLE = "procedure_result";
     private const PROCEDURE_SPECIMEN_TABLE = "procedure_specimen";
+    public const FHIR_OBSERVATION_IDENTIFIER_COMMENT_PREFIX = "FHIR-Observation-Identifier: ";
     private readonly ProcedureOrderRelationshipService $relationshipService;
 
     public function __construct()
@@ -957,6 +959,299 @@ class ProcedureService extends BaseService
             array_push($diagnosisArray, $diagnosisSplit);
         }
         return $diagnosisArray;
+    }
+
+    public static function formatLabObservationIdentifierMarker(string $identifierSystem, string $identifierValue): string
+    {
+        return self::FHIR_OBSERVATION_IDENTIFIER_COMMENT_PREFIX . $identifierSystem . "|" . $identifierValue;
+    }
+
+    public static function parseLabObservationIdentifierFromComments(?string $comments): ?array
+    {
+        foreach (preg_split("/\r\n|\n|\r/", (string)$comments) as $line) {
+            $line = trim($line);
+            if (!str_starts_with($line, self::FHIR_OBSERVATION_IDENTIFIER_COMMENT_PREFIX)) {
+                continue;
+            }
+            $identifier = trim(substr($line, strlen(self::FHIR_OBSERVATION_IDENTIFIER_COMMENT_PREFIX)));
+            [$system, $value] = array_pad(explode("|", $identifier, 2), 2, null);
+            if (!empty($system) && !empty($value)) {
+                return ['system' => $system, 'value' => $value];
+            }
+        }
+        return null;
+    }
+
+    public static function stripLabObservationIdentifierMarkerFromComments(?string $comments): string
+    {
+        $lines = [];
+        foreach (preg_split("/\r\n|\n|\r/", (string)$comments) as $line) {
+            if (str_starts_with(trim($line), self::FHIR_OBSERVATION_IDENTIFIER_COMMENT_PREFIX)) {
+                continue;
+            }
+            $lines[] = $line;
+        }
+        return trim(implode("\n", $lines));
+    }
+
+    public function findLabObservationResultUuidsByIdentifier(string $identifierSystem, string $identifierValue, ?string $patientUuid = null): array
+    {
+        $marker = self::formatLabObservationIdentifierMarker($identifierSystem, $identifierValue);
+        $sql = "SELECT presult.uuid AS result_uuid
+                FROM procedure_result AS presult
+                JOIN procedure_report AS preport ON preport.procedure_report_id = presult.procedure_report_id
+                JOIN procedure_order AS porder ON porder.procedure_order_id = preport.procedure_order_id
+                LEFT JOIN patient_data AS patient ON patient.pid = porder.patient_id
+                WHERE presult.comments LIKE ? ESCAPE '\\\\'";
+        $binds = ['%' . $this->escapeLikeSearchValue($marker) . '%'];
+
+        if (!empty($patientUuid)) {
+            $sql .= " AND patient.uuid = ?";
+            $binds[] = UuidRegistry::uuidToBytes($patientUuid);
+        }
+
+        $sql .= " ORDER BY presult.procedure_result_id DESC";
+        $rows = QueryUtils::fetchRecords($sql, $binds);
+        $uuids = [];
+        foreach ($rows as $row) {
+            if (!empty($row['result_uuid'])) {
+                $uuids[] = UuidRegistry::uuidToString($row['result_uuid']);
+            }
+        }
+        return $uuids;
+    }
+
+    public function getLabObservationByResultUuid(string $resultUuid, ?string $patientUuid = null): ProcessingResult
+    {
+        $search = [
+            'result_uuid' => new TokenSearchField('result_uuid', [$resultUuid], true)
+        ];
+        if (!empty($patientUuid)) {
+            $search['puuid'] = new TokenSearchField('puuid', [$patientUuid], true);
+        }
+        return $this->search($search, true);
+    }
+
+    public function getLabObservationByIdentifier(string $identifierSystem, string $identifierValue, ?string $patientUuid = null): ProcessingResult
+    {
+        $uuids = $this->findLabObservationResultUuidsByIdentifier($identifierSystem, $identifierValue, $patientUuid);
+        if (empty($uuids)) {
+            return new ProcessingResult();
+        }
+        return $this->getLabObservationByResultUuid($uuids[0], $patientUuid);
+    }
+
+    public function insertLabObservationResult(array $record): ProcessingResult
+    {
+        $validationMessages = $this->validateLabObservationInsertRecord($record);
+        $processingResult = new ProcessingResult();
+        if (!empty($validationMessages)) {
+            $processingResult->setValidationMessages($validationMessages);
+            return $processingResult;
+        }
+
+        $identifier = $record['identifier'];
+        $existing = $this->getLabObservationByIdentifier(
+            $identifier['system'],
+            $identifier['value'],
+            $record['puuid']
+        );
+        if ($existing->hasData() || $existing->hasErrors()) {
+            return $existing;
+        }
+
+        try {
+            $resultUuid = QueryUtils::inTransaction(function () use ($record, $identifier) {
+                $patient = $this->getPatientByUuid($record['puuid']);
+                $orderedDate = $this->normalizeLabObservationDate($record['effective_date'] ?? null);
+                $orderUuid = UuidRegistry::getRegistryForTable(self::PROCEDURE_TABLE)->createUuid();
+                $reportUuid = UuidRegistry::getRegistryForTable(self::PROCEDURE_REPORT_TABLE)->createUuid();
+                $resultUuid = $this->getDeterministicLabObservationResultUuid($identifier['system'], $identifier['value']);
+                $sourceUserId = $this->getCurrentUserId();
+                $comments = trim(implode("\n", array_filter([
+                    self::formatLabObservationIdentifierMarker($identifier['system'], $identifier['value']),
+                    $record['comments'] ?? null,
+                ])));
+
+                $orderId = QueryUtils::sqlInsert(
+                    "INSERT INTO procedure_order SET
+                        uuid = ?,
+                        date_ordered = ?,
+                        date_collected = ?,
+                        provider_id = ?,
+                        patient_id = ?,
+                        encounter_id = ?,
+                        order_status = ?,
+                        activity = 1,
+                        procedure_order_type = 'laboratory_test',
+                        performer_type = 'laboratory',
+                        order_intent = 'order'",
+                    [
+                        UuidRegistry::uuidToBytes($orderUuid),
+                        $orderedDate,
+                        $orderedDate,
+                        $sourceUserId,
+                        $patient['pid'],
+                        $record['encounter_id'] ?? 0,
+                        'complete'
+                    ]
+                );
+
+                QueryUtils::sqlStatementThrowException(
+                    "INSERT INTO procedure_order_code SET
+                        procedure_order_id = ?,
+                        procedure_order_seq = 1,
+                        procedure_code = ?,
+                        procedure_name = ?,
+                        procedure_source = '2',
+                        procedure_order_title = ?,
+                        procedure_type = 'laboratory_test'",
+                    [
+                        $orderId,
+                        $record['code'] ?? '',
+                        $record['text'] ?? '',
+                        $record['text'] ?? ''
+                    ]
+                );
+
+                $reportId = QueryUtils::sqlInsert(
+                    "INSERT INTO procedure_report SET
+                        uuid = ?,
+                        procedure_order_id = ?,
+                        procedure_order_seq = 1,
+                        date_collected = ?,
+                        date_report = ?,
+                        source = ?,
+                        report_status = 'complete',
+                        review_status = 'reviewed',
+                        report_notes = ?",
+                    [
+                        UuidRegistry::uuidToBytes($reportUuid),
+                        $orderId,
+                        $orderedDate,
+                        $orderedDate,
+                        $sourceUserId,
+                        $record['report_notes'] ?? 'Imported from reviewed document evidence'
+                    ]
+                );
+
+                QueryUtils::sqlInsert(
+                    "INSERT INTO procedure_result SET
+                        uuid = ?,
+                        procedure_report_id = ?,
+                        result_data_type = ?,
+                        result_code = ?,
+                        result_text = ?,
+                        date = ?,
+                        units = ?,
+                        result = ?,
+                        `range` = ?,
+                        abnormal = ?,
+                        comments = ?,
+                        result_status = ?",
+                    [
+                        UuidRegistry::uuidToBytes($resultUuid),
+                        $reportId,
+                        $record['result_data_type'] ?? 'S',
+                        $record['code'] ?? '',
+                        $record['text'] ?? '',
+                        $orderedDate,
+                        $record['units'] ?? '',
+                        $record['result'] ?? '',
+                        $record['range'] ?? '',
+                        $record['abnormal'] ?? '',
+                        $comments,
+                        $record['status'] ?? 'final'
+                    ]
+                );
+                UuidRegistry::getRegistryForTable(self::PROCEDURE_RESULT_TABLE)->insertUuidsIntoRegistry([
+                    UuidRegistry::uuidToBytes($resultUuid)
+                ]);
+
+                return $resultUuid;
+            });
+        } catch (\Throwable $exception) {
+            $existing = $this->getLabObservationByIdentifier(
+                $identifier['system'],
+                $identifier['value'],
+                $record['puuid']
+            );
+            if ($existing->hasData()) {
+                return $existing;
+            }
+            $processingResult->setInternalErrors([$exception->getMessage()]);
+            return $processingResult;
+        }
+
+        return $this->getLabObservationByResultUuid($resultUuid, $record['puuid']);
+    }
+
+    private function validateLabObservationInsertRecord(array $record): array
+    {
+        $messages = [];
+        if (empty($record['puuid'])) {
+            $messages['subject'] = 'Patient reference is required';
+        } elseif (empty($this->getPatientByUuid($record['puuid']))) {
+            $messages['subject'] = 'Patient reference was not found';
+        }
+        if (empty($record['identifier']['system']) || empty($record['identifier']['value'])) {
+            $messages['identifier'] = 'A deterministic Observation identifier is required for idempotent lab writeback';
+        }
+        if (empty($record['text'])) {
+            $messages['code'] = 'Observation code text or coding display is required';
+        }
+        if (($record['result'] ?? '') === '') {
+            $messages['value'] = 'Observation value is required';
+        }
+        return $messages;
+    }
+
+    private function getPatientByUuid(string $patientUuid): ?array
+    {
+        try {
+            $rows = QueryUtils::fetchRecords(
+                "SELECT pid, uuid FROM patient_data WHERE uuid = ?",
+                [UuidRegistry::uuidToBytes($patientUuid)]
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+        return $rows[0] ?? null;
+    }
+
+    private function normalizeLabObservationDate(?string $date): string
+    {
+        if (empty($date)) {
+            return date('Y-m-d H:i:s');
+        }
+        try {
+            return (new \DateTimeImmutable($date))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            return date('Y-m-d H:i:s');
+        }
+    }
+
+    private function getCurrentUserId(): int
+    {
+        try {
+            $session = SessionWrapperFactory::getInstance()->getActiveSession();
+            return intval($session->get('authUserID') ?? 0);
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    private function getDeterministicLabObservationResultUuid(string $identifierSystem, string $identifierValue): string
+    {
+        return Uuid::uuid5(
+            '6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+            self::formatLabObservationIdentifierMarker($identifierSystem, $identifierValue)
+        )->toString();
+    }
+
+    private function escapeLikeSearchValue(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
 

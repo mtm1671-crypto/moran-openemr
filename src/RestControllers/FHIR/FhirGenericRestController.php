@@ -13,6 +13,7 @@ namespace OpenEMR\RestControllers\FHIR;
 
 use OpenEMR\Common\Http\HttpRestRequest;
 use OpenEMR\Core\OEGlobalsBag;
+use OpenEMR\FHIR\R4\PHPFHIRResponseParser;
 use OpenEMR\FHIR\R4\FHIRResource\FHIRBundle\FHIRBundleEntry;
 use OpenEMR\FHIR\R4\FHIRResource\FHIRDomainResource;
 use OpenEMR\FHIR\SMART\ResourceConstraintFilterer;
@@ -50,6 +51,17 @@ class FhirGenericRestController implements IGlobalsAware {
 
     public function addAclRestrictions(string $section, string $subSection = '', string $aclPermission = '') : void {
         $this->aclChecks[] = ['section' => $section, 'subSection' => $subSection, 'aclPermission' => $aclPermission];
+    }
+
+    private function enforceAclRestrictions(): void
+    {
+        if ($this->getHttpRestRequest()->isPatientRequest()) {
+            return;
+        }
+
+        foreach ($this->aclChecks as $aclCheck) {
+            RestConfig::request_authorization_check($this->getHttpRestRequest(), $aclCheck['section'], $aclCheck['subSection'], $aclCheck['aclPermission']);
+        }
     }
 
     protected function getFhirResourcesService(): FhirResourcesService
@@ -94,10 +106,7 @@ class FhirGenericRestController implements IGlobalsAware {
         if ($this->getHttpRestRequest()->isPatientRequest()) {
             $puuidBind = $this->getHttpRestRequest()->getPatientUUIDString();
         } else {
-            // perform ACL checks
-            foreach ($this->aclChecks as $aclCheck) {
-                RestConfig::request_authorization_check($this->getHttpRestRequest(), $aclCheck['section'], $aclCheck['subSection'], $aclCheck['aclPermission']);
-            }
+            $this->enforceAclRestrictions();
             $puuidBind = null;
         }
         $filteredProcessingResult = new ProcessingResult();
@@ -142,6 +151,69 @@ class FhirGenericRestController implements IGlobalsAware {
         $bundleSearchResult = $this->getFhirResourcesService()->createBundle($resourceName, $bundleEntries, false);
         $searchResponseBody = RestControllerHelper::responseHandler($bundleSearchResult, null, 200);
         return $searchResponseBody;
+    }
+
+    public function post(): Response
+    {
+        $this->enforceAclRestrictions();
+
+        $validationResult = new ProcessingResult();
+        try {
+            $payload = json_decode($this->getHttpRestRequest()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($payload)) {
+                $validationResult->setValidationMessages(['resource' => 'FHIR JSON object is required']);
+                return RestControllerHelper::handleFhirProcessingResult($validationResult, Response::HTTP_CREATED);
+            }
+
+            $resource = (new PHPFHIRResponseParser())->parse(json_encode($payload, JSON_THROW_ON_ERROR));
+            if (!$resource instanceof FHIRDomainResource) {
+                $validationResult->setValidationMessages(['resource' => 'FHIR domain resource is required']);
+                return RestControllerHelper::handleFhirProcessingResult($validationResult, Response::HTTP_CREATED);
+            }
+            $patientScopeValidation = $this->validatePatientWriteScope($resource);
+            if ($patientScopeValidation instanceof ProcessingResult) {
+                return RestControllerHelper::handleFhirProcessingResult($patientScopeValidation, Response::HTTP_CREATED);
+            }
+        } catch (\Throwable $exception) {
+            $validationResult->setValidationMessages(['resource' => $exception->getMessage()]);
+            return RestControllerHelper::handleFhirProcessingResult($validationResult, Response::HTTP_CREATED);
+        }
+
+        try {
+            $processingResult = $this->getFhirService()->insert($resource);
+        } catch (\Throwable $exception) {
+            $processingResult = new ProcessingResult();
+            $processingResult->setInternalErrors([$exception->getMessage()]);
+        }
+
+        return RestControllerHelper::handleFhirProcessingResult($processingResult, Response::HTTP_CREATED);
+    }
+
+    private function validatePatientWriteScope(FHIRDomainResource $resource): ?ProcessingResult
+    {
+        if (!$this->getHttpRestRequest()->isPatientRequest()) {
+            return null;
+        }
+
+        $processingResult = new ProcessingResult();
+        if (!method_exists($resource, 'getSubject')) {
+            $processingResult->setValidationMessages(['subject' => 'Patient-scoped create requires a subject reference']);
+            return $processingResult;
+        }
+
+        $subject = $resource->getSubject();
+        $reference = is_object($subject) && method_exists($subject, 'getReference') ? (string)$subject->getReference() : '';
+        if (!preg_match('#Patient/([^/?]+)#', $reference, $matches)) {
+            $processingResult->setValidationMessages(['subject' => 'Patient-scoped create requires a Patient subject reference']);
+            return $processingResult;
+        }
+
+        if ($matches[1] !== $this->getHttpRestRequest()->getPatientUUIDString()) {
+            $processingResult->setValidationMessages(['subject' => 'Patient subject does not match the patient access token']);
+            return $processingResult;
+        }
+
+        return null;
     }
 
     public function canAccessResource(FHIRDomainResource $resource): bool {

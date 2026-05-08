@@ -17,7 +17,11 @@ use OpenEMR\FHIR\R4\FHIRDomainResource\FHIRObservation;
 use OpenEMR\FHIR\R4\FHIRDomainResource\FHIRProvenance;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRCodeableConcept;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRId;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRIdentifier;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRMeta;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRString;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRUri;
+use OpenEMR\FHIR\R4\FHIRResource\FHIRDomainResource;
 use OpenEMR\FHIR\R4\FHIRResource\FHIRObservation\FHIRObservationReferenceRange;
 use OpenEMR\Services\FHIR\FhirCodeSystemConstants;
 use OpenEMR\Services\FHIR\FhirProvenanceService;
@@ -115,6 +119,7 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
             'category' => new FhirSearchParameterDefinition('category', SearchFieldType::TOKEN, ['category']),
             'date' => new FhirSearchParameterDefinition('date', SearchFieldType::DATETIME, ['report_date']),
             '_id' => new FhirSearchParameterDefinition('_id', SearchFieldType::TOKEN, [new ServiceField('result_uuid', ServiceField::TYPE_UUID)]),
+            'identifier' => new FhirSearchParameterDefinition('identifier', SearchFieldType::TOKEN, ['identifier']),
             '_lastUpdated' => $this->getLastModifiedSearchField()
         ];
     }
@@ -122,6 +127,30 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
     public function getLastModifiedSearchField(): ?FhirSearchParameterDefinition
     {
         return new FhirSearchParameterDefinition('_lastUpdated', SearchFieldType::DATETIME, ['report_date']);
+    }
+
+    public function getAll($fhirSearchParameters, $puuidBind = null): ProcessingResult
+    {
+        if (isset($fhirSearchParameters['identifier'])) {
+            $identifier = $this->parseIdentifierSearchValue($fhirSearchParameters['identifier']);
+            if (empty($identifier)) {
+                $processingResult = new ProcessingResult();
+                $processingResult->setValidationMessages(['identifier' => 'Identifier search must use system|value']);
+                return $processingResult;
+            }
+
+            $resultUuids = $this->getProcedureService()->findLabObservationResultUuidsByIdentifier(
+                $identifier['system'],
+                $identifier['value']
+            );
+            unset($fhirSearchParameters['identifier']);
+            if (empty($resultUuids)) {
+                return new ProcessingResult();
+            }
+            $fhirSearchParameters['_id'] = implode(',', $resultUuids);
+        }
+
+        return parent::getAll($fhirSearchParameters, $puuidBind);
     }
 
 
@@ -280,8 +309,17 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
             $observation->addPerformer(UtilsService::createRelativeReference('Practitioner', $dataRecord['provider']['uuid']));
         }
 
-        if (!empty($dataRecord['comments'])) {
-            $observation->addNote(['text' => $dataRecord['comments']]);
+        $identifier = ProcedureService::parseLabObservationIdentifierFromComments($dataRecord['comments'] ?? null);
+        if (!empty($identifier)) {
+            $fhirIdentifier = new FHIRIdentifier();
+            $fhirIdentifier->setSystem(new FHIRUri($identifier['system']));
+            $fhirIdentifier->setValue(new FHIRString($identifier['value']));
+            $observation->addIdentifier($fhirIdentifier);
+        }
+
+        $comments = ProcedureService::stripLabObservationIdentifierMarkerFromComments($dataRecord['comments'] ?? null);
+        if (!empty($comments)) {
+            $observation->addNote(['text' => $comments]);
         }
 
         if (!empty($dataRecord['patient'])) {
@@ -352,6 +390,196 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
         // if no sub_observations, or components, we treat as a single value observation
         $children = $dataRecord['sub_observations'] ?? $dataRecord['components'] ?? [];
         $this->setObservationValueWithDetails($observation, $value, $valueUnit, $codeDescription, $children);
+    }
+
+    public function parseFhirResource(FHIRDomainResource $fhirResource): array
+    {
+        if (!$fhirResource instanceof FHIRObservation) {
+            throw new \BadMethodCallException("fhir resource must be of type " . FHIRObservation::class);
+        }
+
+        $code = $this->extractObservationCode($fhirResource);
+        $value = $this->extractObservationValue($fhirResource);
+        $range = $this->extractReferenceRange($fhirResource);
+
+        return [
+            'identifier' => $this->extractIdentifier($fhirResource),
+            'puuid' => !empty($fhirResource->getSubject()) ? UtilsService::getUuidFromReference($fhirResource->getSubject()) : null,
+            'code' => $code['code'] ?? '',
+            'text' => $code['text'] ?? '',
+            'status' => (string)($fhirResource->getStatus() ?? self::DEFAULT_OBSERVATION_STATUS),
+            'effective_date' => $this->extractEffectiveDate($fhirResource),
+            'result_data_type' => $value['data_type'] ?? 'S',
+            'result' => $value['result'] ?? '',
+            'units' => $value['units'] ?? '',
+            'range' => $range,
+            'abnormal' => $this->extractAbnormalFlag($fhirResource),
+            'comments' => $this->extractNoteText($fhirResource),
+        ];
+    }
+
+    public function insertOpenEMRRecord($openEmrRecord): ProcessingResult
+    {
+        $procedureResult = $this->getProcedureService()->insertLabObservationResult($openEmrRecord);
+        if ($procedureResult->hasErrors() || !$procedureResult->hasData()) {
+            return $procedureResult;
+        }
+
+        $flattened = new ProcessingResult();
+        foreach ($procedureResult->getData() as $record) {
+            $this->parseDataRecordsIntoObservationRecords($flattened, $record);
+        }
+
+        $fhirResult = new ProcessingResult();
+        foreach ($flattened->getData() as $record) {
+            $fhirResult->addData($this->parseOpenEMRRecord($record));
+        }
+        return $fhirResult;
+    }
+
+    private function parseIdentifierSearchValue($searchValue): ?array
+    {
+        $searchValue = is_array($searchValue) ? reset($searchValue) : $searchValue;
+        [$system, $value] = array_pad(explode('|', (string)$searchValue, 2), 2, null);
+        if (empty($system) || empty($value)) {
+            return null;
+        }
+        return ['system' => $system, 'value' => $value];
+    }
+
+    private function extractIdentifier(FHIRObservation $observation): ?array
+    {
+        foreach ($observation->getIdentifier() ?? [] as $identifier) {
+            $system = (string)$identifier->getSystem();
+            $value = (string)$identifier->getValue();
+            if ($system !== '' && $value !== '') {
+                return ['system' => $system, 'value' => $value];
+            }
+        }
+        return null;
+    }
+
+    private function extractObservationCode(FHIRObservation $observation): array
+    {
+        $code = $observation->getCode();
+        $text = !empty($code) ? (string)$code->getText() : '';
+        $selectedCode = '';
+        $selectedDisplay = '';
+
+        foreach ($code?->getCoding() ?? [] as $coding) {
+            $system = (string)$coding->getSystem();
+            if ($selectedCode === '' || $system === FhirCodeSystemConstants::LOINC) {
+                $selectedCode = (string)$coding->getCode();
+                $selectedDisplay = (string)$coding->getDisplay();
+            }
+            if ($system === FhirCodeSystemConstants::LOINC) {
+                break;
+            }
+        }
+
+        return [
+            'code' => $selectedCode,
+            'text' => $text !== '' ? $text : $selectedDisplay,
+        ];
+    }
+
+    private function extractObservationValue(FHIRObservation $observation): array
+    {
+        $quantity = $observation->getValueQuantity();
+        if (!empty($quantity)) {
+            $unit = (string)($quantity->getCode() ?: $quantity->getUnit());
+            return [
+                'data_type' => 'N',
+                'result' => (string)$quantity->getValue(),
+                'units' => $unit,
+            ];
+        }
+
+        $valueString = $observation->getValueString();
+        if ($valueString !== null && (string)$valueString !== '') {
+            return [
+                'data_type' => is_numeric((string)$valueString) ? 'N' : 'S',
+                'result' => (string)$valueString,
+                'units' => '',
+            ];
+        }
+
+        $valueCodeableConcept = $observation->getValueCodeableConcept();
+        if (!empty($valueCodeableConcept)) {
+            $text = (string)$valueCodeableConcept->getText();
+            foreach ($valueCodeableConcept->getCoding() ?? [] as $coding) {
+                if ($text === '') {
+                    $text = trim((string)$coding->getCode() . ' ' . (string)$coding->getDisplay());
+                }
+            }
+            return [
+                'data_type' => 'S',
+                'result' => $text,
+                'units' => '',
+            ];
+        }
+
+        return ['data_type' => 'S', 'result' => '', 'units' => ''];
+    }
+
+    private function extractEffectiveDate(FHIRObservation $observation): ?string
+    {
+        if (!empty($observation->getEffectiveDateTime())) {
+            return (string)$observation->getEffectiveDateTime();
+        }
+        if (!empty($observation->getEffectivePeriod()?->getStart())) {
+            return (string)$observation->getEffectivePeriod()->getStart();
+        }
+        if (!empty($observation->getIssued())) {
+            return (string)$observation->getIssued();
+        }
+        return null;
+    }
+
+    private function extractReferenceRange(FHIRObservation $observation): string
+    {
+        foreach ($observation->getReferenceRange() ?? [] as $referenceRange) {
+            $low = !empty($referenceRange->getLow()?->getValue()) ? (string)$referenceRange->getLow()->getValue() : '';
+            $high = !empty($referenceRange->getHigh()?->getValue()) ? (string)$referenceRange->getHigh()->getValue() : '';
+            if ($low !== '' && $high !== '') {
+                return $low . '-' . $high;
+            }
+            if (!empty($referenceRange->getText())) {
+                return (string)$referenceRange->getText();
+            }
+        }
+        return '';
+    }
+
+    private function extractAbnormalFlag(FHIRObservation $observation): string
+    {
+        $map = [
+            'H' => 'high',
+            'L' => 'low',
+            'A' => 'yes',
+            'N' => 'no',
+        ];
+        foreach ($observation->getInterpretation() ?? [] as $interpretation) {
+            foreach ($interpretation->getCoding() ?? [] as $coding) {
+                $code = (string)$coding->getCode();
+                if (isset($map[$code])) {
+                    return $map[$code];
+                }
+            }
+        }
+        return '';
+    }
+
+    private function extractNoteText(FHIRObservation $observation): string
+    {
+        $notes = [];
+        foreach ($observation->getNote() ?? [] as $note) {
+            $text = trim((string)$note->getText());
+            if ($text !== '') {
+                $notes[] = $text;
+            }
+        }
+        return implode("\n", $notes);
     }
 
     private function getValidStatus($status)

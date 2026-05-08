@@ -500,6 +500,11 @@ return [
         $controller->addAclRestrictions("patients", "med");
         return $controller->getOne($uuid);
     },
+    "POST /fhir/Observation" => function (HttpRestRequest $request, OEGlobalsBag $globalsBag) {
+        $controller = new FhirGenericRestController($request, new FhirObservationService(), $globalsBag);
+        $controller->addAclRestrictions("patients", "med");
+        return $controller->post();
+    },
     "GET /fhir/Organization" => function (HttpRestRequest $request) {
         if (!$request->isPatientRequest()) {
             RestConfig::request_authorization_check($request, "admin", "users");
