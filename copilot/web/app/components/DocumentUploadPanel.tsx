@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ExtractionReviewPanel, type DocumentFact, type DocumentJob } from "./ExtractionReviewPanel";
 
@@ -59,6 +59,7 @@ export function DocumentUploadPanel({
   const [trace, setTrace] = useState<string[]>([]);
   const [isWorking, setIsWorking] = useState(false);
   const [extractUnassigned, setExtractUnassigned] = useState(false);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [persistenceReady, setPersistenceReady] = useState<boolean | null>(null);
   const [capabilityStatus, setCapabilityStatus] = useState("Checking storage readiness.");
   const [observationWriteSupported, setObservationWriteSupported] = useState<boolean | null>(null);
@@ -66,6 +67,8 @@ export function DocumentUploadPanel({
   const [approvedEvidenceStatus, setApprovedEvidenceStatus] = useState(
     "No approved document evidence loaded."
   );
+  const currentPatientIdRef = useRef<string | null>(patientId);
+  currentPatientIdRef.current = patientId;
 
   const loadCapabilities = useCallback(async () => {
     try {
@@ -89,23 +92,30 @@ export function DocumentUploadPanel({
   }, [apiBase]);
 
   const loadApprovedEvidence = useCallback(async () => {
-    if (!patientId || disabled) {
+    const requestedPatientId = patientId;
+    if (!requestedPatientId || disabled) {
       setApprovedEvidence([]);
       setApprovedEvidenceStatus("Select an authorized patient to load approved evidence.");
       return;
     }
     try {
       const response = await fetch(
-        `${apiBase}/api/documents/patients/${encodeURIComponent(patientId)}/approved-evidence`,
+        `${apiBase}/api/documents/patients/${encodeURIComponent(requestedPatientId)}/approved-evidence`,
         { cache: "no-store" }
       );
       if (!response.ok) {
         throw new Error(`Approved evidence returned ${response.status}`);
       }
       const payload = (await response.json()) as ApprovedEvidencePayload;
+      if (currentPatientIdRef.current !== requestedPatientId) {
+        return;
+      }
       setApprovedEvidence(payload.evidence);
       setApprovedEvidenceStatus(`${payload.evidence_count} approved evidence objects for ${payload.patient_id}.`);
     } catch (error) {
+      if (currentPatientIdRef.current !== requestedPatientId) {
+        return;
+      }
       setApprovedEvidence([]);
       setApprovedEvidenceStatus(errorMessage(error, "Approved evidence unavailable"));
     }
@@ -116,6 +126,22 @@ export function DocumentUploadPanel({
   }, [loadCapabilities]);
 
   useEffect(() => {
+    setIsWorking(false);
+    setFile(null);
+    setFileInputKey((current) => current + 1);
+    setJob(null);
+    setFacts([]);
+    setTrace([]);
+    setExtractUnassigned(false);
+    setApprovedEvidence([]);
+    setApprovedEvidenceStatus(
+      patientId
+        ? "Loading approved document evidence for selected patient."
+        : "Select an authorized patient to load approved evidence."
+    );
+  }, [patientId]);
+
+  useEffect(() => {
     void loadApprovedEvidence();
   }, [loadApprovedEvidence]);
 
@@ -124,6 +150,7 @@ export function DocumentUploadPanel({
       onStatus("Select a document before extraction.");
       return;
     }
+    const startedPatientId = patientId;
     const effectivePatientId = extractUnassigned ? null : patientId;
     setIsWorking(true);
     try {
@@ -144,22 +171,28 @@ export function DocumentUploadPanel({
         throw new Error(`Document extraction returned ${response.status}`);
       }
       const payload = (await response.json()) as DocumentJobResponse;
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       setJob(payload.job);
       onStatus(
         effectivePatientId
           ? `Document extracted: ${formatCounts(payload.fact_counts)}.`
           : `Unassigned document extracted: ${formatCounts(payload.fact_counts)}.`
       );
-      await loadReview(payload.job.job_id);
+      await loadReview(payload.job.job_id, startedPatientId);
       await loadApprovedEvidence();
     } catch (error) {
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       onStatus(errorMessage(error, "Document extraction failed"));
     } finally {
       setIsWorking(false);
     }
   }
 
-  async function loadReview(jobId: string) {
+  async function loadReview(jobId: string, expectedPatientId = patientId) {
     const response = await fetch(`${apiBase}/api/documents/${encodeURIComponent(jobId)}/review`, {
       cache: "no-store"
     });
@@ -167,6 +200,12 @@ export function DocumentUploadPanel({
       throw new Error(`Document review returned ${response.status}`);
     }
     const payload = (await response.json()) as DocumentReviewPayload;
+    if (currentPatientIdRef.current !== expectedPatientId) {
+      return;
+    }
+    if (payload.job.patient_id !== null && payload.job.patient_id !== expectedPatientId) {
+      return;
+    }
     setJob(payload.job);
     setFacts(payload.facts);
     setTrace(payload.trace);
@@ -183,6 +222,7 @@ export function DocumentUploadPanel({
       onStatus("No extracted facts need approval.");
       return;
     }
+    const startedPatientId = patientId;
     setIsWorking(true);
     try {
       const response = await fetch(`${apiBase}/api/documents/${job.job_id}/review/decisions`, {
@@ -196,10 +236,16 @@ export function DocumentUploadPanel({
       if (!response.ok) {
         throw new Error(`Review approval returned ${response.status}`);
       }
-      await loadReview(job.job_id);
+      await loadReview(job.job_id, startedPatientId);
       await loadApprovedEvidence();
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       onStatus(`${reviewable.length} document facts approved for this patient.`);
     } catch (error) {
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       onStatus(errorMessage(error, "Review approval failed"));
     } finally {
       setIsWorking(false);
@@ -221,6 +267,7 @@ export function DocumentUploadPanel({
       return;
     }
     setIsWorking(true);
+    const startedPatientId = patientId;
     try {
       const response = await fetch(`${apiBase}/api/documents/${job.job_id}/write`, {
         method: "POST",
@@ -235,11 +282,17 @@ export function DocumentUploadPanel({
         skipped_count: number;
         facts: DocumentFact[];
       };
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       setJob(payload.job);
       setFacts(payload.facts);
       await loadApprovedEvidence();
       onStatus(writeStatusMessage(payload));
     } catch (error) {
+      if (currentPatientIdRef.current !== startedPatientId) {
+        return;
+      }
       onStatus(errorMessage(error, "Observation write failed"));
     } finally {
       setIsWorking(false);
@@ -290,6 +343,7 @@ export function DocumentUploadPanel({
         <input
           aria-label="Document file"
           disabled={disabled || isWorking}
+          key={fileInputKey}
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           type="file"
           accept=".txt,.pdf,.png,.jpg,.jpeg,text/plain,application/pdf,image/png,image/jpeg"

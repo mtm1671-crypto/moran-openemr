@@ -202,6 +202,110 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await expect(page.getByText(/Misses doses when work shifts change/).last()).toBeVisible();
 });
 
+test("document workflow clears extracted evidence when switching patients", async ({ page }) => {
+  await page.route("**/api/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        role: "doctor",
+        scopes: ["openid", "api:fhir", "user/Patient.read", "user/Observation.write"],
+        user_id: "dev-doctor"
+      })
+    });
+  });
+  await page.route("**/api/patients?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          birth_date: "1970-01-01",
+          display_name: "Alpha Patient",
+          gender: "female",
+          patient_id: "patient-alpha"
+        },
+        {
+          birth_date: "1980-02-02",
+          display_name: "Beta Patient",
+          gender: "male",
+          patient_id: "patient-beta"
+        }
+      ])
+    });
+  });
+  await page.route("**/api/capabilities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        providers: {
+          document_workflow_persistence_enabled: true,
+          document_workflow_persistence_ready: true,
+          openemr_observation_create_supported: false
+        }
+      })
+    });
+  });
+  await page.route("**/api/documents/patients/*/approved-evidence", async (route) => {
+    const patientId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "unknown";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        evidence: [],
+        evidence_count: 0,
+        patient_id: patientId
+      })
+    });
+  });
+  await page.route("**/api/documents/attach-and-extract", async (route) => {
+    const body = JSON.parse(route.request().postData() ?? "{}") as { patient_id?: string };
+    expect(body.patient_id).toBe("patient-alpha");
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fact_counts: { review_required: 1 },
+        job: documentJobFixture("patient-alpha")
+      })
+    });
+  });
+  await page.route("**/api/documents/job-alpha/review", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        facts: [documentFactFixture("patient-alpha")],
+        job: documentJobFixture("patient-alpha"),
+        trace: ["source_received", "extracted_1_facts"]
+      })
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByLabel("Switch patient")).toHaveValue("patient-alpha");
+  await openDocumentWorkflow(page);
+  await page.getByLabel("Document type").selectOption("intake_form");
+  await page.getByLabel("Document file").setInputFiles({
+    name: "alpha-intake.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Social History: Alpha-only transportation barrier", "utf8")
+  });
+  await page.getByRole("button", { name: "Extract" }).click();
+
+  await expect(page.getByText("Alpha-only transportation barrier").first()).toBeVisible();
+  await page.getByRole("button", { name: "Close document workflow" }).click();
+  await page.getByLabel("Switch patient").selectOption("patient-beta");
+  await openDocumentWorkflow(page);
+
+  await expect(page.getByText("Alpha-only transportation barrier")).toHaveCount(0);
+  await expect(page.getByText("Upload lab PDF, image, or intake form")).toBeVisible();
+  await expect(page.getByLabel("Document workflow proof").getByText("patient-beta")).toBeVisible();
+  await expect(page.getByLabel("Document workflow proof").getByText("no file")).toBeVisible();
+});
+
 test("document extraction can stay unassigned until a patient match is known", async ({ page }) => {
   await page.goto("/");
 
@@ -434,5 +538,65 @@ function bundle(resources: object[]) {
     resourceType: "Bundle",
     total: resources.length,
     type: "searchset"
+  };
+}
+
+function documentJobFixture(patientId: string) {
+  return {
+    actor_user_id: "dev-doctor",
+    created_at: "2026-05-07T00:00:00Z",
+    doc_type: "intake_form",
+    job_id: "job-alpha",
+    patient_id: patientId,
+    source: {
+      byte_count: 55,
+      content_type: "text/plain",
+      filename: "alpha-intake.txt",
+      source_id: "source-alpha",
+      source_sha256: "a".repeat(64)
+    },
+    status: "review_required",
+    trace: ["source_received", "extracted_1_facts"],
+    updated_at: "2026-05-07T00:00:01Z"
+  };
+}
+
+function documentFactFixture(patientId: string) {
+  return {
+    bbox_present: true,
+    blocking_reasons: [],
+    citation: {
+      bbox: {
+        page: 1,
+        x0: 0.08,
+        x1: 0.92,
+        y0: 0.2,
+        y1: 0.3
+      },
+      confidence: 0.91,
+      field_or_chunk_id: "social-history",
+      page_or_section: "page 1",
+      quote_or_value: "Alpha-only transportation barrier",
+      source_id: "source-alpha",
+      source_type: "local_document"
+    },
+    citation_present: true,
+    display_label: "Social history",
+    doc_type: "intake_form",
+    document_job_id: "job-alpha",
+    extraction_confidence: 0.91,
+    fact_id: "fact-alpha-social",
+    fact_type: "intake_history",
+    needs_human_review: true,
+    normalized_value: "Alpha-only transportation barrier",
+    patient_id: patientId,
+    payload: {},
+    proposed_destination: "derived_evidence",
+    reviewed_at: null,
+    reviewed_by: null,
+    schema_valid: true,
+    status: "review_required",
+    write_error: null,
+    written_resource_id: null
   };
 }
