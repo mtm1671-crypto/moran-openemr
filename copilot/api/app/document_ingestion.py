@@ -87,9 +87,20 @@ async def attach_and_extract(
         actor_user_id=user.user_id,
         settings=settings,
     )
-    if not was_created or job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
+    if not was_created and _needs_fresh_extraction(job.job_id):
+        update_document_job(
+            job.job_id,
+            status=W2JobStatus.extracting,
+            trace="reextracting_after_write_failure",
+            error_code=None,
+        )
+        replace_document_facts(job.job_id, [])
+        await _persist_document_job(settings, job.job_id)
+    elif not was_created or job.status in {W2JobStatus.review_required, W2JobStatus.ready_to_write, W2JobStatus.completed}:
         # Idempotent upload: repeated submits for the same source return the
-        # existing job instead of duplicating extraction work.
+        # existing job instead of duplicating extraction work. A prior failed
+        # chart write is the exception: clicking Extract should restore a clean
+        # review state instead of resurfacing stale write errors.
         await _persist_document_job(settings, job.job_id)
         return _job_response(job.job_id)
 
@@ -434,6 +445,10 @@ async def _persist_document_job(settings: Settings, job_id: str) -> None:
         source=source,
         facts=facts,
     )
+
+
+def _needs_fresh_extraction(job_id: str) -> bool:
+    return any(fact.status == W2FactStatus.write_failed for fact in read_document_facts(job_id))
 
 
 def _append_supervisor_trace(job_id: str, *, review_submitted: bool) -> None:

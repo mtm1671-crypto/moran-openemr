@@ -901,6 +901,18 @@ async def upsert_document_workflow_snapshot(
                 )
             )
 
+            if fact_records:
+                current_fact_ids = [str(record["fact_id"]) for record in fact_records]
+                await connection.execute(
+                    delete(document_facts)
+                    .where(document_facts.c.job_id == job.job_id)
+                    .where(~document_facts.c.fact_id.in_(current_fact_ids))
+                )
+            else:
+                await connection.execute(
+                    delete(document_facts).where(document_facts.c.job_id == job.job_id)
+                )
+
             for record in fact_records:
                 fact_insert = pg_insert(document_facts).values(record)
                 await connection.execute(

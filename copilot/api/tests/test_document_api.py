@@ -207,6 +207,70 @@ def test_write_reports_when_openemr_observation_create_is_unavailable() -> None:
     assert observation_create.call_count == 0
 
 
+@respx.mock
+def test_reextract_after_write_failure_returns_clean_review_state() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=False))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    client = TestClient(app)
+    payload = _document_payload(
+        doc_type="lab_pdf",
+        content="Hemoglobin A1c 8.6 % reference range 4.0-5.6 H",
+    )
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=payload,
+        headers={"Authorization": "Bearer user-token"},
+    )
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert write.status_code == 200
+    assert write.json()["facts"][0]["status"] == "write_failed"
+
+    reextract = client.post(
+        "/api/documents/attach-and-extract",
+        json=payload,
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert reextract.status_code == 202
+    reextract_body = reextract.json()
+    assert reextract_body["job"]["job_id"] == job_id
+    assert reextract_body["job"]["status"] == "review_required"
+    assert reextract_body["fact_counts"] == {"review_required": 1}
+    assert "reextracting_after_write_failure" in reextract_body["job"]["trace"]
+
+    review = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()
+    assert review["facts"][0]["status"] == "review_required"
+    assert review["facts"][0]["reviewed_by"] is None
+    assert review["facts"][0]["reviewed_at"] is None
+    assert review["facts"][0]["write_error"] is None
+
+
 def test_unassigned_document_can_extract_but_not_approve_or_write() -> None:
     client = TestClient(app)
     payload = _document_payload(
