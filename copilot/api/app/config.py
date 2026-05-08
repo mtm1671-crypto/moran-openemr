@@ -133,6 +133,13 @@ class Settings(BaseSettings):
     conversation_retention_days: int = 30
     reindex_idempotency_seconds: int = 120
     dev_auth_bypass: bool = Field(default=True, description="Only for local scaffold work.")
+    demo_auth_bypass: bool = Field(
+        default=False,
+        description=(
+            "Temporary demo-only switch that bypasses SMART auth and exposes only "
+            "the locked synthetic demo patient roster."
+        ),
+    )
 
     def is_production(self) -> bool:
         return self.app_env.lower() in _PRODUCTION_ENV_NAMES

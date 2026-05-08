@@ -363,6 +363,28 @@ def test_chat_uses_demo_fallback_when_openemr_fhir_is_not_configured() -> None:
     assert final["audit"]["tools"] == ["demo_evidence"]
 
 
+def test_chat_uses_demo_auth_bypass_when_fhir_is_configured() -> None:
+    settings = Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "What result is in the demo source?"},
+    )
+    final = _final_event(response.text)
+
+    assert response.status_code == 200
+    assert "LDL Cholesterol was 158 mg/dL" in final["answer"]
+    assert final["audit"]["verification"] == "passed"
+    assert final["audit"]["tools"] == ["demo_evidence"]
+    assert "SMART auth is temporarily bypassed" in final["audit"]["limitations"][0]
+
+
 def test_chat_uses_vector_search_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(
         app_env="local",

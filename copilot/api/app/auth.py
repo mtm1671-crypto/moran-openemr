@@ -12,6 +12,17 @@ from app.http_retry import RetryPolicy, request_with_retries
 from app.models import RequestUser, Role
 
 _ALLOWED_JWT_ALGORITHMS = {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}
+_DEMO_SCOPES = [
+    "patient/*.read",
+    "user/Patient.read",
+    "user/Practitioner.read",
+    "user/Observation.read",
+    "user/Observation.write",
+    "user/Condition.read",
+    "user/MedicationRequest.read",
+    "user/AllergyIntolerance.read",
+    "user/DocumentReference.read",
+]
 
 
 async def get_request_user(
@@ -26,6 +37,15 @@ async def get_request_user(
     """
 
     bearer_token = _extract_bearer_token(authorization)
+
+    if settings.demo_auth_bypass:
+        return RequestUser(
+            user_id="demo-doctor",
+            role=Role.doctor,
+            scopes=_DEMO_SCOPES,
+            practitioner_id="demo-practitioner",
+            access_token=bearer_token,
+        )
 
     if settings.dev_auth_bypass and settings.app_env == "local":
         return RequestUser(

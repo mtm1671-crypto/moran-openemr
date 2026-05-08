@@ -185,6 +185,43 @@ def test_me_requires_bearer_token_when_dev_bypass_is_disabled() -> None:
     assert response.json()["detail"] == "Missing bearer token"
 
 
+def test_demo_auth_bypass_authenticates_without_bearer_token() -> None:
+    settings = Settings(app_env="production", dev_auth_bypass=False, demo_auth_bypass=True)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/me")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == "demo-doctor"
+    assert body["role"] == "doctor"
+    assert "user/Observation.write" in body["scopes"]
+    assert "access_token" not in body
+
+
+def test_demo_auth_bypass_returns_locked_margaret_chen_roster() -> None:
+    settings = Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/patients?query=chen")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "patient_id": "p1",
+            "display_name": "Margaret Chen",
+            "birth_date": "1967-08-14",
+            "gender": "female",
+            "source_system": "openemr",
+        }
+    ]
+
+
 def test_demo_patient_context_returns_summary_without_fhir() -> None:
     settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
     app.dependency_overrides[get_settings] = lambda: settings

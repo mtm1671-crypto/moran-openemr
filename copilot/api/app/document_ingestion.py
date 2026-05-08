@@ -63,6 +63,8 @@ from app.w2_graph import W2GraphState, supervisor_route
 
 router = APIRouter(prefix="/api/documents", tags=["week2-documents"])
 
+_DEMO_PATIENT_IDS = {"p1", "demo-diabetes-001"}
+
 
 @router.post(
     "/attach-and-extract",
@@ -573,6 +575,10 @@ async def _require_patient_access(
 ) -> None:
     if patient_id is None:
         return
+    if settings.demo_auth_bypass:
+        if patient_id in _DEMO_PATIENT_IDS:
+            return
+        raise HTTPException(status_code=404, detail="Demo patient was not found")
     if settings.openemr_fhir_base_url is None:
         return
     bearer_token = await resolve_fhir_bearer_token(user, settings)

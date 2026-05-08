@@ -71,6 +71,35 @@ router = APIRouter()
 router.include_router(document_router)
 
 
+def _demo_patient_summaries() -> list[PatientSummary]:
+    return [
+        PatientSummary(
+            patient_id="p1",
+            display_name="Margaret Chen",
+            birth_date="1967-08-14",
+            gender="female",
+        ),
+        PatientSummary(
+            patient_id="demo-diabetes-001",
+            display_name="Demo Patient",
+            birth_date="1975-04-12",
+            gender="female",
+        ),
+    ]
+
+
+def _demo_patient_summary(patient_id: str) -> PatientSummary | None:
+    for patient in _demo_patient_summaries():
+        if patient.patient_id == patient_id:
+            return patient
+    return None
+
+
+def _require_demo_patient(patient_id: str) -> None:
+    if _demo_patient_summary(patient_id) is None:
+        raise HTTPException(status_code=404, detail="Demo patient was not found")
+
+
 async def initialize_phi_storage(settings: Settings) -> None:
     # These tables are derived/product storage, not OpenEMR truth. They are still
     # required when PHI controls, vector search, or encrypted evidence cache are on.
@@ -209,6 +238,7 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
             "document_workflow_persistence_ready": (
                 settings.document_workflow_persistence_enabled and document_workflow_storage_ok
             ),
+            "demo_auth_bypass": settings.demo_auth_bypass,
             "operational_storage": operational_ok,
             "audit_persistence": operational_ok,
             "conversation_persistence": operational_ok and settings.conversation_persistence_enabled,
@@ -354,6 +384,7 @@ async def capabilities(settings: Settings = Depends(get_settings)) -> Capability
             "evidence_cache_enabled": settings.evidence_cache_enabled,
             "document_workflow_persistence_enabled": settings.document_workflow_persistence_enabled,
             "document_workflow_persistence_ready": document_workflow_ready,
+            "demo_auth_bypass": settings.demo_auth_bypass,
             "openemr_observation_create_supported": await openemr_observation_create_supported(settings),
             "nightly_maintenance_enabled": settings.nightly_maintenance_enabled,
             "nightly_reindex_enabled": settings.nightly_reindex_enabled,
@@ -586,6 +617,17 @@ async def patients(
     query: str | None = Query(default=None, min_length=2, max_length=100),
     count: int = Query(default=100, ge=1, le=100),
 ) -> list[PatientSummary]:
+    if settings.demo_auth_bypass:
+        patients = _demo_patient_summaries()
+        if query is None:
+            return patients[:count]
+        normalized_query = query.lower()
+        return [
+            patient
+            for patient in patients
+            if normalized_query in patient.display_name.lower() or normalized_query in patient.patient_id.lower()
+        ][:count]
+
     if settings.openemr_fhir_base_url is None:
         return [
             PatientSummary(
@@ -619,6 +661,12 @@ async def patient(
     user: Annotated[RequestUser, Depends(get_request_user)],
     settings: Settings = Depends(get_settings),
 ) -> PatientSummary:
+    if settings.demo_auth_bypass:
+        patient = _demo_patient_summary(patient_id)
+        if patient is None:
+            raise HTTPException(status_code=404, detail="Demo patient was not found")
+        return patient
+
     if settings.openemr_fhir_base_url is None:
         if patient_id == "demo-diabetes-001":
             return PatientSummary(
@@ -843,6 +891,20 @@ async def demo_source() -> dict[str, Any]:
         "code": {"text": "Demo A1c"},
         "valueQuantity": {"value": 8.6, "unit": "%"},
         "effectiveDateTime": "2026-03-12",
+    }
+
+
+@router.get("/api/source/demo-chen-lipid-panel")
+async def demo_chen_lipid_source() -> dict[str, Any]:
+    return {
+        "resourceType": "Observation",
+        "id": "demo-chen-lipid-panel",
+        "status": "final",
+        "code": {"text": "LDL Cholesterol"},
+        "subject": {"reference": "Patient/p1"},
+        "valueQuantity": {"value": 158, "unit": "mg/dL"},
+        "interpretation": [{"text": "High"}],
+        "effectiveDateTime": "2026-04-23",
     }
 
 
@@ -1222,9 +1284,12 @@ async def _retrieve_evidence(
     user: RequestUser,
     settings: Settings,
 ) -> EvidenceRetrievalResult:
-    if settings.openemr_fhir_base_url is None:
-        # Local/demo mode can answer from deterministic fixtures. Production PHI
-        # mode requires OpenEMR FHIR, enforced by Settings.runtime_config_errors().
+    if settings.demo_auth_bypass or settings.openemr_fhir_base_url is None:
+        if settings.demo_auth_bypass:
+            _require_demo_patient(request.patient_id)
+        # Local/demo mode can answer from deterministic fixtures and approved
+        # document evidence. Production PHI mode normally requires OpenEMR FHIR,
+        # enforced by Settings.runtime_config_errors().
         document_evidence = await _approved_document_evidence(settings, request.patient_id)
         retrieval = EvidenceRetrievalResult(
             evidence=_merge_evidence(_demo_evidence(request.patient_id), document_evidence),
@@ -1232,7 +1297,11 @@ async def _retrieve_evidence(
                 ["demo_evidence"],
                 ["approved_document_evidence"] if document_evidence else [],
             ),
-            limitations=["OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."],
+            limitations=[
+                "SMART auth is temporarily bypassed for the locked demo patient roster."
+                if settings.demo_auth_bypass
+                else "OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."
+            ],
         )
         retrieval = _augment_with_guideline_evidence(
             patient_id=request.patient_id,
@@ -1655,6 +1724,21 @@ def _require_job_access(user: RequestUser) -> None:
 
 def _demo_evidence(patient_id: str) -> list[EvidenceObject]:
     now = datetime.now(tz=UTC)
+    if patient_id == "p1":
+        return [
+            EvidenceObject(
+                evidence_id="ev_demo_chen_ldl",
+                patient_id=patient_id,
+                source_type="lab_result",
+                source_id="demo-chen-lipid-panel",
+                display_name="Margaret Chen LDL Cholesterol",
+                fact="LDL Cholesterol was 158 mg/dL on 2026-04-23 (high).",
+                effective_at=datetime(2026, 4, 23, tzinfo=UTC),
+                source_updated_at=datetime(2026, 4, 23, tzinfo=UTC),
+                retrieved_at=now,
+                source_url="/api/source/demo-chen-lipid-panel",
+            )
+        ]
     return [
         EvidenceObject(
             evidence_id="ev_demo_a1c",

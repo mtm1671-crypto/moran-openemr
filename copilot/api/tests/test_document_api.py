@@ -80,6 +80,40 @@ def test_attach_review_and_write_lab_document() -> None:
     assert all(fact["written_resource_id"].startswith("demo-observation-") for fact in write_body["facts"])
 
 
+def test_demo_auth_bypass_writes_lab_document_without_openemr_token() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="LDL Cholesterol 158 mg/dL reference range 0-99 H",
+        ),
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job"]["job_id"]
+    review = client.get(f"/api/documents/{job_id}/review").json()
+
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": review["facts"][0]["fact_id"], "action": "approve"}]},
+    )
+    assert approve.status_code == 200
+
+    write = client.post(f"/api/documents/{job_id}/write")
+
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 1
+    assert body["failed_count"] == 0
+    assert body["facts"][0]["written_resource_id"].startswith("demo-observation-")
+
+
 @respx.mock
 def test_write_failure_reports_missing_observation_write_scope() -> None:
     settings = Settings(

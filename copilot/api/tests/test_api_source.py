@@ -297,3 +297,12 @@ def test_demo_source_returns_demo_observation() -> None:
     assert response.status_code == 200
     assert response.json()["resourceType"] == "Observation"
     assert response.json()["id"] == "demo-lab-a1c"
+
+
+def test_demo_chen_source_returns_demo_observation() -> None:
+    response = TestClient(app).get("/api/source/demo-chen-lipid-panel")
+
+    assert response.status_code == 200
+    assert response.json()["resourceType"] == "Observation"
+    assert response.json()["id"] == "demo-chen-lipid-panel"
+    assert response.json()["subject"]["reference"] == "Patient/p1"

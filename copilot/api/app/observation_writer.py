@@ -41,6 +41,11 @@ async def write_lab_fact_observation(
         raise ObservationWriteError("Fact is not proposed for OpenEMR Observation write")
 
     resource = build_observation_resource(fact)
+    if settings.demo_auth_bypass and user.access_token is None:
+        # Demo auth bypass deliberately proves the extraction/review/write UI
+        # without mutating OpenEMR under an unauthenticated browser session.
+        return f"demo-observation-{fact.fact_id}"
+
     if settings.openemr_fhir_base_url is None:
         # Demo-only fallback. PHI mode requires a real OpenEMR FHIR endpoint.
         if settings.requires_phi_controls():
@@ -61,6 +66,8 @@ async def write_lab_fact_observation(
 
 
 async def openemr_observation_create_supported(settings: Settings) -> bool:
+    if settings.demo_auth_bypass:
+        return True
     if settings.openemr_fhir_base_url is None:
         return True
     client = OpenEMRFhirClient(settings=settings)
