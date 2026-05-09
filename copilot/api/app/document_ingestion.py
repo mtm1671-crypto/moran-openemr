@@ -524,6 +524,14 @@ def _operation_outcome_summary(response: httpx.Response) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()[:180]
 
+    validation_errors = _summarize_openemr_error_map(payload.get("validationErrors"))
+    if validation_errors is not None:
+        return validation_errors[:180]
+
+    internal_errors = _summarize_openemr_error_map(payload.get("internalErrors"))
+    if internal_errors is not None:
+        return internal_errors[:180]
+
     issues = payload.get("issue")
     if isinstance(issues, list):
         for issue in issues:
@@ -540,6 +548,22 @@ def _operation_outcome_summary(response: httpx.Response) -> str | None:
             code = issue.get("code")
             if isinstance(code, str) and code.strip():
                 return code.strip()[:180]
+    return None
+
+
+def _summarize_openemr_error_map(value: object) -> str | None:
+    if isinstance(value, dict):
+        for field, message in value.items():
+            if isinstance(message, str) and message.strip():
+                return f"{field}: {message.strip()}"
+            if isinstance(message, list):
+                for item in message:
+                    if isinstance(item, str) and item.strip():
+                        return f"{field}: {item.strip()}"
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
     return None
 
 

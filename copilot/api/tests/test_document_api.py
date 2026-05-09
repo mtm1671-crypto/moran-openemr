@@ -190,6 +190,54 @@ def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() ->
 
 
 @respx.mock
+def test_demo_fixture_patient_chart_write_fails_closed_even_with_bearer_token() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
+    )
+    observation_create = respx.post("https://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(201, json={"resourceType": "Observation", "id": "should-not-write"})
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="LDL Cholesterol 158 mg/dL reference range 0-99 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job"]["job_id"]
+    review = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()
+
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": review["facts"][0]["fact_id"], "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert approve.status_code == 200
+
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 0
+    assert body["failed_count"] == 1
+    assert body["facts"][0]["status"] == "write_failed"
+    assert "Demo patient profiles are extraction and chat fixtures" in body["facts"][0]["write_error"]
+    assert observation_create.call_count == 0
+
+
+@respx.mock
 def test_capabilities_report_observation_create_when_demo_auth_uses_openemr_metadata() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="production",
@@ -286,6 +334,66 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
     assert retry_body["failed_count"] == 0
     assert retry_body["facts"][0]["status"] == "written"
     assert retry_body["facts"][0]["written_resource_id"] == "obs-retry"
+
+
+@respx.mock
+def test_write_failure_reports_openemr_validation_errors() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=False,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(200, json={"resourceType": "Bundle", "entry": []})
+    )
+    observation_route = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(
+            400,
+            json={"validationErrors": {"subject": "Patient reference was not found"}},
+        )
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="Glucose 141 mg/dL reference range 70-99 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 0
+    assert body["failed_count"] == 1
+    assert body["facts"][0]["write_error"] == (
+        "OpenEMR rejected the Observation payload (HTTP 400): "
+        "subject: Patient reference was not found"
+    )
+    assert observation_route.call_count == 1
 
 
 @respx.mock

@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.demo_patients import DEMO_PATIENT_IDS
 from app.document_models import ExtractedFact, W2FactType, W2ProposedDestination
 from app.fhir_client import OpenEMRFhirClient
 from app.models import RequestUser
@@ -44,6 +45,12 @@ async def write_lab_fact_observation(
     if settings.demo_auth_bypass and user.access_token is None:
         raise ObservationWriteError(
             "Observation writeback is disabled while demo auth bypass is active; "
+            "approved document evidence remains retrievable."
+        )
+    if settings.demo_auth_bypass and fact.patient_id in DEMO_PATIENT_IDS:
+        raise ObservationWriteError(
+            "Demo patient profiles are extraction and chat fixtures, not writable OpenEMR chart patients. "
+            "Launch the copilot from OpenEMR with a real patient before writing labs; "
             "approved document evidence remains retrievable."
         )
 
