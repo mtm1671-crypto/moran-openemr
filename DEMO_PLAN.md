@@ -82,7 +82,7 @@ LDL Cholesterol 142 mg/dL reference range 0-99 H
 ```
 
 33. Click `Extract` and `Approve all`.
-34. Point out the `Write` badge. In the current deployed OpenEMR, FHIR `Observation.create` is not exposed, so lab writeback is unavailable while approved evidence retrieval still works.
+34. Click `Write labs` and show the resulting write count or retryable write-scope error. The deployed OpenEMR FHIR metadata now advertises `Observation.create`, so the demo should use the endpoint when the SMART session includes `user/Observation.write`.
 
 ## Product Placement Talk Track
 

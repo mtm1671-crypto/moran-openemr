@@ -39,6 +39,11 @@ async def get_request_user(
     bearer_token = _extract_bearer_token(authorization)
 
     if settings.demo_auth_bypass:
+        if settings.app_env != "local" and bearer_token is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing bearer token",
+            )
         return RequestUser(
             user_id="demo-doctor",
             role=Role.doctor,

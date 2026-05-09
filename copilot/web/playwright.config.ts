@@ -17,6 +17,7 @@ const webServer = shouldStartServers
         command: `${apiPython} -m uvicorn app.main:app --app-dir ../api --host 127.0.0.1 --port ${apiPort}`,
         env: {
           APP_ENV: "local",
+          DEMO_AUTH_BYPASS: "true",
           PUBLIC_BASE_URL: webBaseUrl
         } as Record<string, string>,
         reuseExistingServer: false,

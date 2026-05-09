@@ -292,6 +292,9 @@ def test_openemr_source_supports_document_reference_resources() -> None:
 
 
 def test_demo_source_returns_demo_observation() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, demo_auth_bypass=True)
+    app.dependency_overrides[get_settings] = lambda: settings
+
     response = TestClient(app).get("/api/source/demo-lab-a1c")
 
     assert response.status_code == 200
@@ -300,9 +303,22 @@ def test_demo_source_returns_demo_observation() -> None:
 
 
 def test_demo_chen_source_returns_demo_observation() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, demo_auth_bypass=True)
+    app.dependency_overrides[get_settings] = lambda: settings
+
     response = TestClient(app).get("/api/source/demo-chen-lipid-panel")
 
     assert response.status_code == 200
     assert response.json()["resourceType"] == "Observation"
     assert response.json()["id"] == "demo-chen-lipid-panel"
     assert response.json()["subject"]["reference"] == "Patient/p1"
+
+
+def test_demo_sources_are_hidden_when_demo_mode_is_disabled() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, demo_auth_bypass=False)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/source/demo-lab-a1c")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Demo source is disabled"

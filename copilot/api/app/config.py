@@ -294,6 +294,11 @@ class Settings(BaseSettings):
         # local defaults because a misconfigured deployment is a security bug.
         if self.dev_auth_bypass:
             errors.append("DEV_AUTH_BYPASS must be false when PHI controls are required")
+        if self.demo_auth_bypass and not self.openrouter_demo_data_only:
+            errors.append(
+                "DEMO_AUTH_BYPASS requires OPENROUTER_DEMO_DATA_ONLY=true "
+                "when PHI controls are required"
+            )
         if self.openemr_dev_password_grant:
             errors.append("OPENEMR_DEV_PASSWORD_GRANT must be false when PHI controls are required")
         if not self.openemr_tls_verify:

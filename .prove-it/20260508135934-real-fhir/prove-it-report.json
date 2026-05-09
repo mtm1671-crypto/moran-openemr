@@ -1,0 +1,11 @@
+{
+  "goal": "Real-mode OpenEMR FHIR flow uses no demo assets, surfaces newly available FHIR evidence, and writes approved labs via Observation.create.",
+  "url_tested": "http://127.0.0.1:3160/?patient_id=real-001",
+  "happy_path": "FAIL",
+  "console_errors": [],
+  "failed_requests": [],
+  "proof_screenshot": null,
+  "error": "Error: API did not become ready at http://127.0.0.1:8160/readyz: fetch failed\n    at waitFor ([stdin]:142:9)\n    at async main ([stdin]:194:3)",
+  "verdict": "DO NOT SHIP",
+  "confidence": 0
+}

@@ -28,7 +28,11 @@ def reset_app_state() -> Generator[None]:
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
     reset_document_workflow_store()
-    app.dependency_overrides[get_settings] = lambda: Settings(app_env="local", dev_auth_bypass=True)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=True,
+    )
     yield
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
@@ -41,7 +45,7 @@ def test_agent_document_flow_survives_bad_inputs_duplicates_and_chat_pressure() 
     bad_base64 = client.post(
         "/api/documents/attach-and-extract",
         json={
-            "patient_id": "p-chaos",
+            "patient_id": "p1",
             "doc_type": "intake_form",
             "filename": "bad.txt",
             "content_type": "text/plain",
@@ -91,7 +95,7 @@ def test_agent_document_flow_survives_bad_inputs_duplicates_and_chat_pressure() 
         chat = client.post(
             "/api/chat",
             json={
-                "patient_id": "p-chaos",
+                "patient_id": "p1",
                 "message": f"What social barriers are documented? run {index}",
             },
         )
@@ -132,20 +136,20 @@ def test_agent_chat_pressure_does_not_cross_patient_document_evidence() -> None:
     client = TestClient(app)
     _upload_and_approve_intake(
         client,
-        patient_id="p-chaos-a",
+        patient_id="p1",
         content="Social History: Cannot fill insulin when weekend shifts are cut",
     )
     _upload_and_approve_intake(
         client,
-        patient_id="p-chaos-b",
+        patient_id="demo-diabetes-001",
         content="Social History: Relies on neighbor for rides to appointments",
     )
 
     requests = [
-        ("p-chaos-a", "What social barriers are documented?")
+        ("p1", "What social barriers are documented?")
         for _index in range(16)
     ] + [
-        ("p-chaos-b", "What social barriers are documented?")
+        ("demo-diabetes-001", "What social barriers are documented?")
         for _index in range(16)
     ]
     with ThreadPoolExecutor(max_workers=12) as executor:
@@ -155,7 +159,7 @@ def test_agent_chat_pressure_does_not_cross_patient_document_evidence() -> None:
     for patient_id, final in responses:
         assert final["audit"]["verification"] == "passed"
         assert "approved_document_evidence" in final["audit"]["tools"]
-        if patient_id == "p-chaos-a":
+        if patient_id == "p1":
             assert "weekend shifts are cut" in final["answer"]
             assert "neighbor for rides" not in final["answer"]
         else:
@@ -459,7 +463,7 @@ def _upload_and_approve_intake(
 def _document_payload(
     content: str,
     *,
-    patient_id: str = "p-chaos",
+    patient_id: str = "p1",
     doc_type: str = "intake_form",
     filename: str = "chaos-intake.txt",
 ) -> dict[str, str]:

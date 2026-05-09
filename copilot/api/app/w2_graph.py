@@ -22,6 +22,15 @@ class W2RoutingDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class W2WorkerHandoff:
+    supervisor: str
+    worker: W2Route
+    reason: str
+    input_contract: str
+    output_contract: str
+
+
 @dataclass
 class W2GraphState:
     document_job_id: str
@@ -46,6 +55,50 @@ def supervisor_route(state: W2GraphState) -> W2RoutingDecision:
     return W2RoutingDecision(W2Route.done, "graph_complete")
 
 
+def worker_handoff(decision: W2RoutingDecision) -> W2WorkerHandoff:
+    contracts = {
+        W2Route.intake_extractor: (
+            "DocumentSourceSummary + W2DocType + source bytes",
+            "ExtractedFact[] with schema, citation, bbox, confidence",
+        ),
+        W2Route.human_review: (
+            "ExtractedFact[] in review_required status",
+            "approved/rejected ExtractedFact[] with reviewer metadata",
+        ),
+        W2Route.observation_writer: (
+            "approved lab_result ExtractedFact[]",
+            "FHIR Observation ids or per-fact write errors",
+        ),
+        W2Route.evidence_retriever: (
+            "patient_id + approved document facts + clinician question",
+            "ranked patient-record and guideline EvidenceObject[]",
+        ),
+        W2Route.verifier: (
+            "draft facts/answer + cited evidence ids",
+            "blocking/pass verification result",
+        ),
+        W2Route.done: ("terminal graph state", "no-op"),
+    }
+    input_contract, output_contract = contracts[decision.route]
+    return W2WorkerHandoff(
+        supervisor="w2_supervisor",
+        worker=decision.route,
+        reason=decision.reason,
+        input_contract=input_contract,
+        output_contract=output_contract,
+    )
+
+
+def handoff_trace_events(decision: W2RoutingDecision) -> list[str]:
+    handoff = worker_handoff(decision)
+    if handoff.worker == W2Route.done:
+        return ["supervisor:done:graph_complete"]
+    return [
+        f"handoff:{handoff.supervisor}->{handoff.worker.value}:{handoff.reason}",
+        f"worker_contract:{handoff.worker.value}:{handoff.input_contract}->{handoff.output_contract}",
+    ]
+
+
 def verify_state(state: W2GraphState) -> W2GraphState:
     state.verification_result = verify_document_facts(state.extracted_facts)
     return state
@@ -61,4 +114,3 @@ def _has_approved_labs_not_written(state: W2GraphState) -> bool:
         and fact.proposed_destination == W2ProposedDestination.openemr_observation
         for fact in state.extracted_facts
     )
-

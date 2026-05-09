@@ -7,14 +7,14 @@ This eval artifact defines the deterministic dataset and reports the latest auto
 Latest local readiness run recorded for this submission package:
 
 ```text
-Date: 2026-05-07
-API tests: 155 passed, 6 skipped
+Date: 2026-05-08
+API tests: 178 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
-Week 2 eval gate: 4 passed, 0 failed with python -m app.w2_eval --enforce
+Week 2 eval gate: 50 passed, 0 failed with python -m app.w2_eval --enforce
 Web lint: passed
 Web build: passed
-Playwright: 9 passed
+Playwright: 13 passed
 pip-audit: no known vulnerabilities found
 npm audit: 0 vulnerabilities
 ```
@@ -28,6 +28,8 @@ Co-Pilot API document_workflow_storage: true
 Co-Pilot API document_workflow_persistence_ready: true
 Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
+Co-Pilot API bearer upload/review/approved-evidence/chat: passed
+Co-Pilot API patient/guideline bundle separation in live chat: passed
 Co-Pilot web /: HTTP 200
 Co-Pilot web document panel markup: present
 pgvector backend: enabled
@@ -92,7 +94,7 @@ Every automated and manual eval uses these pass/fail rules:
 
 ## Week 2 Deterministic Eval Gate
 
-The executable Week 2 gate lives in `copilot/api/app/w2_eval.py`. It runs committed golden cases from `copilot/api/evals/w2_golden_cases.jsonl`, writes the latest case results to `copilot/api/evals/w2_latest_results.jsonl`, and compares hard-gate pass rates against `copilot/api/evals/w2_baseline.json`.
+The executable Week 2 gate lives in `copilot/api/app/w2_eval.py`. It runs committed golden cases from `copilot/api/evals/w2_golden_cases.jsonl`, writes the latest case results to `copilot/api/evals/w2_latest_results.jsonl`, enforces explicit per-category pass thresholds, and compares hard-gate pass rates against `copilot/api/evals/w2_baseline.json` with a 5% regression bound.
 
 Run it from `copilot/api`:
 
@@ -100,24 +102,26 @@ Run it from `copilot/api`:
 .\.venv\Scripts\python.exe -m app.w2_eval --enforce
 ```
 
-Current committed starter cases:
+Current committed cases:
 
-| Case | Fixture | Main proof |
+| Case range | Fixture | Main proof |
 |---|---|---|
-| `w2-lab-lipids-001` | `example-documents/lab-results/p01-chen-lipid-panel.pdf` | Lab extraction, citations, write approval, duplicate-write prevention, lipid guideline retrieval |
-| `w2-intake-social-001` | `example-documents/intake-forms/p01-chen-intake-typed.pdf` | Intake extraction, citations, approved evidence in chat |
-| `w2-low-confidence-block-001` | `example-documents/lab-results/p02-whitaker-cbc.pdf` | Low-confidence facts block chart writes |
-| `w2-treatment-refusal-001` | none | Treatment/change request refusal |
+| `w2-lab-lipids-001` to `012` | `example-documents/lab-results/p01-chen-lipid-panel.pdf` | Lab extraction, citations, write approval, duplicate-write prevention, lipid guideline retrieval |
+| `w2-lab-cbc-013` to `022` | `example-documents/lab-results/p02-whitaker-cbc.pdf` | CBC fact extraction, low-confidence write blocking, abnormal-result retrieval |
+| `w2-lab-cmp-023` to `032` | `example-documents/lab-results/p04-kowalski-cmp.pdf` | CMP/kidney/liver/electrolyte retrieval and Observation write idempotency |
+| `w2-intake-chen-033` to `040` | `example-documents/intake-forms/p01-chen-intake-typed.pdf` | Intake medications, allergies, social/history facts, approved evidence in chat |
+| `w2-intake-whitaker-041` to `046` | `example-documents/intake-forms/p02-whitaker-intake.pdf` | Intake family-history and medication retrieval |
+| `w2-treatment-refusal-047` to `050` | none | Treatment/change request refusal |
 
-Hard gates currently enforced: schema validity, citation presence, patient scope, source round trip, bounding boxes, no unapproved chart write, low-confidence write blocking, duplicate Observation prevention, safe refusal, and no raw expected fact fragments in audit payloads. API regression coverage also checks durable source-key reuse after a process-local cache miss.
+Hard gates currently enforced: schema validity, citation presence, factual consistency, patient scope, source round trip, bounding boxes, no unapproved chart write, low-confidence write blocking, duplicate Observation prevention, safe refusal, and no raw expected fact fragments in audit payloads. API regression coverage also checks durable source-key reuse after a process-local cache miss, Observation round-trip verification after FHIR create, and production demo document routes requiring a bearer token.
 
-The gate is executable today. It is still a starter gate: expanding it to the target 50-case GitLab blocking suite remains future work.
+The gate is executable today and `--enforce` fails if fewer than 50 cases are loaded or any hard-gate category drops below its threshold. GitHub Actions runs the same gate in `.github/workflows/copilot-week2-gate.yml`; `.github/branch-protection-week2.json` records the required `API, Safety, and Eval Gate` protected-branch status check. Optional judge calibration config is checked in at `copilot/api/evals/judge_config.json` and `copilot/api/evals/judge_prompt.md`; the blocking CI gate remains deterministic so PHI is not sent to an LLM judge.
 
 ## Automated Test Coverage
 
 | Area | Files | Result |
 |---|---|---|
-| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `155 passed, 6 skipped` API run |
+| Chat evidence and verifier behavior | `copilot/api/tests/test_api_chat_evidence.py`, `test_verifier.py` | Passed in `178 passed, 6 skipped` API run |
 | Runtime readiness and capabilities | `copilot/api/tests/test_main.py` | `/readyz` and `/api/capabilities` expose document workflow persistence readiness |
 | Patient search and source links | `test_api_patients.py`, `test_api_source.py` | Passed |
 | FHIR client and retry behavior | `test_fhir_client.py`, `test_openemr_auth.py` | Passed |
@@ -126,9 +130,10 @@ The gate is executable today. It is still a starter gate: expanding it to the ta
 | pgvector and embedding behavior | `test_vector_store.py` | Passed |
 | PHI readiness configuration | `test_phi_security.py`, `test_main.py` | Passed |
 | Nightly jobs and reindexing | `test_jobs.py` | Passed |
-| Week 2 document extraction/review/write | `test_document_models.py`, `test_document_extraction.py`, `test_document_api.py` | Passed |
-| Week 2 deterministic eval gate | `copilot/api/app/w2_eval.py`, `copilot/api/evals/w2_golden_cases.jsonl` | 4 passed, 0 failed |
-| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 9 passed |
+| Week 2 document extraction/review/write | `test_document_models.py`, `test_document_extraction.py`, `test_document_api.py`, `test_example_documents.py` | Passed; includes PDF fixtures, synthetic scanned intake images, synthetic scanned lab image, bbox citations, approval, and Observation round-trip verification |
+| Hybrid/reranked retrieval relevance | `test_evidence_ranking.py`, `test_document_api.py` | Guideline chunks preserve corpus/section/snippet metadata with sparse+dense scores; newly uploaded creatinine/eGFR evidence beats stale cholesterol clusters; demographics stay on demographics |
+| Week 2 deterministic eval gate | `copilot/api/app/w2_eval.py`, `copilot/api/evals/w2_golden_cases.jsonl` | 50 passed, 0 failed |
+| Web smoke tests | `copilot/web/tests/clinical-copilot.spec.ts` | 13 passed |
 
 ## Manual Demo Acceptance
 

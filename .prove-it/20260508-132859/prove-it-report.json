@@ -1,0 +1,12 @@
+{
+  "goal": "Newly approved lab evidence surfaces in chat, reranks above stale labs, and evidence links open a readable source UI.",
+  "urlTested": "http://127.0.0.1:3150/",
+  "evidenceUrl": "http://127.0.0.1:3150/evidence/documents/w2doc-bebdfce7-91a1-4470-a581-2eca810d14c2/review",
+  "happyPath": "PASS",
+  "edgeCase": "PASS",
+  "consoleErrors": [],
+  "featureNetworkFailures": [],
+  "proofScreenshot": "C:\\Users\\mtm16\\New folder (3)\\moran-openemr\\.prove-it\\20260508-132859\\proof.png",
+  "chatScreenshot": "C:\\Users\\mtm16\\New folder (3)\\moran-openemr\\.prove-it\\20260508-132859\\step-01-chat.png",
+  "verdict": "SHIP"
+}

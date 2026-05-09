@@ -82,30 +82,32 @@ Working in the deployed demo:
 - Answers include citations and source links.
 - Unsupported treatment recommendation requests are refused.
 - OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
-- Week 2 document workflow supports synthetic lab/intake upload, extraction, bounding-box citation preview, supervisor trace events, human approval, guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. The lab write adapter is idempotent, but the current deployed OpenEMR FHIR endpoint exposes `Observation` read/search only, not `Observation.create`, so production writeback is shown as unavailable instead of claimed as complete.
+- Week 2 document workflow supports lab/intake upload, extraction, bounding-box citation preview, supervisor/worker handoff trace events, human approval, hybrid sparse+dense guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. Query retrieval now adds PHI-local sparse matching and an intent-aware reranker before model context, so newly approved facts can beat stale lab clusters and demographic questions do not fall back to unrelated labs. The committed synthetic scanned intake/lab images extract through SHA-256-pinned OCR fixtures when external OCR is offline, while configured OpenAI/OpenRouter OCR paths still run when enabled. The lab write adapter is idempotent and uses OpenEMR FHIR `Observation.create` with round-trip read verification when the same-origin web proxy supplies a SMART bearer token with `user/Observation.write`; missing FHIR config, demo bypass, or no-token sessions fail closed while approved evidence remains retrievable.
 
-Latest local verification, run on 2026-05-07:
+Latest local verification, run on 2026-05-08:
 
 ```text
-pytest: 155 passed, 6 skipped
+pytest: 178 passed, 6 skipped
 ruff: all checks passed
 mypy: success
-Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
+Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
 pip-audit: no known vulnerabilities found
 npm audit: no known vulnerabilities found
 web lint: passed
 web build: passed
-Playwright: 9 passed
+Playwright: 13 passed
 git diff --check: passed
 ```
 
-Latest deployed smoke checks, recorded after the 2026-05-04 Railway redeploy:
+Latest deployed smoke checks, recorded after the 2026-05-08 Railway redeploy:
 
 ```text
 production /readyz: ok
 openrouter_configured: true
 pgvector_backend: true
 document route without auth: 401
+bearer document upload/review/evidence/chat: passed
+patient/guideline answer bundle separation: passed
 web document panel markup: present
 document_workflow_persistence_enabled: true
 document_workflow_storage: true
@@ -341,7 +343,7 @@ railway login
 .\copilot\scripts\enable-railway-document-workflow-persistence.ps1 -LinkProject
 ```
 
-The script sets `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true`, deploys `copilot-api`, and verifies `/readyz` plus `/api/capabilities` both report `document_workflow_persistence_ready=true`.
+The script sets `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true`, deploys `copilot-api`, and verifies `/readyz` plus `/api/capabilities` both report `document_workflow_persistence_ready=true`. The deployed smoke checks poll quietly with bounded retries so Railway rollout lag does not create noisy manual retry logs.
 
 If Windows file locks or ignored folders block `railway up`, stage only the service files into a temp directory and deploy that staged folder with `--no-gitignore --path-as-root`.
 
@@ -354,6 +356,7 @@ PUBLIC_BASE_URL=https://<copilot-web-domain>
 DATABASE_URL=postgresql://...
 ENCRYPTION_KEY=<fernet-key>
 DEV_AUTH_BYPASS=false
+DEMO_AUTH_BYPASS=false
 OPENEMR_BASE_URL=https://<openemr-domain>
 OPENEMR_FHIR_BASE_URL=https://<openemr-domain>/apis/default/fhir
 OPENEMR_OAUTH_TOKEN_URL=https://<openemr-domain>/oauth2/default/token
@@ -365,7 +368,7 @@ OPENEMR_API_LOG_OPTION=1
 OPENEMR_DEV_PASSWORD_GRANT=false
 OPENEMR_CLIENT_ID=<smart-client-id>
 OPENEMR_CLIENT_SECRET=<smart-client-secret>
-LLM_PROVIDER=openrouter
+LLM_PROVIDER=mock
 EMBEDDING_PROVIDER=none
 VECTOR_SEARCH_ENABLED=true
 VECTOR_EMBEDDING_PROVIDER=hash
@@ -378,9 +381,9 @@ DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true
 AGENT_LOOP_MAX_STEPS=10
 NIGHTLY_MAINTENANCE_ENABLED=true
 NIGHTLY_MAINTENANCE_HOUR_UTC=8
-OPENROUTER_API_KEY=<railway-secret>
+OPENROUTER_API_KEY=
 OPENROUTER_LLM_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-OPENROUTER_DEMO_DATA_ONLY=true
+OPENROUTER_DEMO_DATA_ONLY=false
 ALLOW_PHI_TO_OPENROUTER=false
 ALLOW_PHI_TO_LOCAL=false
 ```
@@ -424,7 +427,7 @@ Before submitting:
 - Confirm patient dropdown lists the seeded patients.
 - Confirm a Nemotron/OpenRouter answer returns for synthetic data.
 - Confirm unstructured notes are included in answers.
-- Confirm source links open and show FHIR JSON.
+- Confirm source links open the readable evidence viewer, with raw JSON available behind details.
 - Confirm treatment recommendations are refused.
 - Record the required 35-minute walkthrough video.
 - Include repo URL, deployed URLs, and video URL in the AgentForge submission.

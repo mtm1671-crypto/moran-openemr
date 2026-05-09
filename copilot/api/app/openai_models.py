@@ -34,6 +34,8 @@ This is a read-only clinician support workflow:
 - If evidence is missing, say what is missing instead of guessing.
 - Cite only evidence_ids from the provided evidence list.
 - Keep the answer concise and source-backed.
+- When both patient-record evidence and guideline evidence are present, label them separately
+  as patient-record facts and guideline evidence.
 Return only a JSON object matching the requested schema. Do not include markdown fences or prose
 outside the JSON object.
 """.strip()

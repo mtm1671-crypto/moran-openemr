@@ -56,14 +56,20 @@ The dashboard is designed to display current FHIR-backed data first. It also kee
 
 The rule is: cached dashboard data may improve perceived latency, but OpenEMR remains the source of truth.
 
+## Evidence Source UX
+
+Co-Pilot citations now point to `/evidence/...` viewer routes instead of opening API JSON directly. The viewer still fetches the same source-backed `/api/source/*` and `/api/documents/*/review` records, but renders them as readable clinical evidence pages first: FHIR resource summary, patient/source metadata, document fact review, quote, confidence, bounding-box preview, and trace. Raw JSON remains behind a disclosure for audit and debugging, not as the default user experience.
+
 ## Files Added Or Changed
 
 | File | Purpose |
 |---|---|
 | `copilot/web/app/dashboard/page.tsx` | Modern patient dashboard route and FHIR parsing/rendering. |
 | `copilot/web/app/api/dashboard/fhir/[...resource]/route.ts` | Read-only same-origin FHIR proxy using the encrypted SMART session. |
+| `copilot/web/app/evidence/[...source]/page.tsx` | Readable evidence source viewer for FHIR and document citations. |
+| `copilot/web/app/lib/evidence-links.ts` | Shared link conversion from API citation URLs to viewer URLs. |
 | `copilot/web/app/globals.css` | Dashboard layout, patient header, cards, status badges, responsive behavior. |
-| `copilot/web/app/page.tsx` | Adds a link from Co-Pilot chat to the selected patient's dashboard. |
+| `copilot/web/app/page.tsx` | Adds a link from Co-Pilot chat to the selected patient's dashboard and routes citations through the evidence viewer. |
 | `copilot/web/tests/clinical-copilot.spec.ts` | Adds dashboard smoke coverage. |
 | `PATIENT_DASHBOARD_MIGRATION.md` | This defense document required by the challenge. |
 

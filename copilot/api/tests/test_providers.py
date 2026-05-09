@@ -34,6 +34,41 @@ async def test_mock_provider_balances_broad_brief_across_identity_problems_and_l
     assert len(answer.citations) == 5
 
 
+@pytest.mark.asyncio
+async def test_mock_provider_does_not_answer_demographic_question_with_lab_facts() -> None:
+    answer = await MockProviderAdapter().answer(
+        patient_id="p1",
+        user_message="What is the patient name and date of birth?",
+        evidence=[_evidence("ldl", "lab_result", "LDL Cholesterol was 158 mg/dL.")],
+    )
+
+    assert "could not find source-backed chart facts" in answer.answer
+    assert answer.citations == []
+    assert answer.audit["verification"] == "no_evidence_available"
+
+
+@pytest.mark.asyncio
+async def test_mock_provider_separates_patient_facts_from_guideline_evidence() -> None:
+    answer = await MockProviderAdapter().answer(
+        patient_id="p1",
+        user_message="What changed in this A1c and what guideline context matters?",
+        evidence=[
+            _evidence("a1c", "lab_result", "Hemoglobin A1c was 8.6 %."),
+            _evidence(
+                "a1c-guideline",
+                "guideline",
+                "Guideline context (diabetes): A1c monitoring. Use recent A1c values.",
+            ),
+        ],
+    )
+
+    assert "Patient-record facts:" in answer.answer
+    assert "Guideline evidence:" in answer.answer
+    assert "Hemoglobin A1c was 8.6 %." in answer.answer
+    assert "Guideline context (diabetes)" in answer.answer
+    assert len(answer.citations) == 2
+
+
 def _evidence(source_id: str, source_type: str, fact: str) -> EvidenceObject:
     return EvidenceObject(
         evidence_id=f"ev_{source_id}",

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import get_request_user
 from app.config import Settings, get_settings
+from app.demo_patients import DEMO_PATIENT_IDS
 from app.document_models import (
     DocumentAttachExtractRequest,
     DocumentJobRecord,
@@ -59,11 +60,9 @@ from app.persistence import (
     upsert_document_workflow_snapshot,
 )
 from app.telemetry import emit_telemetry_event
-from app.w2_graph import W2GraphState, supervisor_route
+from app.w2_graph import W2GraphState, handoff_trace_events, supervisor_route
 
 router = APIRouter(prefix="/api/documents", tags=["week2-documents"])
-
-_DEMO_PATIENT_IDS = {"p1", "demo-diabetes-001"}
 
 
 @router.post(
@@ -144,7 +143,11 @@ async def attach_and_extract(
     emit_telemetry_event(
         settings,
         event="w2_document_extraction_succeeded",
-        metadata={"doc_type": request.doc_type.value, "fact_count": len(facts)},
+        metadata={
+            "doc_type": request.doc_type.value,
+            "fact_count": len(facts),
+            "confidence_bucket": _confidence_bucket(facts),
+        },
     )
     return _job_response(job.job_id)
 
@@ -467,6 +470,8 @@ def _append_supervisor_trace(job_id: str, *, review_submitted: bool) -> None:
         job_id,
         f"supervisor:{decision.route.value}:{decision.reason}",
     )
+    for event in handoff_trace_events(decision):
+        append_document_job_trace(job_id, event)
 
 
 def _merge_document_evidence(
@@ -562,6 +567,17 @@ def _write_error_counts(facts: list[ExtractedFact]) -> dict[str, int]:
     return counts
 
 
+def _confidence_bucket(facts: list[ExtractedFact]) -> str:
+    if not facts:
+        return "none"
+    lowest = min(fact.extraction_confidence for fact in facts)
+    if lowest >= 0.9:
+        return "high"
+    if lowest >= 0.55:
+        return "reviewable"
+    return "blocked"
+
+
 def _require_document_access(user: RequestUser) -> None:
     if user.role not in {Role.doctor, Role.np_pa, Role.nurse, Role.admin}:
         raise HTTPException(status_code=403, detail="Role is not allowed to review documents")
@@ -576,11 +592,16 @@ async def _require_patient_access(
     if patient_id is None:
         return
     if settings.demo_auth_bypass:
-        if patient_id in _DEMO_PATIENT_IDS:
+        if settings.app_env != "local" and user.access_token is None:
+            raise HTTPException(status_code=401, detail="Missing bearer token")
+        if patient_id in DEMO_PATIENT_IDS:
             return
         raise HTTPException(status_code=404, detail="Demo patient was not found")
     if settings.openemr_fhir_base_url is None:
-        return
+        raise HTTPException(
+            status_code=503,
+            detail="OpenEMR FHIR is not configured; real patient access cannot be verified",
+        )
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     try:

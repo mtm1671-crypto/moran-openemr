@@ -20,6 +20,7 @@ from app.evidence_tools import EvidenceRetrievalResult
 from app.main import app
 from app.models import EvidenceObject, RequestUser, Role
 from app.openemr_auth import clear_dev_password_token_cache
+from app.retrieval_planner import plan_retrieval
 from app.vector_store import VectorStoreError
 
 TEST_FERNET_KEY = "PAAhZkguTNgLSk3R268DyJ-Lu6c_M4_87k7s2Prrt_8="
@@ -141,12 +142,14 @@ def test_chat_uses_openemr_evidence_tools_and_returns_verified_sources() -> None
     assert "Hemoglobin A1c was 8.6 %" in final["answer"]
     assert "patient reports improved breathing" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == [
+    assert final["audit"]["tools"][:4] == [
         "get_patient_demographics",
         "get_active_problems",
         "get_recent_labs",
         "get_recent_notes",
     ]
+    assert "sparse_evidence_search" in final["audit"]["tools"]
+    assert "evidence_reranker" in final["audit"]["tools"]
     assert len(final["citations"]) == 5
     assert patient_route.calls[0].request.headers["authorization"] == "Bearer user-token"
     assert condition_route.calls[0].request.url.params["patient"] == "p1"
@@ -249,11 +252,12 @@ def test_chat_returns_medication_and_allergy_evidence_when_requested() -> None:
     assert "Metformin 1000 mg tablet" in final["answer"]
     assert "Penicillin" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == [
+    assert final["audit"]["tools"][:3] == [
         "get_patient_demographics",
         "get_medications",
         "get_allergies",
     ]
+    assert "evidence_reranker" in final["audit"]["tools"]
     assert medication_route.calls[0].request.url.params["status"] == "active"
     assert allergy_route.calls[0].request.url.params["patient"] == "p1"
 
@@ -323,8 +327,11 @@ def test_chat_returns_recent_clinical_note_evidence_when_requested() -> None:
     assert "Progress Note" in final["answer"]
     assert "asthma symptoms stable" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == ["get_patient_demographics", "get_recent_notes"]
-    assert final["citations"][1]["source_url"] == "/api/source/openemr/DocumentReference/d1?patient_id=p1"
+    assert final["audit"]["retrieval_plan"]["intent"] == "document_context_lookup"
+    assert final["audit"]["tools"][0] == "get_recent_notes"
+    assert "get_patient_demographics" not in final["audit"]["tools"]
+    assert "evidence_reranker" in final["audit"]["tools"]
+    assert final["citations"][0]["source_url"] == "/api/source/openemr/DocumentReference/d1?patient_id=p1"
     assert document_route.calls[0].request.url.params["patient"] == "p1"
 
 
@@ -348,7 +355,12 @@ def test_chat_refuses_treatment_recommendation_requests() -> None:
 
 
 def test_chat_uses_demo_fallback_when_openemr_fhir_is_not_configured() -> None:
-    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url=None,
+    )
     app.dependency_overrides[get_settings] = lambda: settings
 
     response = TestClient(app).post(
@@ -360,7 +372,48 @@ def test_chat_uses_demo_fallback_when_openemr_fhir_is_not_configured() -> None:
     assert response.status_code == 200
     assert "Demo A1c was 8.6%" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == ["demo_evidence"]
+    assert final["audit"]["tools"] == ["demo_evidence", "sparse_evidence_search", "evidence_reranker"]
+
+
+def test_chat_fails_closed_without_fhir_when_demo_mode_is_disabled() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).post(
+        "/api/chat",
+        json={"patient_id": "demo-diabetes-001", "message": "What were the recent labs?"},
+    )
+    final = _final_event(response.text)
+
+    assert response.status_code == 200
+    assert "Demo A1c" not in final["answer"]
+    assert final["citations"] == []
+    assert final["audit"]["verification"] == "failed"
+    assert final["audit"]["error"] == "fhir_access_failed"
+    assert final["audit"]["status_code"] == 503
+    assert "real evidence retrieval is unavailable" in final["audit"]["detail"]
+
+
+def test_demo_patient_demographic_question_does_not_fall_back_to_cholesterol() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url=None,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "What is the patient name and DOB?"},
+    )
+    final = _final_event(response.text)
+
+    assert response.status_code == 200
+    assert "Margaret Chen" in final["answer"]
+    assert "1967-08-14" in final["answer"]
+    assert "Cholesterol" not in final["answer"]
+    assert "evidence_reranker" in final["audit"]["tools"]
 
 
 def test_chat_uses_demo_auth_bypass_when_fhir_is_configured() -> None:
@@ -375,13 +428,14 @@ def test_chat_uses_demo_auth_bypass_when_fhir_is_configured() -> None:
     response = TestClient(app).post(
         "/api/chat",
         json={"patient_id": "p1", "message": "What result is in the demo source?"},
+        headers={"Authorization": "Bearer demo-token"},
     )
     final = _final_event(response.text)
 
     assert response.status_code == 200
     assert "LDL Cholesterol was 158 mg/dL" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == ["demo_evidence"]
+    assert final["audit"]["tools"] == ["demo_evidence", "sparse_evidence_search", "evidence_reranker"]
     assert "SMART auth is temporarily bypassed" in final["audit"]["limitations"][0]
 
 
@@ -389,6 +443,7 @@ def test_chat_uses_vector_search_when_enabled(monkeypatch: pytest.MonkeyPatch) -
     settings = Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         vector_search_enabled=True,
         database_url="postgresql://copilot:secret@db.example.test:5432/copilot",
@@ -412,11 +467,12 @@ def test_chat_uses_vector_search_when_enabled(monkeypatch: pytest.MonkeyPatch) -
     assert response.status_code == 200
     assert "Demo A1c was 8.6%" in final["answer"]
     assert final["audit"]["verification"] == "passed"
-    assert final["audit"]["tools"] == [
+    assert final["audit"]["tools"][:3] == [
         "demo_evidence",
         "index_patient_evidence",
         "search_patient_evidence",
     ]
+    assert "evidence_reranker" in final["audit"]["tools"]
 
 
 @pytest.mark.asyncio
@@ -477,10 +533,12 @@ async def test_evidence_cache_failure_falls_back_to_live_evidence(
             patient_id: str,
             message: str,
             quick_question_id: str | None = None,
+            requested_tools: list[str] | tuple[str, ...] | None = None,
         ) -> EvidenceRetrievalResult:
             assert patient_id == "patient-1"
             assert message == "recent labs"
             assert quick_question_id is None
+            assert requested_tools == ("get_recent_labs",)
             return EvidenceRetrievalResult(evidence=[evidence], tools=["get_recent_labs"])
 
     async def fail_cache_read(**_kwargs: Any) -> None:
@@ -504,6 +562,7 @@ async def test_evidence_cache_failure_falls_back_to_live_evidence(
         message="recent labs",
         quick_question_id=None,
         service=FakeEvidenceService(),  # type: ignore[arg-type]
+        plan=plan_retrieval("recent labs"),
     )
 
     assert result.evidence == [evidence]
@@ -526,8 +585,16 @@ def test_evidence_cache_key_is_scoped_to_user_patient_and_question() -> None:
         message="Recent labs?",
         quick_question_id="recent_labs",
     )
+    narrowed = _evidence_cache_key(
+        user=user,
+        patient_id="patient-1",
+        message="Recent labs?",
+        quick_question_id="recent_labs",
+        retrieval_plan=plan_retrieval("recent labs").cache_key(),
+    )
 
     assert first != second
+    assert first != narrowed
     assert "doctor-1" in first
     assert "patient-1" in first
 
@@ -563,6 +630,7 @@ def test_chat_can_use_openai_provider_after_evidence_retrieval() -> None:
     settings = Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         llm_provider="openai",
         openai_api_key="test-key",
@@ -603,6 +671,7 @@ def test_chat_can_use_openrouter_provider_after_evidence_retrieval() -> None:
     settings = Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         llm_provider="openrouter",
         openrouter_api_key="test-key",
@@ -650,6 +719,7 @@ def test_chat_falls_back_to_source_backed_answer_when_model_output_is_invalid() 
     settings = Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         llm_provider="openrouter",
         openrouter_api_key="test-key",

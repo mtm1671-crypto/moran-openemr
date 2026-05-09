@@ -438,7 +438,13 @@ def _looks_like_data_row(text: str) -> bool:
     lowered = text.lower()
     if any(token in lowered for token in ["signature", "date ", "page ", "hipaa confidential"]):
         return False
-    return bool(re.search(r"\d|nkda|penicillin|ibuprofen|lisinopril|metformin|atorvastatin|apixaban|tamsulosin", lowered))
+    return bool(
+        re.search(
+            r"\d|nkda|penicillin|ibuprofen|codeine|lisinopril|metformin|atorvastatin|"
+            r"apixaban|tamsulosin|ozempic|semaglutide|sertraline|multivitamin",
+            lowered,
+        )
+    )
 
 
 def _looks_like_section_data_row(text: str, heading: str) -> bool:
@@ -449,6 +455,8 @@ def _looks_like_section_data_row(text: str, heading: str) -> bool:
             (
                 "nkda",
                 "penicillin",
+                "ibuprofen",
+                "codeine",
                 "sulfa",
                 "shellfish",
                 "iodine",

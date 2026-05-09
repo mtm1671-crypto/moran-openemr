@@ -8,6 +8,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DocumentUploadPanel } from "./components/DocumentUploadPanel";
+import { evidenceViewerHref } from "./lib/evidence-links";
 
 type RequestUser = {
   user_id: string;
@@ -427,14 +428,7 @@ export default function Home() {
   }
 
   function sourceHref(citation: Citation) {
-    if (!citation.source_url) return undefined;
-    if (
-      !citation.source_url.startsWith("/api/source/") &&
-      !citation.source_url.startsWith("/api/documents/")
-    ) {
-      return undefined;
-    }
-    return `${apiBase}${citation.source_url}`;
+    return evidenceViewerHref(citation.source_url);
   }
 
   function sessionLabel() {

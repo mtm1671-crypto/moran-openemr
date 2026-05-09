@@ -28,8 +28,13 @@ class FhirEvidenceService:
         patient_id: str,
         message: str,
         quick_question_id: str | None = None,
+        requested_tools: list[str] | tuple[str, ...] | None = None,
     ) -> EvidenceRetrievalResult:
-        requested_tools = _tools_for_message(message, quick_question_id)
+        requested_tools = (
+            list(requested_tools)
+            if requested_tools is not None
+            else _tools_for_message(message, quick_question_id)
+        )
         evidence: list[EvidenceObject] = []
         limitations: list[str] = []
         completed_tools: list[str] = []
@@ -435,13 +440,35 @@ def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]
 
     wants_demographics = any(
         term in text
-        for term in ["demographic", "name", "birth", "date of birth", "gender", "age"]
+        for term in ["demographic", "name", "birth", "date of birth", "dob", "gender", "age"]
     )
     wants_broad_brief = any(
         term in text for term in ["before seeing", "know", "brief", "summary", "overview"]
     )
     wants_problems = any(term in text for term in ["problem", "history", "condition", "diagnosis"])
-    wants_labs = any(term in text for term in ["lab", "a1c", "result", "abnormal", "creatinine", "egfr"])
+    wants_labs = any(
+        term in text
+        for term in [
+            "lab",
+            "a1c",
+            "result",
+            "abnormal",
+            "creatinine",
+            "egfr",
+            "cholesterol",
+            "lipid",
+            "ldl",
+            "hdl",
+            "triglyceride",
+            "glucose",
+            "potassium",
+            "alt",
+            "ast",
+            "cbc",
+            "platelet",
+            "kidney",
+        ]
+    )
     wants_medications = any(
         term in text for term in ["medication", "medicine", "meds", "prescription", "drug"]
     )
@@ -458,6 +485,13 @@ def _tools_for_message(message: str, quick_question_id: str | None) -> list[str]
             "narrative",
             "follow-up",
             "follow up",
+            "social",
+            "family",
+            "barrier",
+            "barriers",
+            "intake",
+            "transportation",
+            "work shift",
         ]
     )
 

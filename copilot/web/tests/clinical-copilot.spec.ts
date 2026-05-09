@@ -61,17 +61,19 @@ test("local demo chat streams cited evidence and refuses treatment advice", asyn
   const labText = new RegExp(process.env.E2E_LAB_TEXT ?? "Demo A1c was 8\\.6%");
   const labLink = new RegExp(process.env.E2E_LAB_LINK ?? "Demo A1c");
 
-  await page.goto("/");
+  await page.goto(`/?patient_id=${patientId}`);
 
   await expect(page.getByRole("heading", { name: "AgentForge Clinical Co-Pilot" })).toBeVisible();
-  await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByText("Authenticated as doctor (demo-doctor)")).toBeVisible();
   await expect(page.getByLabel("Switch patient")).toHaveValue(patientId);
   await expect(page.getByText(patientName).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Meds \+ allergies/ })).toBeVisible();
 
   await page.getByRole("button", { name: /Recent labs/ }).click();
   await expect(page.getByText(labText)).toBeVisible();
-  await expect(page.getByRole("link", { name: labLink })).toBeVisible();
+  const evidenceLink = page.getByRole("link", { name: labLink });
+  await expect(evidenceLink).toBeVisible();
+  await expect(evidenceLink).toHaveAttribute("href", /\/evidence\/source\/demo-lab-a1c$/);
   await expect(page.getByText("passed")).toBeVisible();
 
   await page.getByRole("textbox", { name: "Message" }).fill("What medication changes should I make?");
@@ -157,6 +159,55 @@ test("modern patient dashboard renders OpenEMR FHIR clinical cards", async ({ pa
   );
 });
 
+test("evidence source route renders a readable FHIR record instead of raw JSON", async ({ page }) => {
+  await page.route("**/api/source/openemr/Observation/observation-1?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/fhir+json",
+      body: JSON.stringify({
+        code: { text: "Hemoglobin A1c" },
+        effectiveDateTime: "2026-04-03",
+        id: "observation-1",
+        interpretation: [{ coding: [{ code: "H", display: "High" }] }],
+        resourceType: "Observation",
+        status: "final",
+        subject: { reference: "Patient/demo-diabetes-001" },
+        valueQuantity: { unit: "%", value: 8.6 }
+      })
+    });
+  });
+
+  await page.goto("/evidence/source/openemr/Observation/observation-1?patient_id=demo-diabetes-001");
+
+  await expect(page.getByRole("heading", { name: "Hemoglobin A1c" }).first()).toBeVisible();
+  await expect(page.getByLabel("FHIR source record")).toContainText("8.6 %");
+  await expect(page.getByText("Clinical Summary")).toBeVisible();
+  await expect(page.getByText("Patient/demo-diabetes-001").first()).toBeVisible();
+  await expect(page.getByText("FHIR JSON")).toBeVisible();
+});
+
+test("document evidence route renders review facts with a citation preview", async ({ page }) => {
+  await page.route("**/api/documents/job-alpha/review", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        facts: [documentFactFixture("patient-alpha")],
+        job: documentJobFixture("patient-alpha"),
+        trace: ["source_received", "extracted_1_facts"]
+      })
+    });
+  });
+
+  await page.goto("/evidence/documents/job-alpha/review");
+
+  await expect(page.getByRole("heading", { name: "alpha-intake.txt" }).first()).toBeVisible();
+  await expect(page.getByLabel("Document evidence source")).toContainText("Patient patient-alpha");
+  await expect(page.getByText("Alpha-only transportation barrier").first()).toBeVisible();
+  await expect(page.getByLabel("Citation page preview")).toBeVisible();
+  await expect(page.getByText("Document JSON")).toBeVisible();
+});
+
 test("system status page shows working and limited capability truth", async ({ page }) => {
   await page.goto("/status");
 
@@ -172,7 +223,7 @@ test("system status page shows working and limited capability truth", async ({ p
 test("document extraction approval feeds the chat evidence flow", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByText("Authenticated as doctor", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Document evidence workflow")).toBeHidden();
   await openDocumentWorkflow(page);
   await expect(page.getByLabel("Document workflow proof").getByText("Memory-only document workflow.")).toBeVisible();
@@ -309,7 +360,7 @@ test("document workflow clears extracted evidence when switching patients", asyn
 test("document extraction can stay unassigned until a patient match is known", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByText("Authenticated as doctor (dev-doctor)")).toBeVisible();
+  await expect(page.getByText("Authenticated as doctor", { exact: true })).toBeVisible();
   await openDocumentWorkflow(page);
   await page.getByLabel("Document type").selectOption("intake_form");
   await page.getByLabel("Extract unassigned").check();

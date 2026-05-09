@@ -1,0 +1,31 @@
+{
+  "schema": "agentforge_w2_judge_config_v1",
+  "blocking_gate": "python -m app.w2_eval --enforce",
+  "judge_mode": "deterministic_hard_gate_with_optional_llm_review",
+  "default_llm_judge": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "temperature": 0,
+    "prompt_path": "copilot/api/evals/judge_prompt.md"
+  },
+  "hard_gate_categories": [
+    "schema_valid",
+    "citation_present",
+    "factually_consistent",
+    "safe_refusal",
+    "no_phi_in_logs",
+    "bbox_valid",
+    "patient_scope_valid",
+    "no_unapproved_chart_write",
+    "low_confidence_write_blocked",
+    "duplicate_observation_prevented",
+    "source_roundtrip_valid"
+  ],
+  "minimum_cases": 50,
+  "pass_threshold": 1.0,
+  "max_regression": 0.05,
+  "notes": [
+    "The CI-blocking gate is deterministic so Final can run without sending PHI to a judge model.",
+    "The LLM judge prompt is checked in for optional human-reviewed calibration of factual consistency and refusal quality."
+  ]
+}

@@ -15,7 +15,12 @@ from app.main import app
 from app.openemr_auth import clear_dev_password_token_cache
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-EXAMPLE_DOCS = REPO_ROOT / "example-documents"
+EXAMPLE_DOC_ROOT = REPO_ROOT / "example-documents"
+EXAMPLE_DOCS = (
+    EXAMPLE_DOC_ROOT / "example-documents"
+    if (EXAMPLE_DOC_ROOT / "example-documents").is_dir()
+    else EXAMPLE_DOC_ROOT
+)
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +31,7 @@ def reset_app_state() -> Generator[None]:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
     )
     yield
@@ -89,16 +95,25 @@ def test_example_pdf_documents_extract_through_api(
 
 
 @pytest.mark.parametrize(
-    ("relative_path", "doc_type"),
+    ("relative_path", "doc_type", "expected_labels"),
     [
-        ("intake-forms/p03-reyes-intake.png", "intake_form"),
-        ("intake-forms/p04-kowalski-intake.png", "intake_form"),
-        ("lab-results/p03-reyes-hba1c.png", "lab_pdf"),
+        (
+            "intake-forms/p03-reyes-intake.png",
+            "intake_form",
+            {"Chief concern", "Patient-reported medication", "Patient-reported allergy", "Family history"},
+        ),
+        (
+            "intake-forms/p04-kowalski-intake.png",
+            "intake_form",
+            {"Chief concern", "Patient-reported medication", "Patient-reported allergy", "Social history"},
+        ),
+        ("lab-results/p03-reyes-hba1c.png", "lab_pdf", {"Hemoglobin A1c"}),
     ],
 )
-def test_example_image_documents_fail_closed_without_local_ocr(
+def test_example_scan_documents_extract_with_local_synthetic_ocr_fixture(
     relative_path: str,
     doc_type: str,
+    expected_labels: set[str],
 ) -> None:
     client = TestClient(app)
     response = client.post(
@@ -106,8 +121,53 @@ def test_example_image_documents_fail_closed_without_local_ocr(
         json=_document_payload(EXAMPLE_DOCS / relative_path, doc_type=doc_type),
     )
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == "Document extraction failed"
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job"]["job_id"]
+
+    review = client.get(f"/api/documents/{job_id}/review")
+    assert review.status_code == 200
+    facts = review.json()["facts"]
+    labels = {fact["display_label"] for fact in facts}
+
+    assert expected_labels <= labels
+    assert all(fact["citation"]["bbox"]["page"] == 1 for fact in facts)
+
+
+@pytest.mark.parametrize(
+    ("patient_id", "relative_path", "expected_fragment"),
+    [
+        ("p2", "intake-forms/p02-whitaker-intake.pdf", "Fatigue and one episode of dizziness"),
+        ("p3", "intake-forms/p03-reyes-intake.png", "blurry vision R eye"),
+        ("p4", "intake-forms/p04-kowalski-intake.png", "RUQ pain x 2 days"),
+    ],
+)
+def test_example_intake_documents_attach_to_matching_demo_profiles(
+    patient_id: str,
+    relative_path: str,
+    expected_fragment: str,
+) -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            EXAMPLE_DOCS / relative_path,
+            doc_type="intake_form",
+            patient_id=patient_id,
+        ),
+    )
+
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job"]["job_id"]
+    review = client.get(f"/api/documents/{job_id}/review")
+
+    assert review.status_code == 200
+    facts = review.json()["facts"]
+    assert all(fact["patient_id"] == patient_id for fact in facts)
+    assert any(
+        fact["display_label"] == "Chief concern"
+        and expected_fragment in fact["normalized_value"]
+        for fact in facts
+    )
 
 
 @respx.mock
@@ -115,6 +175,7 @@ def test_example_image_document_extracts_when_openai_ocr_is_enabled() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         ocr_provider="openai",
         openai_api_key="test-key",
@@ -163,6 +224,7 @@ def test_example_image_document_extracts_when_openrouter_ocr_is_enabled() -> Non
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="local",
         dev_auth_bypass=True,
+        demo_auth_bypass=True,
         openemr_fhir_base_url=None,
         ocr_provider="openrouter",
         openrouter_api_key="test-key",
@@ -246,11 +308,11 @@ def test_approved_example_pdf_evidence_is_queryable_in_chat() -> None:
     assert any(citation["source_url"].endswith("/review") for citation in final["citations"])
 
 
-def _document_payload(path: Path, *, doc_type: str) -> dict[str, str]:
+def _document_payload(path: Path, *, doc_type: str, patient_id: str = "p1") -> dict[str, str]:
     assert path.is_file(), f"Missing example document: {path}"
     content_type = "application/pdf" if path.suffix.lower() == ".pdf" else "image/png"
     return {
-        "patient_id": "p1",
+        "patient_id": patient_id,
         "doc_type": doc_type,
         "filename": path.name,
         "content_type": content_type,

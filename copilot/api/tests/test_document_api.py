@@ -27,7 +27,7 @@ def reset_app_state() -> Generator[None]:
     app.dependency_overrides.clear()
     clear_dev_password_token_cache()
     reset_document_workflow_store()
-    settings = Settings(app_env="local", dev_auth_bypass=True)
+    settings = Settings(app_env="local", dev_auth_bypass=True, demo_auth_bypass=True)
     app.dependency_overrides[get_settings] = lambda: settings
     yield
     app.dependency_overrides.clear()
@@ -35,7 +35,58 @@ def reset_app_state() -> Generator[None]:
     reset_document_workflow_store()
 
 
+def test_document_attach_fails_closed_without_fhir_when_demo_mode_is_disabled() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=False,
+        openemr_fhir_base_url=None,
+    )
+    response = TestClient(app).post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(doc_type="lab_pdf", content="Hemoglobin A1c 8.6 % H"),
+    )
+
+    assert response.status_code == 503
+    assert "real patient access cannot be verified" in response.json()["detail"]
+
+
+def test_production_demo_document_routes_require_bearer_token() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url=None,
+    )
+    response = TestClient(app).get("/api/documents/patients/demo-diabetes-001/approved-evidence")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
+
+
+@respx.mock
 def test_attach_review_and_write_lab_document() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=False,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(200, json={"resourceType": "Bundle", "entry": []})
+    )
+    observation_create = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        side_effect=[
+            Response(201, json={"resourceType": "Observation", "id": "obs-a1c"}),
+            Response(201, json={"resourceType": "Observation", "id": "obs-ldl"}),
+        ]
+    )
     client = TestClient(app)
     response = client.post(
         "/api/documents/attach-and-extract",
@@ -45,9 +96,10 @@ def test_attach_review_and_write_lab_document() -> None:
             Patient: Synthetic Demo
             Collection Date: 2026-03-12
             Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
-            LDL Cholesterol 142 mg/dL reference range 0-99 H
-            """,
+                LDL Cholesterol 142 mg/dL reference range 0-99 H
+                """,
         ),
+        headers={"Authorization": "Bearer user-token"},
     )
 
     assert response.status_code == 202
@@ -56,20 +108,33 @@ def test_attach_review_and_write_lab_document() -> None:
     assert body["job"]["status"] == "review_required"
     assert body["fact_counts"] == {"review_required": 2}
 
-    review = client.get(f"/api/documents/{job_id}/review").json()
+    review = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()
     fact_ids = [fact["fact_id"] for fact in review["facts"]]
+    respx.get("http://openemr.test/apis/default/fhir/Observation/obs-a1c").mock(
+        return_value=Response(200, json=_observation_resource("obs-a1c", "p1", fact_ids[0]))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Observation/obs-ldl").mock(
+        return_value=Response(200, json=_observation_resource("obs-ldl", "p1", fact_ids[1]))
+    )
     assert review["facts"][0]["citation"]["bbox"]["page"] == 1
 
     decision_response = client.post(
         f"/api/documents/{job_id}/review/decisions",
         json={"decisions": [{"fact_id": fact_id, "action": "approve"} for fact_id in fact_ids]},
+        headers={"Authorization": "Bearer user-token"},
     )
 
     assert decision_response.status_code == 200
     assert decision_response.json()["job"]["status"] == "ready_to_write"
     assert decision_response.json()["fact_counts"] == {"approved": 2}
 
-    write_response = client.post(f"/api/documents/{job_id}/write")
+    write_response = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
 
     assert write_response.status_code == 200
     write_body = write_response.json()
@@ -77,13 +142,15 @@ def test_attach_review_and_write_lab_document() -> None:
     assert write_body["failed_count"] == 0
     assert write_body["job"]["status"] == "completed"
     assert all(fact["status"] == "written" for fact in write_body["facts"])
-    assert all(fact["written_resource_id"].startswith("demo-observation-") for fact in write_body["facts"])
+    assert [fact["written_resource_id"] for fact in write_body["facts"]] == ["obs-a1c", "obs-ldl"]
+    assert observation_create.call_count == 2
+    assert observation_create.calls[0].request.headers["authorization"] == "Bearer user-token"
 
 
 def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
-        app_env="production",
-        dev_auth_bypass=False,
+        app_env="local",
+        dev_auth_bypass=True,
         demo_auth_bypass=True,
         openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
     )
@@ -120,6 +187,26 @@ def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() ->
     assert approved_body["evidence_count"] == 1
     assert approved_body["evidence"][0]["metadata"]["review_status"] == "write_failed"
     assert "Observation writeback is disabled" in approved_body["evidence"][0]["metadata"]["write_error"]
+
+
+@respx.mock
+def test_capabilities_report_observation_create_when_demo_auth_uses_openemr_metadata() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="production",
+        dev_auth_bypass=False,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    metadata_route = respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["providers"]["openemr_observation_create_supported"] is True
+    assert metadata_route.called
 
 
 @respx.mock
@@ -185,6 +272,9 @@ def test_write_failure_reports_missing_observation_write_scope() -> None:
     assert observation_route.calls[0].request.headers["authorization"] == "Bearer user-token"
 
     observation_route.mock(return_value=Response(201, json={"resourceType": "Observation", "id": "obs-retry"}))
+    respx.get("http://openemr.test/apis/default/fhir/Observation/obs-retry").mock(
+        return_value=Response(200, json=_observation_resource("obs-retry", "p1", fact_id))
+    )
     retry = client.post(
         f"/api/documents/{job_id}/write",
         headers={"Authorization": "Bearer user-token"},
@@ -419,6 +509,75 @@ def test_approved_intake_facts_are_available_as_source_backed_chat_evidence() ->
     assert "approved_document_evidence" in final["audit"]["tools"]
 
 
+def test_chief_concern_question_uses_single_approved_document_fact() -> None:
+    client = TestClient(app)
+    _upload_approve_all(
+        client,
+        doc_type="intake_form",
+        content="""
+        Chief Concern: Follow up for diabetes and fatigue
+        Medications: Metformin 1000 mg twice daily
+        Allergies: Penicillin - rash
+        Social History: Misses doses when work shifts change
+        """,
+    )
+
+    chat = client.post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "Tell me Chen's chief concern and nothing else"},
+    )
+    final = _final_event(chat.text)
+
+    assert chat.status_code == 200
+    assert "Follow up for diabetes and fatigue" in final["answer"]
+    assert "Misses doses when work shifts change" not in final["answer"]
+    assert "Demo A1c" not in final["answer"]
+    assert final["audit"]["retrieval_hits"] == 1
+    assert final["audit"]["retrieval_plan"]["intent"] == "chief_concern_lookup"
+    assert final["audit"]["retrieval_plan"]["evidence_limit"] == 1
+    assert "approved_document_evidence" in final["audit"]["tools"]
+    assert "demo_evidence" not in final["audit"]["tools"]
+    assert "guideline_rag" not in final["audit"]["tools"]
+    assert "search_patient_evidence" not in final["audit"]["tools"]
+
+
+def test_newly_uploaded_lab_fact_beats_stale_cholesterol_cluster_in_chat() -> None:
+    client = TestClient(app)
+
+    _upload_approve_all(
+        client,
+        doc_type="lab_pdf",
+        content="""
+        Collection Date: 2026-04-23
+        Total Cholesterol 244 mg/dL reference range 0-199 H
+        HDL Cholesterol 39 mg/dL reference range 40-60 L
+        LDL Cholesterol 158 mg/dL reference range 0-99 H
+        Triglycerides 224 mg/dL reference range 0-149 H
+        """,
+    )
+    _upload_approve_all(
+        client,
+        doc_type="lab_pdf",
+        content="""
+        Collection Date: 2026-05-02
+        Creatinine 1.6 mg/dL reference range 0.6-1.2 H
+        eGFR 48 mL/min reference range 60-120 L
+        """,
+    )
+
+    chat = client.post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "What creatinine or kidney abnormalities are in the new lab report?"},
+    )
+    final = _final_event(chat.text)
+
+    assert chat.status_code == 200
+    assert "Creatinine" in final["answer"]
+    assert "1.6 mg/dL" in final["answer"]
+    assert "sparse_evidence_search" in final["audit"]["tools"]
+    assert "evidence_reranker" in final["audit"]["tools"]
+
+
 def test_durable_source_lookup_reuses_persisted_document_after_cache_miss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -534,7 +693,12 @@ async def test_approved_document_evidence_is_included_in_vector_index_seed(
     retrieval = await _retrieve_evidence(
         request=ChatRequest(patient_id="p1", message="What social barriers are documented?"),
         user=RequestUser(user_id="dev-doctor", role=Role.doctor),
-        settings=Settings(app_env="local", dev_auth_bypass=True, vector_search_enabled=True),
+        settings=Settings(
+            app_env="local",
+            dev_auth_bypass=True,
+            demo_auth_bypass=True,
+            vector_search_enabled=True,
+        ),
     )
 
     assert "index_patient_evidence" in retrieval.tools
@@ -559,6 +723,27 @@ def _document_payload(
     }
 
 
+def _upload_approve_all(client: TestClient, *, doc_type: str, content: str) -> str:
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(doc_type=doc_type, content=content),
+    )
+    assert upload.status_code == 202, upload.text
+    job_id = upload.json()["job"]["job_id"]
+    review = client.get(f"/api/documents/{job_id}/review").json()
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={
+            "decisions": [
+                {"fact_id": fact["fact_id"], "action": "approve"}
+                for fact in review["facts"]
+            ]
+        },
+    )
+    assert approve.status_code == 200, approve.text
+    return job_id
+
+
 def _capability_statement(*, create_observation: bool) -> dict[str, Any]:
     interactions = [{"code": "search-type"}, {"code": "read"}]
     if create_observation:
@@ -574,6 +759,20 @@ def _capability_statement(*, create_observation: bool) -> dict[str, Any]:
                         "interaction": interactions,
                     }
                 ],
+            }
+        ],
+    }
+
+
+def _observation_resource(observation_id: str, patient_id: str, fact_id: str) -> dict[str, Any]:
+    return {
+        "resourceType": "Observation",
+        "id": observation_id,
+        "subject": {"reference": f"Patient/{patient_id}"},
+        "identifier": [
+            {
+                "system": "https://agentforge.dev/fhir/identifier/document-fact",
+                "value": fact_id,
             }
         ],
     }

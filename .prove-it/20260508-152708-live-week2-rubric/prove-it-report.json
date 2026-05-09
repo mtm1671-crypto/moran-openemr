@@ -1,0 +1,41 @@
+{
+  "goal": "Week 2 rubric hardening: prove local gates and live Railway document evidence behavior after the 2026-05-08 redeploy.",
+  "apiDeploymentId": "a63dc595-f653-44a1-8585-dca3dbf4ebe8",
+  "webDeploymentId": "ae344f94-7939-4a07-ba07-6afd5af77ecc",
+  "localVerification": {
+    "apiPytest": "178 passed, 6 skipped",
+    "ruff": "all checks passed",
+    "mypy": "success",
+    "week2Eval": "50 passed, 0 failed",
+    "webLint": "passed",
+    "webBuild": "passed",
+    "playwrightChromium": "13 passed",
+    "pipAudit": "no known vulnerabilities found",
+    "npmAudit": "0 vulnerabilities",
+    "gitDiffCheck": "passed with CRLF warnings only"
+  },
+  "liveAssertions": {
+    "readyzStatus": 200,
+    "runtimeConfig": true,
+    "phiControls": true,
+    "documentWorkflowPersistenceReady": true,
+    "documentRouteWithoutAuth": "401 Missing bearer token",
+    "apiMeWithoutAuth": "401 Missing bearer token",
+    "bearerUploadReviewApprovedEvidenceChat": "passed",
+    "bearerSmokeJobId": "w2doc-a77e9b6b-f6ac-4d1f-9cee-ca5e9c2d7b4a",
+    "approvedEvidenceContainedLiveMarker": true,
+    "targetedChatCitedApprovedDocument": true,
+    "patientGuidelineBundleSeparation": true,
+    "agentLoopHandoffTraceVisible": true,
+    "telemetryIncludesLatencyRetrievalEvalAndCostFields": true
+  },
+  "rubricCount": {
+    "fulfilled": 26,
+    "total": 28,
+    "remainingManual": [
+      "record and upload the final demo video",
+      "apply the GitHub protected-branch status check from .github/branch-protection-week2.json"
+    ]
+  },
+  "verdict": "SHIP_AFTER_MANUAL_VIDEO_AND_BRANCH_PROTECTION_TOGGLE"
+}

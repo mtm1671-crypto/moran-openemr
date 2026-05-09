@@ -23,11 +23,16 @@ def test_production_config_rejects_dev_shortcuts_and_insecure_urls() -> None:
         openemr_jwt_issuer="https://openemr.test",
         openemr_dev_password_grant=True,
         openemr_tls_verify=False,
+        demo_auth_bypass=True,
     )
 
     errors = settings.runtime_config_errors()
 
     assert "DEV_AUTH_BYPASS must be false when PHI controls are required" in errors
+    assert (
+        "DEMO_AUTH_BYPASS requires OPENROUTER_DEMO_DATA_ONLY=true "
+        "when PHI controls are required"
+    ) in errors
     assert "OPENEMR_DEV_PASSWORD_GRANT must be false when PHI controls are required" in errors
     assert "OPENEMR_TLS_VERIFY must be true when PHI controls are required" in errors
     assert "DATABASE_URL is required when PHI controls are required" in errors
@@ -281,6 +286,18 @@ def test_production_config_accepts_openrouter_for_synthetic_demo_data() -> None:
     assert settings.runtime_config_errors() == []
 
 
+def test_production_config_accepts_locked_demo_auth_for_synthetic_demo_data() -> None:
+    settings = _phi_ready_settings(
+        demo_auth_bypass=True,
+        llm_provider="openrouter",
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        openrouter_demo_data_only=True,
+    )
+
+    assert settings.runtime_config_errors() == []
+
+
 def test_production_config_accepts_explicit_openai_phi_path() -> None:
     settings = _phi_ready_settings(
         llm_provider="openai",
@@ -489,7 +506,7 @@ def test_capabilities_expose_llm_callable_tool_schemas() -> None:
     assert "evidence_cache_enabled" in payload["providers"]
     assert "vision_ocr_enabled" in payload["providers"]
     assert "document_workflow_persistence_ready" in payload["providers"]
-    assert payload["providers"]["openemr_observation_create_supported"] is True
+    assert payload["providers"]["openemr_observation_create_supported"] is False
 
 
 def test_capabilities_report_document_workflow_persistence_ready(

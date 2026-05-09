@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ExtractionReviewPanel, type DocumentFact, type DocumentJob } from "./ExtractionReviewPanel";
+import { evidenceViewerHref } from "../lib/evidence-links";
 
 type DocumentUploadPanelProps = {
   apiBase: string;
@@ -453,8 +454,8 @@ export function DocumentUploadPanel({
                     <dd>{formatTimestamp(item.retrieved_at)}</dd>
                   </div>
                 </dl>
-                {sourceHref(apiBase, item.source_url) ? (
-                  <a href={sourceHref(apiBase, item.source_url)} rel="noreferrer" target="_blank">
+                {sourceHref(item.source_url) ? (
+                  <a href={sourceHref(item.source_url)} rel="noreferrer" target="_blank">
                     Open citation
                   </a>
                 ) : null}
@@ -514,9 +515,8 @@ function writeStatusMessage(payload: {
   return `${base} First failure: ${first.display_label} - ${first.write_error}`;
 }
 
-function sourceHref(apiBase: string, sourceUrl: string | null) {
-  if (!sourceUrl?.startsWith("/api/")) return undefined;
-  return `${apiBase}${sourceUrl}`;
+function sourceHref(sourceUrl: string | null) {
+  return evidenceViewerHref(sourceUrl);
 }
 
 function formatTimestamp(value: string): string {

@@ -48,10 +48,7 @@ async def write_lab_fact_observation(
         )
 
     if settings.openemr_fhir_base_url is None:
-        # Demo-only fallback. PHI mode requires a real OpenEMR FHIR endpoint.
-        if settings.requires_phi_controls():
-            raise ObservationWriteError("OPENEMR_FHIR_BASE_URL is required before writing PHI")
-        return f"demo-observation-{fact.fact_id}"
+        raise ObservationWriteError("OPENEMR_FHIR_BASE_URL is required before writing Observations")
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
@@ -63,14 +60,13 @@ async def write_lab_fact_observation(
     resource_id = created.get("id")
     if not isinstance(resource_id, str) or not resource_id:
         raise ObservationWriteError("OpenEMR did not return an Observation id")
+    await _verify_observation_roundtrip(client=client, fact=fact, resource_id=resource_id)
     return resource_id
 
 
 async def openemr_observation_create_supported(settings: Settings) -> bool:
-    if settings.demo_auth_bypass:
-        return False
     if settings.openemr_fhir_base_url is None:
-        return True
+        return False
     client = OpenEMRFhirClient(settings=settings)
     try:
         return await client.supports_create("Observation")
@@ -180,6 +176,34 @@ async def _find_existing_observation_id(
         if isinstance(resource_id, str) and resource_id:
             return resource_id
     return None
+
+
+async def _verify_observation_roundtrip(
+    *,
+    client: OpenEMRFhirClient,
+    fact: ExtractedFact,
+    resource_id: str,
+) -> None:
+    try:
+        resource = await client.read_resource("Observation", resource_id)
+    except httpx.HTTPError as exc:
+        raise ObservationWriteError("OpenEMR Observation round-trip read failed") from exc
+
+    if resource.get("resourceType") != "Observation":
+        raise ObservationWriteError("OpenEMR round-trip did not return an Observation")
+    if resource.get("id") != resource_id:
+        raise ObservationWriteError("OpenEMR round-trip returned the wrong Observation id")
+    subject = resource.get("subject")
+    if not isinstance(subject, dict) or subject.get("reference") != f"Patient/{fact.patient_id}":
+        raise ObservationWriteError("OpenEMR round-trip Observation subject did not match patient")
+    identifiers = resource.get("identifier")
+    if not isinstance(identifiers, list) or not any(
+        isinstance(identifier, dict)
+        and identifier.get("system") == DOCUMENT_FACT_IDENTIFIER_SYSTEM
+        and identifier.get("value") == fact.fact_id
+        for identifier in identifiers
+    ):
+        raise ObservationWriteError("OpenEMR round-trip Observation lost the document identifier")
 
 
 def _coerce_float(value: str) -> float | None:

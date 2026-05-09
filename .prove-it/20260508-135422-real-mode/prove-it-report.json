@@ -1,0 +1,25 @@
+{
+  "goal": "Real mode does not serve demo patients, demo evidence sources, or demo lab answers when OpenEMR FHIR is not configured.",
+  "urlTested": "http://127.0.0.1:3156/",
+  "flow": "Start app with DEMO_AUTH_BYPASS=false and no OPENEMR_FHIR_BASE_URL -> check patients/source/chat fail closed -> capture UI proof.",
+  "assertions": {
+    "patientsFailClosed": true,
+    "demoSourceDisabled": true,
+    "chatNoDemoAnswer": true,
+    "consoleClean": false
+  },
+  "patientsStatus": 503,
+  "demoSourceStatus": 404,
+  "chatAudit": {
+    "verification": "failed",
+    "error": "fhir_access_failed",
+    "status_code": 503,
+    "detail": "OpenEMR FHIR is not configured; real evidence retrieval is unavailable",
+    "persistence": "skipped"
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+  ],
+  "proofScreenshot": "C:\\Users\\mtm16\\New folder (3)\\moran-openemr\\.prove-it\\20260508-135422-real-mode\\proof.png",
+  "verdict": "DO NOT SHIP"
+}

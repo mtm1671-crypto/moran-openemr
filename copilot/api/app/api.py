@@ -18,8 +18,15 @@ from pydantic import BaseModel
 
 from app.auth import get_request_user
 from app.config import Settings, get_settings
+from app.demo_patients import (
+    demo_evidence as demo_patient_evidence,
+    demo_patient_fhir_resource,
+    demo_patient_summaries,
+    demo_patient_summary,
+)
 from app.document_ingestion import router as document_router
 from app.document_storage import approved_document_evidence
+from app.evidence_ranking import rank_evidence_for_query
 from app.evidence_tools import EvidenceRetrievalResult, FhirEvidenceService
 from app.fhir_client import OpenEMRFhirClient
 from app.guideline_rag import guideline_hits_to_evidence, retrieve_guideline_chunks
@@ -35,6 +42,7 @@ from app.models import (
     ReindexResponse,
     Role,
     ToolContract,
+    VerifiedAnswer,
 )
 from app.jobs import run_patient_reindex
 from app.openemr_auth import resolve_fhir_bearer_token
@@ -63,6 +71,7 @@ from app.openai_models import (
     OpenRouterProviderAdapter,
 )
 from app.providers import MockProviderAdapter, ProviderAdapter
+from app.retrieval_planner import RetrievalPlan, plan_retrieval
 from app.telemetry import emit_telemetry_event
 from app.vector_store import VectorStoreError, index_and_search_evidence, search_patient_evidence
 from app.verifier import VerificationError, verify_answer
@@ -72,27 +81,11 @@ router.include_router(document_router)
 
 
 def _demo_patient_summaries() -> list[PatientSummary]:
-    return [
-        PatientSummary(
-            patient_id="p1",
-            display_name="Margaret Chen",
-            birth_date="1967-08-14",
-            gender="female",
-        ),
-        PatientSummary(
-            patient_id="demo-diabetes-001",
-            display_name="Demo Patient",
-            birth_date="1975-04-12",
-            gender="female",
-        ),
-    ]
+    return demo_patient_summaries()
 
 
 def _demo_patient_summary(patient_id: str) -> PatientSummary | None:
-    for patient in _demo_patient_summaries():
-        if patient.patient_id == patient_id:
-            return patient
-    return None
+    return demo_patient_summary(patient_id)
 
 
 def _require_demo_patient(patient_id: str) -> None:
@@ -629,14 +622,10 @@ async def patients(
         ][:count]
 
     if settings.openemr_fhir_base_url is None:
-        return [
-            PatientSummary(
-                patient_id="demo-diabetes-001",
-                display_name="Demo Patient",
-                birth_date="1975-04-12",
-                gender="female",
-            )
-        ]
+        raise HTTPException(
+            status_code=503,
+            detail="OpenEMR FHIR is not configured; real patient search is unavailable",
+        )
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
@@ -668,18 +657,9 @@ async def patient(
         return patient
 
     if settings.openemr_fhir_base_url is None:
-        if patient_id == "demo-diabetes-001":
-            return PatientSummary(
-                patient_id="demo-diabetes-001",
-                display_name="Demo Patient",
-                birth_date="1975-04-12",
-                gender="female",
-            )
-        return PatientSummary(
-            patient_id=patient_id,
-            display_name="Selected OpenEMR patient",
-            birth_date=None,
-            gender=None,
+        raise HTTPException(
+            status_code=503,
+            detail="OpenEMR FHIR is not configured; real patient lookup is unavailable",
         )
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
@@ -883,7 +863,8 @@ async def _write_source_audit(
 
 
 @router.get("/api/source/demo-lab-a1c")
-async def demo_source() -> dict[str, Any]:
+async def demo_source(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    _require_demo_source_mode(settings)
     return {
         "resourceType": "Observation",
         "id": "demo-lab-a1c",
@@ -894,8 +875,21 @@ async def demo_source() -> dict[str, Any]:
     }
 
 
+@router.get("/api/source/demo-patient/{patient_id}")
+async def demo_patient_source(
+    patient_id: str,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    _require_demo_source_mode(settings)
+    resource = demo_patient_fhir_resource(patient_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail="Demo patient was not found")
+    return resource
+
+
 @router.get("/api/source/demo-chen-lipid-panel")
-async def demo_chen_lipid_source() -> dict[str, Any]:
+async def demo_chen_lipid_source(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    _require_demo_source_mode(settings)
     return {
         "resourceType": "Observation",
         "id": "demo-chen-lipid-panel",
@@ -956,12 +950,25 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
         )
         return
 
-    yield _sse("status", {"message": "retrieving evidence", "patient_id": request.patient_id})
+    retrieval_plan = plan_retrieval(request.message, request.quick_question_id)
+    yield _sse(
+        "status",
+        {
+            "message": "retrieving evidence",
+            "patient_id": request.patient_id,
+            "retrieval_plan": retrieval_plan.audit_payload(),
+        },
+    )
 
     try:
         # Evidence retrieval is the boundary between OpenEMR truth and Co-Pilot
         # derived read models. The model never chooses the patient or source ids.
-        retrieval = await _retrieve_evidence(request=request, user=user, settings=settings)
+        retrieval = await _retrieve_evidence(
+            request=request,
+            user=user,
+            settings=settings,
+            plan=retrieval_plan,
+        )
     except HTTPException as exc:
         payload = {
             "answer": "I could not retrieve source-backed OpenEMR evidence for this patient.",
@@ -1058,22 +1065,13 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
         )
         return
 
-    yield _sse(
-        "status",
-        {
-            "message": "preparing model context",
-            "evidence_count": len(retrieval.evidence),
-            "tools": retrieval.tools,
-        },
-    )
-
     if settings.embedding_provider == "openai":
         yield _sse("status", {"message": "ranking evidence with embeddings"})
         try:
             ranked_evidence = await OpenAIEmbeddingAdapter(settings).rank_evidence(
                 message=request.message,
                 evidence=retrieval.evidence,
-                limit=settings.model_evidence_limit,
+                limit=min(settings.model_evidence_limit, retrieval_plan.evidence_limit),
             )
         except OpenAIModelError as exc:
             payload = {
@@ -1104,6 +1102,22 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
             limitations=retrieval.limitations,
         )
 
+    retrieval = _rerank_model_context(
+        settings=settings,
+        message=request.message,
+        retrieval=retrieval,
+        plan=retrieval_plan,
+    )
+    yield _sse(
+        "status",
+        {
+            "message": "preparing model context",
+            "evidence_count": len(retrieval.evidence),
+            "tools": retrieval.tools,
+            "retrieval_plan": retrieval_plan.audit_payload(),
+        },
+    )
+
     provider = _provider_for_settings(settings)
     try:
         # Provider output is treated as a draft. It must survive schema/citation
@@ -1128,17 +1142,24 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
             "response was generated from retrieved source evidence and re-verified."
         )
 
+    answer = _enforce_evidence_bundle_separation(answer, retrieval.evidence)
     answer.audit["tools"] = retrieval.tools
     answer.audit["limitations"] = retrieval.limitations
+    answer.audit["retrieval_hits"] = len(retrieval.evidence)
+    answer.audit["retrieval_plan"] = retrieval_plan.audit_payload()
+    answer.audit["eval_outcome"] = "not_applicable_runtime"
     answer.audit["agent_loop"] = {
         "mode": "bounded_server_orchestrated",
         "max_steps": settings.agent_loop_max_steps,
         "steps": [
             "check_access",
+            "supervisor:evidence_retriever",
+            "handoff:supervisor->evidence_retriever",
             *retrieval.tools,
             f"provider:{answer.audit.get('provider', settings.llm_provider)}",
             "verify_claims",
         ][: settings.agent_loop_max_steps],
+        "workers": ["evidence_retriever", "answer_composer", "verifier"],
     }
 
     try:
@@ -1180,6 +1201,47 @@ async def _chat_events(request: ChatRequest, user: RequestUser, settings: Settin
     yield _sse("final", payload)
 
 
+def _enforce_evidence_bundle_separation(
+    answer: VerifiedAnswer,
+    evidence: list[EvidenceObject],
+) -> VerifiedAnswer:
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    cited = [
+        evidence_by_id[citation.evidence_id]
+        for citation in answer.citations
+        if citation.evidence_id in evidence_by_id
+    ]
+    has_patient_records = any(item.source_type != "guideline" for item in cited)
+    has_guidelines = any(item.source_type == "guideline" for item in cited)
+    if not has_patient_records or not has_guidelines:
+        return answer
+    if "Patient-record facts:" in answer.answer and "Guideline evidence:" in answer.answer:
+        return answer
+
+    patient_lines = [
+        f"{index}. {item.fact} [{item.display_name}]"
+        for index, item in enumerate([item for item in cited if item.source_type != "guideline"], 1)
+    ]
+    guideline_lines = [
+        f"{index}. {item.fact} [{item.display_name}]"
+        for index, item in enumerate([item for item in cited if item.source_type == "guideline"], 1)
+    ]
+    separated_answer = "\n".join(
+        [
+            "Patient-record facts:",
+            *patient_lines,
+            "Guideline evidence:",
+            *guideline_lines,
+        ]
+    )
+    audit = {
+        **answer.audit,
+        "evidence_bundles": ["patient_record", "guideline"],
+        "bundle_separation": "enforced",
+    }
+    return answer.model_copy(update={"answer": separated_answer, "audit": audit})
+
+
 async def _persist_and_annotate_chat_payload(
     *,
     settings: Settings,
@@ -1206,6 +1268,10 @@ async def _persist_and_annotate_chat_payload(
         else 0,
         "evidence_count": evidence_count,
         "duration_ms": duration_ms,
+        "latency_ms": duration_ms,
+        "retrieval_hits": int(audit.get("retrieval_hits") or evidence_count),
+        "eval_outcome": str(audit.get("eval_outcome") or "not_applicable_runtime"),
+        **_usage_observability_metadata(audit),
     }
     emit_telemetry_event(settings, event="chat_completed", metadata=metadata)
 
@@ -1265,6 +1331,49 @@ async def _persist_and_annotate_chat_payload(
     return payload
 
 
+def _usage_observability_metadata(audit: dict[str, Any]) -> dict[str, Any]:
+    usage = audit.get("usage")
+    if not isinstance(usage, dict):
+        return {"input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0.0}
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    if not isinstance(input_tokens, int):
+        input_tokens = 0
+    if not isinstance(output_tokens, int):
+        output_tokens = 0
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "estimated_cost_usd": _estimated_answer_cost_usd(
+            provider=str(audit.get("provider") or "unknown"),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        ),
+    }
+
+
+def _estimated_answer_cost_usd(
+    *,
+    provider: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> float:
+    if provider == "openai":
+        input_cost_per_million = 0.15
+        output_cost_per_million = 0.6
+    elif provider == "openrouter":
+        input_cost_per_million = 0.0
+        output_cost_per_million = 0.0
+    else:
+        input_cost_per_million = 0.0
+        output_cost_per_million = 0.0
+    return round(
+        (input_tokens / 1_000_000 * input_cost_per_million)
+        + (output_tokens / 1_000_000 * output_cost_per_million),
+        6,
+    )
+
+
 def _persistent_phi_storage_configured(settings: Settings) -> bool:
     return settings.database_url is not None and settings.encryption_key is not None
 
@@ -1283,32 +1392,40 @@ async def _retrieve_evidence(
     request: ChatRequest,
     user: RequestUser,
     settings: Settings,
+    plan: RetrievalPlan | None = None,
 ) -> EvidenceRetrievalResult:
-    if settings.demo_auth_bypass or settings.openemr_fhir_base_url is None:
-        if settings.demo_auth_bypass:
-            _require_demo_patient(request.patient_id)
-        # Local/demo mode can answer from deterministic fixtures and approved
-        # document evidence. Production PHI mode normally requires OpenEMR FHIR,
-        # enforced by Settings.runtime_config_errors().
-        document_evidence = await _approved_document_evidence(settings, request.patient_id)
+    plan = plan or plan_retrieval(request.message, request.quick_question_id)
+    if settings.demo_auth_bypass:
+        _require_demo_patient(request.patient_id)
+        # Explicit demo mode can answer from deterministic fixtures and approved
+        # document evidence. Real mode below never falls back to synthetic data.
+        document_evidence = (
+            await _approved_document_evidence(settings, request.patient_id)
+            if plan.use_approved_documents
+            else []
+        )
+        document_evidence = _filter_evidence_for_plan(document_evidence, plan)
+        demo_evidence = _filter_evidence_for_plan(_demo_evidence(request.patient_id), plan)
+        if not plan.use_demo_evidence:
+            demo_evidence = []
         retrieval = EvidenceRetrievalResult(
-            evidence=_merge_evidence(_demo_evidence(request.patient_id), document_evidence),
+            evidence=_merge_evidence(demo_evidence, document_evidence),
             tools=_merge_strings(
-                ["demo_evidence"],
+                [] if not demo_evidence else ["demo_evidence"],
                 ["approved_document_evidence"] if document_evidence else [],
             ),
             limitations=[
                 "SMART auth is temporarily bypassed for the locked demo patient roster."
-                if settings.demo_auth_bypass
-                else "OPENEMR_FHIR_BASE_URL is not configured; demo evidence was used."
             ],
         )
-        retrieval = _augment_with_guideline_evidence(
-            patient_id=request.patient_id,
-            message=request.message,
-            retrieval=retrieval,
-        )
-        if settings.vector_search_enabled:
+        if plan.use_guidelines:
+            retrieval = _augment_with_guideline_evidence(
+                patient_id=request.patient_id,
+                message=request.message,
+                retrieval=retrieval,
+                plan=plan,
+            )
+        if settings.vector_search_enabled and plan.use_vector_search:
             return await _augment_with_vector_search_with_failover(
                 settings=settings,
                 patient_id=request.patient_id,
@@ -1317,6 +1434,12 @@ async def _retrieve_evidence(
                 service=None,
             )
         return retrieval
+
+    if settings.openemr_fhir_base_url is None:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenEMR FHIR is not configured; real evidence retrieval is unavailable",
+        )
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
@@ -1330,20 +1453,28 @@ async def _retrieve_evidence(
         message=request.message,
         quick_question_id=request.quick_question_id,
         service=service,
+        plan=plan,
     )
-    document_evidence = await _approved_document_evidence(settings, request.patient_id)
+    document_evidence = (
+        await _approved_document_evidence(settings, request.patient_id)
+        if plan.use_approved_documents
+        else []
+    )
+    document_evidence = _filter_evidence_for_plan(document_evidence, plan)
     if document_evidence:
         retrieval = EvidenceRetrievalResult(
             evidence=_merge_evidence(retrieval.evidence, document_evidence),
             tools=_merge_strings(retrieval.tools, ["approved_document_evidence"]),
             limitations=retrieval.limitations,
         )
-    retrieval = _augment_with_guideline_evidence(
-        patient_id=request.patient_id,
-        message=request.message,
-        retrieval=retrieval,
-    )
-    if settings.vector_search_enabled:
+    if plan.use_guidelines:
+        retrieval = _augment_with_guideline_evidence(
+            patient_id=request.patient_id,
+            message=request.message,
+            retrieval=retrieval,
+            plan=plan,
+        )
+    if settings.vector_search_enabled and plan.use_vector_search:
         return await _augment_with_vector_search_with_failover(
             settings=settings,
             patient_id=request.patient_id,
@@ -1362,11 +1493,22 @@ async def _approved_document_evidence(settings: Settings, patient_id: str) -> li
     return _merge_evidence(memory_evidence, persisted_evidence)
 
 
+def _filter_evidence_for_plan(
+    evidence: list[EvidenceObject],
+    plan: RetrievalPlan,
+) -> list[EvidenceObject]:
+    if not plan.approved_document_source_types:
+        return evidence
+    allowed = set(plan.approved_document_source_types)
+    return [item for item in evidence if item.source_type in allowed]
+
+
 def _augment_with_guideline_evidence(
     *,
     patient_id: str,
     message: str,
     retrieval: EvidenceRetrievalResult,
+    plan: RetrievalPlan,
 ) -> EvidenceRetrievalResult:
     document_facts = [
         item.fact
@@ -1394,7 +1536,7 @@ def _augment_with_guideline_evidence(
         question=message,
         patient_facts=[],
         extracted_facts=document_facts,
-        limit=3,
+        limit=min(3, plan.evidence_limit),
     )
     if not hits:
         return retrieval
@@ -1455,12 +1597,14 @@ async def _collect_evidence_with_cache(
     message: str,
     quick_question_id: str | None,
     service: FhirEvidenceService,
+    plan: RetrievalPlan,
 ) -> EvidenceRetrievalResult:
     if not _evidence_cache_configured(settings):
         return await service.collect_for_question(
             patient_id=patient_id,
             message=message,
             quick_question_id=quick_question_id,
+            requested_tools=plan.fhir_tools,
         )
 
     # Cache key includes actor, role, scopes, patient, and normalized question.
@@ -1470,6 +1614,7 @@ async def _collect_evidence_with_cache(
         patient_id=patient_id,
         message=message,
         quick_question_id=quick_question_id,
+        retrieval_plan=plan.cache_key(),
     )
     try:
         cached = await read_evidence_cache_record(
@@ -1499,6 +1644,7 @@ async def _collect_evidence_with_cache(
         patient_id=patient_id,
         message=message,
         quick_question_id=quick_question_id,
+        requested_tools=plan.fhir_tools,
     )
     record = build_evidence_cache_record(
         settings=settings,
@@ -1611,6 +1757,7 @@ def _evidence_cache_key(
     patient_id: str,
     message: str,
     quick_question_id: str | None,
+    retrieval_plan: str | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -1621,6 +1768,7 @@ def _evidence_cache_key(
             "patient_id": patient_id,
             "message": " ".join(message.lower().split()),
             "quick_question_id": quick_question_id,
+            "retrieval_plan": retrieval_plan,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -1652,6 +1800,25 @@ def _retrieval_from_cache_payload(payload: dict[str, Any]) -> EvidenceRetrievalR
         evidence=[EvidenceObject.model_validate(item) for item in evidence_items],
         tools=[str(item) for item in tools],
         limitations=[str(item) for item in limitations],
+    )
+
+
+def _rerank_model_context(
+    *,
+    settings: Settings,
+    message: str,
+    retrieval: EvidenceRetrievalResult,
+    plan: RetrievalPlan,
+) -> EvidenceRetrievalResult:
+    ranked = rank_evidence_for_query(
+        message=message,
+        evidence=retrieval.evidence,
+        limit=min(settings.model_evidence_limit, plan.evidence_limit),
+    )
+    return EvidenceRetrievalResult(
+        evidence=ranked.evidence,
+        tools=_merge_strings(retrieval.tools, ranked.tools),
+        limitations=retrieval.limitations,
     )
 
 
@@ -1723,36 +1890,12 @@ def _require_job_access(user: RequestUser) -> None:
 
 
 def _demo_evidence(patient_id: str) -> list[EvidenceObject]:
-    now = datetime.now(tz=UTC)
-    if patient_id == "p1":
-        return [
-            EvidenceObject(
-                evidence_id="ev_demo_chen_ldl",
-                patient_id=patient_id,
-                source_type="lab_result",
-                source_id="demo-chen-lipid-panel",
-                display_name="Margaret Chen LDL Cholesterol",
-                fact="LDL Cholesterol was 158 mg/dL on 2026-04-23 (high).",
-                effective_at=datetime(2026, 4, 23, tzinfo=UTC),
-                source_updated_at=datetime(2026, 4, 23, tzinfo=UTC),
-                retrieved_at=now,
-                source_url="/api/source/demo-chen-lipid-panel",
-            )
-        ]
-    return [
-        EvidenceObject(
-            evidence_id="ev_demo_a1c",
-            patient_id=patient_id,
-            source_type="lab_result",
-            source_id="demo-lab-a1c",
-            display_name="Demo A1c",
-            fact="Demo A1c was 8.6% on 2026-03-12",
-            effective_at=datetime(2026, 3, 12, tzinfo=UTC),
-            source_updated_at=datetime(2026, 3, 12, tzinfo=UTC),
-            retrieved_at=now,
-            source_url="/api/source/demo-lab-a1c",
-        )
-    ]
+    return demo_patient_evidence(patient_id)
+
+
+def _require_demo_source_mode(settings: Settings) -> None:
+    if not settings.demo_auth_bypass:
+        raise HTTPException(status_code=404, detail="Demo source is disabled")
 
 
 def _is_treatment_advice_request(message: str) -> bool:

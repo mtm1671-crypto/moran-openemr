@@ -440,6 +440,248 @@ h1 {
   font-size: 20px;
 }
 
+.evidenceShell {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.evidenceTopbar,
+.evidenceStatusBar {
+  display: grid;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  padding: 14px 24px;
+}
+
+.evidenceTopbar {
+  grid-template-columns: minmax(260px, 1fr) auto;
+}
+
+.evidenceStatusBar {
+  grid-template-columns: auto minmax(0, 1fr);
+  background: var(--panel-subtle);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.evidenceStatusBar span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evidenceHero {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(360px, 520px);
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+  padding: 22px 24px;
+}
+
+.evidenceHero.document {
+  border-left: 4px solid #8b5cf6;
+}
+
+.evidenceHero h2,
+.evidenceHero p {
+  margin: 0;
+}
+
+.evidenceHero h2 {
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.evidenceHero p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.evidenceHero dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.evidenceHero dl div,
+.evidencePanel,
+.evidenceTrace,
+.rawEvidencePanel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.evidenceHero dl div {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px 12px;
+}
+
+.evidenceHero dt,
+.evidenceKeyValues dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.evidenceHero dd,
+.evidenceKeyValues dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.evidenceContentGrid,
+.documentEvidenceGrid {
+  display: grid;
+  gap: 14px;
+  padding: 18px 24px;
+}
+
+.evidenceContentGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.documentEvidenceGrid {
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+}
+
+.evidencePanel,
+.evidenceTrace,
+.rawEvidencePanel {
+  padding: 14px;
+}
+
+.evidencePanel h2,
+.evidenceTrace h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.evidenceKeyValues {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.evidenceKeyValues div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.documentFactPreview {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.evidenceFactGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  padding: 0 24px 18px;
+}
+
+.evidenceFactButton {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.evidenceFactButton:hover,
+.evidenceFactButton.selected {
+  border-color: var(--accent);
+  box-shadow: 0 1px 6px rgba(15, 118, 110, 0.12);
+}
+
+.evidenceFactButton strong,
+.evidenceFactButton p,
+.evidenceFactButton small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evidenceFactButton strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.evidenceFactButton p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.evidenceFactButton small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.evidenceTrace {
+  margin: 0 24px 18px;
+}
+
+.evidenceTrace ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rawEvidencePanel {
+  margin: 0 24px 24px;
+}
+
+.rawEvidencePanel summary {
+  color: var(--source);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.rawEvidencePanel pre {
+  max-height: 420px;
+  overflow: auto;
+  margin: 12px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #e5eefc;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
 .statusShell {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -1502,6 +1744,8 @@ h1 {
   }
 
   .dashboardGrid,
+  .evidenceContentGrid,
+  .evidenceHero dl,
   .statusOverview,
   .statusDetailGrid,
   .patientIdentityPanel dl {
@@ -1509,7 +1753,9 @@ h1 {
   }
 
   .patientIdentityPanel,
-  .dashboardPatientBar {
+  .dashboardPatientBar,
+  .documentEvidenceGrid,
+  .evidenceHero {
     grid-template-columns: 1fr;
   }
 
@@ -1534,7 +1780,8 @@ h1 {
 
 @media (max-width: 720px) {
   .topbar,
-  .dashboardTopbar {
+  .dashboardTopbar,
+  .evidenceTopbar {
     grid-template-columns: 1fr;
     gap: 12px;
     padding: 12px 14px;
@@ -1542,15 +1789,25 @@ h1 {
 
   .dashboardPatientBar,
   .patientIdentityPanel,
-  .dashboardGrid {
+  .dashboardGrid,
+  .evidenceHero,
+  .evidenceContentGrid,
+  .documentEvidenceGrid {
     padding-left: 14px;
     padding-right: 14px;
   }
 
   .dashboardGrid,
+  .evidenceContentGrid,
+  .evidenceHero dl,
   .statusOverview,
   .statusDetailGrid,
   .patientIdentityPanel dl {
+    grid-template-columns: 1fr;
+  }
+
+  .evidenceStatusBar,
+  .documentFactPreview {
     grid-template-columns: 1fr;
   }
 
@@ -1562,6 +1819,18 @@ h1 {
   .secondaryLink {
     flex: 1;
     text-align: center;
+  }
+
+  .evidenceFactGrid {
+    grid-template-columns: 1fr;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .evidenceTrace,
+  .rawEvidencePanel {
+    margin-left: 14px;
+    margin-right: 14px;
   }
 
   h1 {

@@ -1,0 +1,70 @@
+name: Co-Pilot Week 2 Gate
+
+on:
+  pull_request:
+    paths:
+      - "copilot/**"
+      - "example-documents/**"
+      - ".github/workflows/copilot-week2-gate.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "copilot/**"
+      - "example-documents/**"
+      - ".github/workflows/copilot-week2-gate.yml"
+
+jobs:
+  week2-gate:
+    name: API, Safety, and Eval Gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: copilot/api
+    env:
+      APP_ENV: local
+      DEV_AUTH_BYPASS: "true"
+      LLM_PROVIDER: mock
+      STRUCTURED_LOGGING_ENABLED: "false"
+      TELEMETRY_ENABLED: "false"
+      VECTOR_SEARCH_ENABLED: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: copilot/api/pyproject.toml
+
+      - name: Install API dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check app tests
+
+      - name: Type check
+        run: python -m mypy app
+
+      - name: Unit and integration tests
+        run: python -m pytest
+
+      - name: Week 2 hard-gate eval
+        run: python -m app.w2_eval --enforce
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: week2-eval-results
+          path: |
+            copilot/api/evals/w2_latest_results.jsonl
+            copilot/api/evals/w2_baseline.json
+            copilot/api/evals/judge_config.json
+            copilot/api/evals/judge_prompt.md

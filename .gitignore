@@ -37,6 +37,9 @@ ccdaservice/node_modules
 /.vscode-oss/*
 /nbproject/*
 .DS_Store
+__MACOSX/
+example-documents/__MACOSX/
+example-documents/example-documents/
 .buildpath
 .project
 .settings

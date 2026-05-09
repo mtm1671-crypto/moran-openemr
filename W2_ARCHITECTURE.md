@@ -6,11 +6,11 @@ The current implementation slice lives under `copilot/api/app/document_*`,
 `copilot/api/app/extraction_*`, `copilot/api/app/w2_*`, and
 `copilot/web/app/components`.
 
-## Implementation Truth As Of 2026-05-07
+## Implementation Truth As Of 2026-05-08
 
-Implemented in the current local repo: upload/extract/review/write API routes, deterministic synthetic text/PDF parsers, strict Pydantic fact schemas, citation and bounding-box preview metadata, supervisor trace entries, guideline evidence retrieval for document/domain questions, idempotent lab `Observation` writes using a deterministic identifier and search-before-create, stronger numeric/date citation verification, an executable four-case Week 2 eval gate, and optional encrypted Postgres persistence for document sources, jobs, facts, approved evidence, and durable source-key reuse.
+Implemented in the current local repo: upload/extract/review/write API routes, deterministic synthetic text/PDF parsers, deterministic OCR fixtures for the committed synthetic scan images, strict Pydantic fact schemas, citation and bounding-box preview metadata, explicit supervisor-to-worker handoff traces, hybrid sparse+dense guideline retrieval for document/domain questions, PHI-local sparse evidence matching plus an intent-aware reranker before model context, idempotent lab `Observation` writes using a deterministic identifier, search-before-create, and round-trip read verification, stronger numeric/date citation verification, an executable 50-case Week 2 eval gate with explicit pass thresholds and a 5% regression bound, and optional encrypted Postgres persistence for document sources, jobs, facts, approved evidence, and durable source-key reuse.
 
-Still not proven as production-complete: deployed authenticated browser capture for the Week 2 flow, OpenEMR `DocumentReference` storage and source-document round trip, the target 50-case GitLab blocking eval suite, a true BM25+dense+rerank guideline stack, scanned-document OCR/VLM beyond the provider adapter path, multi-worker transactional outbox behavior, and full PHI/compliance readiness. Local/default demo storage remains in-memory unless `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled with `DATABASE_URL` and `ENCRYPTION_KEY`.
+Still not proven as production-complete: final browser/video capture for the Week 2 flow, OpenEMR `DocumentReference` storage and source-document round trip, remote GitHub branch-protection application from `.github/branch-protection-week2.json`, a production BM25/ANN rerank service beyond the local sparse/vector reranker, arbitrary real-world scanned-document OCR beyond provider-backed OCR and the committed synthetic scan fixtures, multi-worker transactional outbox behavior, and full PHI/compliance readiness. Local/default demo storage remains in-memory unless `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled with `DATABASE_URL` and `ENCRYPTION_KEY`; the Railway demo has those persistence flags enabled and passing readiness.
 
 ## Executive Summary
 
@@ -18,9 +18,9 @@ Week 2 moves the Clinical Co-Pilot from a source-backed structured chart assista
 
 The implementation remains synthetic-only for Week 2. We will generate synthetic lab PDFs and intake forms, and we will support a small starter set of example documents. The architecture should look production-ready, but it must not claim real-PHI readiness. Real PHI, live patient documents, or provider use beyond synthetic demo data require a later compliance, BAA, data-policy, and operational security review.
 
-The core design decision is to keep OpenEMR authoritative. Patient identity, clinician identity, ACLs, FHIR resources, and source round-trips should stay inside the OpenEMR boundary. The current implementation stores document workflow state inside Co-Pilot, with optional encrypted Postgres persistence, while OpenEMR `DocumentReference` source storage remains deferred. Lab facts move into OpenEMR only through a write adapter that tries FHIR first and permits a synthetic/demo-only fallback if FHIR write behavior is brittle. Intake form facts are staged as source-backed derived evidence first; they do not silently mutate demographics, medications, allergies, or family history.
+The core design decision is to keep OpenEMR authoritative. Patient identity, clinician identity, ACLs, FHIR resources, and source round-trips should stay inside the OpenEMR boundary. The current implementation stores document workflow state inside Co-Pilot, with optional encrypted Postgres persistence, while OpenEMR `DocumentReference` source storage remains deferred. Lab facts move into OpenEMR only through a write adapter that uses FHIR `Observation.create` after capability and duplicate checks; missing FHIR config or missing write scope fails closed. Intake form facts are staged as source-backed derived evidence first; they do not silently mutate demographics, medications, allergies, or family history.
 
-Extraction is parser/layout first for the committed synthetic examples. Text and PDF extraction provide source spans and bounding boxes where available. A deterministic parser handles stable synthetic forms. OCR/VLM escalation exists as a provider-adapter path, but scanned-document production OCR is not complete. The model output is never trusted directly: it must validate against strict Pydantic schemas, map every extracted fact back to source metadata, and pass confidence gates. Low-confidence facts are flagged for human review and do not write to OpenEMR.
+Extraction is parser/layout first for the committed synthetic examples. Text and PDF extraction provide source spans and bounding boxes where available. A deterministic parser handles stable synthetic forms, and known synthetic scan images are covered by SHA-256-pinned OCR fixtures when external OCR is offline. OCR/VLM escalation exists as a provider-adapter path for non-fixture images. The model output is never trusted directly: it must validate against strict Pydantic schemas, map every extracted fact back to source metadata, and pass confidence gates. Low-confidence facts are flagged for human review and do not write to OpenEMR.
 
 The user experience is a side-by-side review screen: PDF preview on one side, extracted facts on the other, bounding-box highlights for each citation, validation/confidence status, and approve/reject controls. Approved high-confidence lab facts can be upserted into OpenEMR Observations with provenance. All approve/reject/write actions are audit logged.
 
@@ -31,14 +31,14 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 | Lab PDF ingestion | Upload synthetic lab PDFs, store source in Co-Pilot workflow storage, extract lab result facts, require citations and bounding boxes. OpenEMR `DocumentReference` source storage is deferred. |
 | Intake form ingestion | Upload synthetic intake forms, store source in Co-Pilot workflow storage, extract chief concern, meds, allergies, family history, and demographics with citations. OpenEMR `DocumentReference` source storage is deferred. |
 | Strict schemas | Pydantic schemas are required for `lab_pdf` and `intake_form`; schema failure blocks downstream work. |
-| OpenEMR integrity | Lab Observations are written only after validation and review gates, with duplicate prevention. OpenEMR source-document round trip remains deferred. |
+| OpenEMR integrity | Lab Observations are written only after validation and review gates, with duplicate prevention and round-trip read verification. OpenEMR source-document round trip remains deferred. |
 | Citation contract | Clinical claims require machine-readable citation metadata: source type, source id, page/section, field/chunk id, quote/value, and bbox when document-derived. |
 | PDF bounding boxes | Document citations must show a visual overlay in the PDF preview. |
-| Hybrid RAG | Diabetes, hypertension, and lipid guideline retrieval is wired into chat evidence. Full sparse+dense+rerank production retrieval is deferred. |
-| Supervisor + 2 workers | Rule-based supervisor routing and trace metadata are wired. A full LangGraph-style multi-worker runtime remains deferred. |
-| Eval suite | Four committed synthetic golden cases with boolean rubrics and passing baseline results. The target 50-case suite remains deferred. |
-| PR-blocking CI | Local executable gate exists. GitLab blocking CI is deferred. |
-| Deployed app | Railway app has the document UI/routes from the last redeploy, but the authenticated Week 2 browser capture still needs to be recorded. |
+| Hybrid RAG | Diabetes, hypertension, and lipid guideline retrieval runs through a local hybrid sparse+dense corpus scorer; patient evidence has PHI-local sparse matching, patient-scoped dense vector search, and an intent-aware reranker before model context. Production BM25/ANN managed retrieval remains deferred. |
+| Supervisor + 2 workers | Rule-based supervisor routing, intake-extractor handoffs, evidence-retriever handoffs, and trace metadata are wired. A full LangGraph-style multi-process worker runtime remains deferred. |
+| Eval suite | 50 committed synthetic golden cases with boolean rubrics and passing baseline results. |
+| PR-blocking CI | GitHub Actions runs lint, mypy, pytest, and the 50-case eval gate. `.github/branch-protection-week2.json` records the required protected-branch status check; remote GitHub enforcement must be applied in the repo settings. |
+| Deployed app | Railway API/web were redeployed on 2026-05-08. Readiness, no-token document denial, bearer-token document upload/review/approved-evidence/chat, and patient/guideline bundle separation passed; the final browser/video capture still needs to be recorded. |
 | Cost/latency report | Capture actual development spend, p50/p95 latency, bottlenecks, provider usage, and production scaling assumptions. |
 
 ## Presearch Decisions
@@ -53,9 +53,9 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 | Human review | Full side-by-side review UI with approve/reject before chart write. |
 | Low confidence | Flag as `human_review_required`; no OpenEMR write. |
 | Extraction | Parser/layout first for committed synthetic examples; OCR/vision escalation remains a provider-adapter path. |
-| Write strategy | FHIR first, synthetic/demo-only fallback if FHIR writes are brittle. |
+| Write strategy | FHIR `Observation.create` only; no synthetic write fallback. Approved evidence remains retrievable when writes fail. |
 | Guideline RAG | Diabetes + hypertension + lipids. |
-| CI | Local executable gate first; GitLab blocking gate is the target. |
+| CI | Local executable gate plus GitHub Actions Week 2 gate; branch protection is the required final setting. |
 | Safety gate | Current hard gate covers schema, citation, patient scope, source round trip, bounding boxes, PHI-safe audit payloads, low-confidence blocking, duplicate writes, and unapproved writes. |
 
 ## Source Material Reviewed
@@ -82,7 +82,7 @@ The architecture in this document is the production target. Week 2 ships a delib
 | Component | Week 2 ships | Deferred |
 |---|---|---|
 | Document ingestion | Async POST + 202-style job flow, Co-Pilot source/job/fact storage, optional encrypted Postgres persistence, deterministic source-key reuse, validation rules | OpenEMR Binary + DocumentReference storage, SSE event stream, multi-region upload affinity, signed URL upload for large files |
-| Extraction OCR | Deterministic text/PDF extraction for committed synthetic examples; OCR provider adapter path exists | Mistral/OCR on every upload, scanned-PDF production coverage, template-match-first cache |
+| Extraction OCR | Deterministic text/PDF extraction for committed synthetic examples; SHA-256-pinned synthetic scan fixtures; OCR provider adapter path exists | Mistral/OCR on every upload, arbitrary scanned-PDF production coverage, template-match-first cache |
 | Extraction parser | Deterministic parser for the lab and intake templates | Additional document types |
 | Extraction vision | Provider adapter path for synthetic/demo escalation | Per-field crop fallback, full-page fallback, multi-model vision ensemble |
 | Extraction provenance | `ExtractedFact` records with citations, bounding boxes, review status, and trace entries | Append-only supersession model and confidence-aware retry beyond one round |
@@ -91,15 +91,15 @@ The architecture in this document is the production target. Week 2 ships a delib
 | Workers | Worker roles are represented in supervisor route decisions, traces, extraction, evidence retrieval, and answer composition orchestration | Full independent worker runtime and critic agent |
 | Hybrid RAG | Patient-scoped vector evidence plus guideline evidence retrieval for diabetes, hypertension, and lipids | ParadeDB BM25 + pgvector HNSW + RRF + Cohere Rerank v3, rerank skip-on-confidence-gap |
 | Verification | Patient-scope/source/citation verification plus stricter numeric/date support checks | Full typed rule catalog and persisted verification run analytics |
-| Eval gate | Four committed cases, deterministic rubric computation, frozen baseline JSON, local enforce command | 50 cases, planted-regression dry-runs, githook + GitLab CI, LLM-judge calibration tooling |
-| Write adapter | Deterministic identifier, search-before-create duplicate prevention, FHIR `Observation` write path, demo fallback | Transactional outbox, `If-None-Exist`, `Provenance`, round-trip verification, retry/circuit-breaker/dead-letter, multi-worker `SKIP LOCKED` drain, per-tenant slot table, Kafka-backed outbox |
+| Eval gate | 50 committed cases, deterministic rubric computation, frozen baseline JSON, local enforce command, GitHub Actions gate, checked-in optional judge config | Planted-regression dry-runs, local pre-push hook, GitLab mirror gate if required |
+| Write adapter | Deterministic identifier, search-before-create duplicate prevention, FHIR `Observation` write path, round-trip read verification, fail-closed missing config/scope behavior | Transactional outbox, `If-None-Exist`, `Provenance`, retry/circuit-breaker/dead-letter, multi-worker `SKIP LOCKED` drain, per-tenant slot table, Kafka-backed outbox |
 | Observability | Typed Postgres tables, `StructuredLogger` emitting OTel-shaped JSON to stdout, `/api/status` panel | OpenTelemetry collector + Tempo + Loki + Mimir + Langfuse + Grafana, SLO-derived Alertmanager rules + PagerDuty, continuous synthetic monitoring |
 | Compliance | None of the compliance audit ships in Week 2 | `phi_access_log` with insert-only app role and monthly WORM archival to S3 Object Lock; Year-2 hardening may add per-tenant hash chains and KMS-signed Merkle attestation |
 | Provider failover | Single primary per role | Circuit-breaker provider routing with named fallbacks |
 | Tenancy | Single-tenant Week 2 demo deployment | Multi-tenant `org_id` provisioning workflow |
 | Database operations | Schema migrations via Alembic, single Postgres instance | Read replicas, partition automation via pg_partman, PITR backups |
 
-The dividing principle: the current repo ships enough to prove the local Week 2 workflow and its hard safety gates. Production-scale retrieval, compliance, multi-worker durability, OpenEMR source-document round trip, and GitLab blocking coverage remain explicit follow-on work.
+The dividing principle: the current repo ships enough to prove the Week 2 workflow and its hard safety gates locally and in GitHub Actions. Production-scale retrieval, compliance, multi-worker durability, OpenEMR source-document round trip, and branch-protection enforcement after push remain explicit follow-on work.
 
 ## Architecture Cross-Cutting Concerns
 
@@ -292,8 +292,8 @@ Postgres
   Owns encrypted extraction payloads, derived fact metadata, guideline chunks,
   pgvector embeddings, eval results, audit events, and graph traces.
 
-GitLab CI
-  Owns PR-blocking Week 2 eval gate.
+GitHub Actions
+  Owns the wired Week 2 eval gate; branch protection must require it after push.
 ```
 
 ## End-To-End Flow
@@ -312,7 +312,7 @@ GitLab CI
 12. User approves or rejects each fact.
 13. Approved lab facts go through `ObservationWriter`.
 14. `ObservationWriter` tries FHIR `Observation` write/upsert first.
-15. Synthetic/demo fallback can run only if FHIR write fails and explicit demo fallback config is enabled.
+15. Synthetic/demo fallback is disabled for writes; a FHIR write failure leaves reviewed evidence retrievable and reports the OpenEMR error.
 16. `evidence-retriever` gathers patient facts, document facts, and guideline evidence.
 17. Final answer separates patient-record facts from guideline evidence.
 18. Verifier checks citations, patient scope, safety policy, and write provenance.
@@ -1700,14 +1700,14 @@ If any planted run does not produce the expected failure, the gate itself is bro
 
 ### CI Integration
 
-GitLab is the primary surface. Two execution paths run the same harness:
+GitHub Actions is the wired PR surface for this repo. Two execution paths run the same harness:
 
-- **Pre-push githook** (`.githooks/pre-push`) runs the eval suite locally on the developer's machine before push. Fails the push on regression. Saves CI minutes by catching issues early.
-- **GitLab CI job** (`.gitlab-ci.yml` → `eval_gate` stage) runs on every push. Required pipeline status for merge.
+- **Local command** (`python -m app.w2_eval --enforce`) runs the eval suite before push and fails on regression.
+- **GitHub Actions job** (`.github/workflows/copilot-week2-gate.yml` -> `API, Safety, and Eval Gate`) runs lint, mypy, pytest, and the 50-case eval on relevant pushes and pull requests. Branch protection must require it after the workflow is pushed.
 
-The CI job uploads an artifact per run: `eval_results.json` plus `verification_runs` and `retrieval_runs` snapshots scoped to the eval run. Local replay is `python -m copilot.api.evals.replay --eval-run <id> --case <case_id>` which reads the artifact and reproduces the exact run.
+The CI job uploads the committed eval result artifacts plus the optional judge config. Full `verification_runs` and `retrieval_runs` replay artifacts remain a production hardening item.
 
-Cost per full eval: ~$0.25 in LLM-judge calls plus the per-case agent runs (~$0.009 × 50 ≈ $0.45 of agent inference). Total per CI run: <$1.
+Cost per deterministic CI eval is $0 with the local mock provider. Optional judge calibration uses `gpt-4o-mini` at temperature 0 and is tracked separately from the blocking gate.
 
 ## Observability And Cost
 
@@ -2106,7 +2106,7 @@ These numbers are reproducible because every cost line traces to `cost_events` r
 
 ## Deployment And CI
 
-GitLab is the primary CI target.
+GitHub Actions is the currently wired CI target for the Week 2 gate.
 
 Required jobs:
 
@@ -2160,10 +2160,10 @@ These are the intended Week 2 checkpoints. Status here is explicit so this docum
 - Done locally: rule-based supervisor routing and trace metadata.
 - Done locally: extraction, evidence retrieval, answer composition, approval, and write orchestration.
 - Done locally: verifier checks citation/source/patient scope plus numeric/date support.
-- Done locally: four-case deterministic eval suite with committed passing baseline.
+- Done locally and in workflow config: 50-case deterministic eval suite with committed passing baseline.
 - Done locally: idempotent Observation write path with deterministic identifier and search-before-create.
-- Deployed: public Railway app exists, and unauthenticated route/web smoke checks passed after the prior redeploy.
-- Still pending: authenticated deployed browser capture for Week 2, full independent worker runtime, vision per-field crop fallback, 25-code persisted verification catalog, 50-case eval suite, pre-push/GitLab blocking gate, planted-regression CI jobs, transactional outbox, Provenance write, and OpenEMR source-document round trip.
+- Deployed: public Railway app exists; readiness, no-token document denial, bearer-token document upload/review/approved-evidence/chat, web route smoke, and patient/guideline bundle separation passed after the 2026-05-08 redeploy.
+- Still pending: final browser/video capture for Week 2, branch-protection requirement after push, full independent worker runtime, vision per-field crop fallback, 25-code persisted verification catalog, planted-regression CI jobs, transactional outbox, Provenance write, and OpenEMR source-document round trip.
 
 ### Final (Sunday Noon)
 
@@ -2228,7 +2228,7 @@ The "Production Additions" subsection in Observability And Cost and the "Deferre
 
 The major design defaults are now locked in this document. The few residuals that genuinely shift during implementation:
 
-- **GitLab CI runner constraints.** Concurrency, image, cache strategy. Decided when the runner is provisioned; documented in `.gitlab-ci.yml` comments.
+- **CI runner constraints.** GitHub Actions is wired for the Week 2 gate; GitLab mirror runner constraints are only needed if the final grader requires GitLab status checks.
 - **Starter example document fixtures.** The exact synthetic lab and intake PDFs committed at `copilot/api/fixtures/synthetic_documents/` — chosen during MVP to exercise the deterministic parser's known templates plus 1–2 edge cases for vision escalation.
 - **Static code tables for `LoincCode`, `UcumCode`, `RxNormCode`.** Initial scope covers the lab tests in the synthetic fixtures plus the medications and units in the intake template. Expanded as new fixtures are added.
 - **Concrete ParadeDB host.** Decided when MVP deploys: Supabase if compatible, otherwise self-hosted Patroni or a managed Postgres host that supports custom extensions.

@@ -185,11 +185,21 @@ def test_me_requires_bearer_token_when_dev_bypass_is_disabled() -> None:
     assert response.json()["detail"] == "Missing bearer token"
 
 
-def test_demo_auth_bypass_authenticates_without_bearer_token() -> None:
+def test_production_demo_auth_bypass_requires_bearer_token() -> None:
     settings = Settings(app_env="production", dev_auth_bypass=False, demo_auth_bypass=True)
     app.dependency_overrides[get_settings] = lambda: settings
 
     response = TestClient(app).get("/api/me")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
+
+
+def test_production_demo_auth_bypass_accepts_bearer_token() -> None:
+    settings = Settings(app_env="production", dev_auth_bypass=False, demo_auth_bypass=True)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = TestClient(app).get("/api/me", headers={"Authorization": "Bearer demo-token"})
 
     assert response.status_code == 200
     body = response.json()
@@ -208,7 +218,10 @@ def test_demo_auth_bypass_returns_locked_margaret_chen_roster() -> None:
     )
     app.dependency_overrides[get_settings] = lambda: settings
 
-    response = TestClient(app).get("/api/patients?query=chen")
+    response = TestClient(app).get(
+        "/api/patients?query=chen",
+        headers={"Authorization": "Bearer demo-token"},
+    )
 
     assert response.status_code == 200
     assert response.json() == [
@@ -222,8 +235,39 @@ def test_demo_auth_bypass_returns_locked_margaret_chen_roster() -> None:
     ]
 
 
+def test_demo_auth_bypass_returns_example_document_patient_profiles() -> None:
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url=None,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+
+    roster = client.get("/api/patients")
+    reyes = client.get("/api/patients/p3")
+
+    assert roster.status_code == 200
+    profile_names = {patient["display_name"] for patient in roster.json()}
+    assert {"Margaret Chen", "James Whitaker", "Sofia Reyes", "Robert Kowalski"} <= profile_names
+    assert reyes.status_code == 200
+    assert reyes.json() == {
+        "patient_id": "p3",
+        "display_name": "Sofia Reyes",
+        "birth_date": "1983-12-19",
+        "gender": "female",
+        "source_system": "openemr",
+    }
+
+
 def test_demo_patient_context_returns_summary_without_fhir() -> None:
-    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    settings = Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=True,
+        openemr_fhir_base_url=None,
+    )
     app.dependency_overrides[get_settings] = lambda: settings
 
     response = TestClient(app).get("/api/patients/demo-diabetes-001")
@@ -236,6 +280,20 @@ def test_demo_patient_context_returns_summary_without_fhir() -> None:
         "gender": "female",
         "source_system": "openemr",
     }
+
+
+def test_patient_routes_fail_closed_without_fhir_when_demo_mode_is_disabled() -> None:
+    settings = Settings(app_env="local", dev_auth_bypass=True, openemr_fhir_base_url=None)
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+
+    patient_list = client.get("/api/patients")
+    patient_detail = client.get("/api/patients/demo-diabetes-001")
+
+    assert patient_list.status_code == 503
+    assert "real patient search is unavailable" in patient_list.json()["detail"]
+    assert patient_detail.status_code == 503
+    assert "real patient lookup is unavailable" in patient_detail.json()["detail"]
 
 
 @respx.mock

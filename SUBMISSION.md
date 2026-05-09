@@ -20,7 +20,7 @@ Latest submitted code:
 6e7a3ef5f Implement Week 2 document evidence workflow
 ```
 
-Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, an idempotent Observation write adapter, and explicit detection that the current deployed OpenEMR FHIR endpoint does not expose `Observation.create`.
+Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, a readable evidence viewer instead of raw JSON source pages, and an idempotent `Observation.create` write adapter that follows OpenEMR FHIR capability metadata.
 
 ## Required Artifacts
 
@@ -50,22 +50,22 @@ Paste the uploaded video link into the submission form.
 - The clinician selects an authorized patient from the patient dropdown.
 - Chat retrieves patient-scoped FHIR evidence and source-backed unstructured notes.
 - Answers include citations and a verification/audit trace.
-- Source links re-check authorization before showing FHIR JSON.
+- Source links re-check authorization before showing a readable evidence viewer, with raw JSON available behind an expandable details panel.
 - Treatment, diagnosis, medication-change, dosing, order, and care-plan requests are refused.
-- Week 2 document flow uploads synthetic lab/intake documents, extracts strict facts with bounding boxes, supports human approval, writes approved lab facts through the Observation adapter, and makes approved document facts available to chat/vector evidence.
+- Week 2 document flow uploads synthetic lab/intake documents, extracts strict facts with bounding boxes, supports human approval, writes approved lab facts through the Observation adapter with round-trip read verification, and makes approved document facts available to chat/vector evidence.
 
 ## Verification Snapshot
 
 Local checks:
 
 ```text
-API tests: 155 passed, 6 skipped
+API tests: 178 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
-Week 2 eval: 4 passed, 0 failed with python -m app.w2_eval --enforce
+Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
 Web lint: passed
 Web build: passed
-Playwright: 9 passed
+Playwright: 13 passed
 pip-audit: no known vulnerabilities found
 npm audit: 0 vulnerabilities
 git diff --check: passed
@@ -80,6 +80,8 @@ Co-Pilot API document_workflow_storage: true
 Co-Pilot API document_workflow_persistence_ready: true
 Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
+Co-Pilot API bearer upload/review/approved-evidence/chat: passed
+Co-Pilot API patient/guideline bundle separation in live chat: passed
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
 ```
@@ -103,7 +105,7 @@ Record or verify these in the final video:
 13. Click `Approve all`.
 14. Ask `What social barriers are documented?` and show approved document evidence in the answer.
 15. Upload a synthetic lab text file.
-16. Click `Extract` and `Approve all`; show that `Write labs` is unavailable unless OpenEMR exposes FHIR `Observation.create`.
+16. Click `Extract`, `Approve all`, and `Write labs`; show the write result. If SMART write scope is missing, show the explicit re-authorization/write-scope failure.
 
 Suggested synthetic intake file:
 
@@ -123,7 +125,9 @@ LDL Cholesterol 142 mg/dL reference range 0-99 H
 
 - The submission uses synthetic data only.
 - The OpenRouter free Nemotron path is for synthetic demo data, not real PHI.
-- Local/default Week 2 document workflow storage remains in-memory for demo speed. A production path now persists encrypted document sources, jobs, facts, and approved evidence in Postgres when `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` with `DATABASE_URL` and `ENCRYPTION_KEY`; uploads first check durable storage by deterministic source key so a process restart does not create a duplicate workflow. Deployed production still needs that setting verified after redeploy.
-- Synthetic text/PDF extraction is deterministic. Scanned PDF OCR/VLM escalation is designed but not production-complete.
+- Retrieval includes PHI-local sparse evidence matching, hybrid sparse+dense guideline retrieval, patient/guideline answer-bundle separation, and an intent-aware reranker before model context; the regression suite covers newly approved document facts beating stale cholesterol-only evidence and demographic questions staying on demographics.
+- Local/default Week 2 document workflow storage remains in-memory for demo speed. A production path now persists encrypted document sources, jobs, facts, and approved evidence in Postgres when `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` with `DATABASE_URL` and `ENCRYPTION_KEY`; uploads first check durable storage by deterministic source key so a process restart does not create a duplicate workflow. The Railway demo now reports document workflow persistence enabled and ready.
+- Synthetic text/PDF extraction is deterministic. The committed synthetic scanned intake/lab images have offline OCR fixtures; arbitrary real-world scanned PDF/image OCR still requires the configured provider-backed OCR path.
+- `Observation.create` writeback requires an OpenEMR-launched SMART session so the web proxy can inject a real bearer token with `user/Observation.write`; successful creates must round-trip by read and retain the deterministic document-fact identifier. Missing FHIR config, demo bypass, or no-token sessions fail closed and retain approved evidence.
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; current source preview proves citation and bounding-box plumbing inside Co-Pilot.
-- The Week 2 eval gate is now executable with four committed deterministic cases and a passing baseline. The larger 50-case GitLab blocking gate is not activated yet.
+- The Week 2 eval gate now enforces at least 50 committed deterministic cases, explicit per-category thresholds, and a 5% regression bound with a passing 50-case baseline. GitHub Actions wires this as `.github/workflows/copilot-week2-gate.yml`; `.github/branch-protection-week2.json` records the required `API, Safety, and Eval Gate` protected-branch status check for GitHub settings.

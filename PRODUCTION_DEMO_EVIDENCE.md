@@ -10,14 +10,18 @@ Captured: 2026-04-29 22:39 America/Chicago / 2026-04-30T03:39Z
 | Co-Pilot web | https://copilot-web-production.up.railway.app |
 | Co-Pilot API | https://copilot-api-production-9f84.up.railway.app |
 
-Latest deployed Co-Pilot web deployment checked for Week 2 visibility:
-`dab3baaf-a3be-4864-8579-40f6600b78b5` on 2026-05-07.
+Latest deployed Co-Pilot services checked for Week 2 visibility:
+API `a63dc595-f653-44a1-8585-dca3dbf4ebe8` and web
+`ae344f94-7939-4a07-ba07-6afd5af77ecc` on 2026-05-08.
 
 Note: the original screenshot walkthrough below proves the Week 1 chat/source-link path.
-As of 2026-05-07, the deployed web UI also exposes the Week 2 document workflow
-proof panels. A fresh authenticated screenshot capture is still needed before
-submission, but the production app now visibly surfaces storage readiness,
-extraction details, approved patient evidence, and chat route trace.
+As of 2026-05-08, the deployed web UI exposes the Week 2 document workflow
+proof panels, and the API smoke passed readiness, no-token document denial,
+bearer-token upload/review/approved-evidence/chat, and live patient/guideline
+answer-bundle separation. A fresh authenticated screenshot/video capture is
+still needed before submission, but the production app now visibly surfaces
+storage readiness, extraction details, approved patient evidence, and chat
+route trace.
 
 ## What The Live Walkthrough Proves
 
@@ -71,6 +75,20 @@ source_endpoint_opened: true
 source_endpoint_has_fhir_json: true
 ```
 
+## Week 2 Deployed API Smoke
+
+```text
+API /readyz: 200
+runtime_config: true
+phi_controls: true
+document_workflow_persistence_ready: true
+document route without auth: 401 Missing bearer token
+bearer upload/review/approved-evidence/chat: passed
+bearer smoke job: w2doc-a77e9b6b-f6ac-4d1f-9cee-ca5e9c2d7b4a
+live document evidence marker appeared in approved evidence and targeted chat
+live patient/guideline answer separated Patient-record facts and Guideline evidence
+```
+
 ## Data Flow To Narrate
 
 ```text
@@ -100,7 +118,7 @@ Clinician browser
 7. Click `Pre-room brief`.
 8. Point out the retrieval statuses, source labels, and verification trace.
 9. Click `Recent labs`.
-10. Click a citation and show the source endpoint returning FHIR JSON.
+10. Click a citation and show the readable evidence viewer, with raw JSON behind details.
 11. Ask `What medication changes should I make?`.
 12. Show the read-only treatment recommendation refusal.
 
@@ -131,7 +149,7 @@ Use `https://copilot-web-production.up.railway.app` after launching/signing in f
 9. Show `Approved patient evidence` now has a retrievable evidence object and an `Open citation` link.
 10. Ask `What social barriers are documented?` or `What changed and what should I pay attention to for diabetes or lipids?`.
 11. Show the answer text, citation chip, retrieval chip containing `approved_document_evidence`, and `Agent route trace`.
-12. Upload the synthetic lab text from `DEMO_PLAN.md` and approve it. The current deployed OpenEMR FHIR endpoint does not expose `Observation.create`, so the UI should show writeback as unavailable rather than returning raw 404 failures.
+12. Upload the synthetic lab text from `DEMO_PLAN.md`, approve it, and click `Write labs`. The deployed OpenEMR FHIR metadata now advertises `Observation.create`, so the UI should call the create endpoint when the SMART session includes `user/Observation.write`; missing scope should surface as a retryable re-authorization message.
 
 ## Health And Security Smoke Checks
 
@@ -155,20 +173,20 @@ Trusted OpenEMR issuer redirects with api:oemr, api:fhir, and FHIR read scopes
 Local regression checks before redeploy:
 
 ```text
-API pytest tests: 155 passed, 6 skipped
+API pytest tests: 178 passed, 6 skipped
 ruff: all checks passed
 mypy: success
-Week 2 eval gate: 4 passed, 0 failed
+Week 2 eval gate: 50 passed, 0 failed
 npm run lint: passed
 npm run build: passed
-npm run test:e2e: 9 passed
+npm run test:e2e: 13 passed
 pip-audit: no known vulnerabilities found
 npm audit: 0 vulnerabilities
 ```
 
 ## Week 2 Production Checks
 
-Post-durable-persistence API checks on 2026-05-07:
+Post-durable-persistence API checks on 2026-05-08:
 
 ```text
 Co-Pilot API /readyz: 200
@@ -177,6 +195,8 @@ Co-Pilot API document_workflow_storage: true
 Co-Pilot API document_workflow_persistence_ready: true
 Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
+Co-Pilot API bearer upload/review/approved-evidence/chat: passed
+Co-Pilot API patient/guideline bundle separation in live chat: passed
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
 Co-Pilot web /api/capabilities document_workflow_persistence_ready: true
@@ -191,7 +211,7 @@ Capture these additional proof points in the authenticated browser walkthrough:
 5. `Approve all` review action.
 6. Chat answer to `What social barriers are documented?` showing approved document evidence.
 7. Guideline-backed evidence in a lab/lipid question.
-8. Synthetic lab upload, approval, and explicit `Observation.create` unavailable state.
+8. Synthetic lab upload, approval, and `Observation.create` write result or explicit SMART write-scope retry path.
 9. Production persistence configuration if `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` is enabled for the deployed API.
 10. `/readyz` checks show `document_workflow_persistence_enabled=true`, `document_workflow_storage=true`, and `document_workflow_persistence_ready=true`.
 11. `/api/capabilities` providers show `document_workflow_persistence_ready=true`.
