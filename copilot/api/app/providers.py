@@ -106,7 +106,23 @@ class MockProviderAdapter:
         )
         wants_document_context = wants_notes or any(
             term in tokens
-            for term in ["social", "barrier", "barriers", "intake", "family", "transportation", "work shift"]
+            for term in [
+                "social",
+                "barrier",
+                "barriers",
+                "intake",
+                "family",
+                "tobacco",
+                "alcohol",
+                "recreational",
+                "substance",
+                "substances",
+                "drug",
+                "drugs",
+                "transportation",
+                "work",
+                "shift",
+            ]
         ) or "work shift" in text
 
         if wants_broad_brief:

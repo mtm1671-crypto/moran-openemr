@@ -38,3 +38,15 @@ def test_guideline_plan_enables_guidelines() -> None:
     assert plan.use_guidelines is True
     assert plan.use_vector_search is True
     assert "get_recent_labs" in plan.fhir_tools
+
+
+def test_recreational_drug_question_routes_to_document_context() -> None:
+    plan = plan_retrieval("Has this patient ever taken recreational drugs?")
+
+    assert plan.intent == "document_context_lookup"
+    assert plan.fhir_tools == ("get_recent_notes",)
+    assert plan.use_demo_evidence is False
+    assert plan.approved_document_source_types == (
+        "intake_history",
+        "intake_chief_concern",
+    )

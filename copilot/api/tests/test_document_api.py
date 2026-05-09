@@ -541,6 +541,31 @@ def test_chief_concern_question_uses_single_approved_document_fact() -> None:
     assert "search_patient_evidence" not in final["audit"]["tools"]
 
 
+def test_recreational_drug_question_uses_approved_social_history() -> None:
+    client = TestClient(app)
+    _upload_approve_all(
+        client,
+        doc_type="intake_form",
+        content="""
+        Chief Concern: RUQ pain x 2 days
+        Social History: Tobacco: Never Alcohol: None (in remission) Recreational drugs: Never
+        """,
+    )
+
+    chat = client.post(
+        "/api/chat",
+        json={"patient_id": "p1", "message": "Has this patient ever taken recreational drugs?"},
+    )
+    final = _final_event(chat.text)
+
+    assert chat.status_code == 200
+    assert "Recreational drugs: Never" in final["answer"]
+    assert final["audit"]["retrieval_plan"]["intent"] == "document_context_lookup"
+    assert "approved_document_evidence" in final["audit"]["tools"]
+    assert "demo_evidence" not in final["audit"]["tools"]
+    assert "guideline_rag" not in final["audit"]["tools"]
+
+
 def test_newly_uploaded_lab_fact_beats_stale_cholesterol_cluster_in_chat() -> None:
     client = TestClient(app)
 
