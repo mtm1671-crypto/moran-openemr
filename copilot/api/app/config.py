@@ -18,6 +18,7 @@ from app.models import Role
 
 _PRODUCTION_ENV_NAMES = {"production", "prod"}
 _PHI_ENV_NAMES = {"production", "prod", "phi", "secure"}
+_LOCAL_ENV_NAMES = {"local"}
 
 
 class Settings(BaseSettings):
@@ -113,6 +114,7 @@ class Settings(BaseSettings):
     openemr_service_client_id: str | None = None
     openemr_service_client_secret: SecretStr | None = None
     openemr_service_bearer_token: SecretStr | None = None
+    openemr_service_bearer_token_file: str | None = None
     openemr_service_scopes: str = (
         "openid offline_access api:oemr api:fhir "
         "user/Patient.read user/Practitioner.read user/Observation.read user/Observation.write user/Condition.read "
@@ -143,8 +145,23 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env.lower() in _PRODUCTION_ENV_NAMES
 
+    def is_local(self) -> bool:
+        return self.app_env.lower() in _LOCAL_ENV_NAMES
+
     def requires_phi_controls(self) -> bool:
         return self.phi_mode or self.app_env.lower() in _PHI_ENV_NAMES
+
+    def resolve_service_bearer_token(self) -> str | None:
+        if self.openemr_service_bearer_token is not None:
+            return self.openemr_service_bearer_token.get_secret_value()
+        if self.openemr_service_bearer_token_file:
+            try:
+                with open(self.openemr_service_bearer_token_file, encoding="utf-8") as handle:
+                    token = handle.read().strip()
+            except OSError:
+                return None
+            return token or None
+        return None
 
     def uses_openai_models(self) -> bool:
         return (
@@ -168,6 +185,8 @@ class Settings(BaseSettings):
 
     def runtime_config_errors(self) -> list[str]:
         errors: list[str] = []
+        if self.demo_auth_bypass and not self.is_local():
+            errors.append("DEMO_AUTH_BYPASS may only be enabled when APP_ENV=local")
         if self.llm_provider not in {"mock", "openai", "openrouter"}:
             errors.append("LLM_PROVIDER must be one of: mock, openai, openrouter")
         if self.embedding_provider not in {"none", "openai"}:
@@ -242,7 +261,10 @@ class Settings(BaseSettings):
         if self.job_status_retention_days <= 0:
             errors.append("JOB_STATUS_RETENTION_DAYS must be greater than 0")
         if self.openemr_service_account_enabled:
-            has_static_bearer = self.openemr_service_bearer_token is not None
+            has_static_bearer = (
+                self.openemr_service_bearer_token is not None
+                or bool(self.openemr_service_bearer_token_file)
+            )
             has_client_credentials = (
                 self.openemr_service_client_id is not None
                 and self.openemr_service_client_secret is not None

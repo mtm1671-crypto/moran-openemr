@@ -5,11 +5,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from app.api import initialize_phi_storage, router
 from app.config import get_settings
 from app.scheduler import nightly_maintenance_loop
+
+CSRF_HEADER = "X-Copilot-CSRF"
+CSRF_HEADER_VALUE = "1"
+_STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_ALLOWED_CORS_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+_ALLOWED_CORS_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    CSRF_HEADER,
+]
 
 
 def create_app() -> FastAPI:
@@ -47,10 +58,26 @@ def create_app() -> FastAPI:
         allow_origins=[settings.public_base_url],
         allow_origin_regex=_local_cors_origin_regex(settings.app_env),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=_ALLOWED_CORS_METHODS,
+        allow_headers=_ALLOWED_CORS_HEADERS,
     )
     app.include_router(router)
+
+    @app.middleware("http")
+    async def require_csrf_header(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        # Browser-originated state-changing requests must carry a custom header
+        # the proxy injects. Non-browser callers (no Origin) bypass the check
+        # because they rely on bearer auth and cannot be CSRF'd.
+        if request.method in _STATE_CHANGING_METHODS and request.headers.get("origin"):
+            if request.headers.get(CSRF_HEADER) != CSRF_HEADER_VALUE:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Missing or invalid CSRF header"},
+                )
+        return await call_next(request)
 
     @app.middleware("http")
     async def security_headers(

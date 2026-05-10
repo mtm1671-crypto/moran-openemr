@@ -29,8 +29,22 @@ class OpenEMRFhirClient:
     async def read_resource(self, resource_type: str, resource_id: str) -> dict[str, Any]:
         return await self._request_json("GET", f"/{resource_type}/{resource_id}")
 
-    async def create_resource(self, resource_type: str, resource: dict[str, Any]) -> dict[str, Any]:
-        return await self._request_json("POST", f"/{resource_type}", json_body=resource)
+    async def create_resource(
+        self,
+        resource_type: str,
+        resource: dict[str, Any],
+        *,
+        if_none_exist: str | None = None,
+    ) -> dict[str, Any]:
+        extra_headers: dict[str, str] | None = None
+        if if_none_exist:
+            extra_headers = {"If-None-Exist": if_none_exist}
+        return await self._request_json(
+            "POST",
+            f"/{resource_type}",
+            json_body=resource,
+            extra_headers=extra_headers,
+        )
 
     async def get_patient(self, patient_id: str) -> dict[str, Any]:
         return await self.read_resource("Patient", patient_id)
@@ -121,7 +135,11 @@ class OpenEMRFhirClient:
         *,
         params: dict[str, str] | None = None,
         json_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        headers = self._headers()
+        if extra_headers:
+            headers.update(extra_headers)
         async with httpx.AsyncClient(
             timeout=self._timeout_seconds,
             verify=self._tls_verify,
@@ -131,7 +149,7 @@ class OpenEMRFhirClient:
                 method,
                 f"{self._base_url}/{path.lstrip('/')}",
                 policy=self._retry_policy,
-                headers=self._headers(),
+                headers=headers,
                 params=params,
                 json=json_body,
             )

@@ -105,8 +105,9 @@ class ServiceAccountTokenProvider:
         self._expires_at = None
 
     async def get_access_token(self, settings: Settings) -> str:
-        if settings.openemr_service_bearer_token is not None:
-            return settings.openemr_service_bearer_token.get_secret_value()
+        static_token = settings.resolve_service_bearer_token()
+        if static_token is not None:
+            return static_token
         if self._access_token and self._expires_at and self._expires_at > datetime.now(tz=UTC):
             return self._access_token
 
@@ -168,7 +169,7 @@ async def resolve_fhir_bearer_token(user: RequestUser, settings: Settings) -> st
     if user.access_token:
         return user.access_token
 
-    if settings.app_env == "local" and settings.openemr_dev_password_grant:
+    if settings.is_local() and settings.openemr_dev_password_grant:
         try:
             return await _dev_password_provider.get_access_token(settings)
         except OpenEMRTokenError as exc:

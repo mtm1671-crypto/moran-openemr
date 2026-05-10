@@ -23,11 +23,41 @@ class ObservationWriteError(RuntimeError):
     pass
 
 
+class ObservationWriteForbidden(ObservationWriteError):
+    """Caller lacks the SMART scope required to write Observations."""
+
+
 DOCUMENT_FACT_IDENTIFIER_SYSTEM = "https://agentforge.dev/fhir/identifier/document-fact"
 OBSERVATION_CREATE_UNAVAILABLE_MESSAGE = (
     "OpenEMR FHIR Observation.create is not exposed by this OpenEMR deployment; "
     "approved document evidence is retained, but chart lab writeback is unavailable."
 )
+OBSERVATION_WRITE_SCOPE_REQUIRED_MESSAGE = (
+    "Observation writeback requires a SMART user/Observation.write (or equivalent) scope."
+)
+
+
+def user_can_write_observations(user: RequestUser) -> bool:
+    return any(_scope_grants_observation_write(scope) for scope in user.scopes)
+
+
+def _scope_grants_observation_write(scope: str) -> bool:
+    # SMART v1 ("user/Observation.write") and v2 ("user/Observation.cuds" /
+    # "user/Observation.c") both grant create. Wildcards (*) cover Observation.
+    if "/" not in scope:
+        return False
+    prefix, _, resource_action = scope.partition("/")
+    if prefix not in {"user", "system", "patient"}:
+        return False
+    resource, _, action = resource_action.partition(".")
+    if resource not in {"Observation", "*"}:
+        return False
+    if not action:
+        return False
+    if action in {"write", "*"}:
+        return True
+    # SMART v2 granular actions: any string that includes "c" (create) or "u".
+    return "c" in action or "u" in action or "w" in action
 
 
 async def write_lab_fact_observation(
@@ -40,6 +70,8 @@ async def write_lab_fact_observation(
         raise ObservationWriteError("Only lab_result facts can be written as Observations")
     if fact.proposed_destination != W2ProposedDestination.openemr_observation:
         raise ObservationWriteError("Fact is not proposed for OpenEMR Observation write")
+    if not user_can_write_observations(user):
+        raise ObservationWriteForbidden(OBSERVATION_WRITE_SCOPE_REQUIRED_MESSAGE)
 
     patient_id = _openemr_patient_id(fact, settings)
     resource = build_observation_resource(fact, patient_id=patient_id)
@@ -57,11 +89,19 @@ async def write_lab_fact_observation(
     existing_id = await _find_existing_observation_id(client=client, fact=fact, patient_id=patient_id)
     if existing_id is not None:
         return existing_id
+    if_none_exist = f"identifier={DOCUMENT_FACT_IDENTIFIER_SYSTEM}|{fact.fact_id}"
     try:
-        created = await client.create_resource("Observation", resource)
+        created = await client.create_resource(
+            "Observation",
+            resource,
+            if_none_exist=if_none_exist,
+        )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code != 404:
             raise
+        # Server doesn't expose Observation create; fall back to identifier
+        # search. Because the search key is unique, concurrent writers all
+        # converge on the same resource id.
         existing_id = await _find_existing_observation_id(client=client, fact=fact, patient_id=patient_id)
         if existing_id is None:
             raise

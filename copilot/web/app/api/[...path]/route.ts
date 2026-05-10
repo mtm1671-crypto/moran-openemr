@@ -57,6 +57,10 @@ async function proxy(request: NextRequest, context: RouteContext) {
     requestHeaders.set("Authorization", `Bearer ${session.accessToken}`);
   }
 
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    requestHeaders.set("X-Copilot-CSRF", "1");
+  }
+
   const init: RequestInit = {
     method: request.method,
     headers: requestHeaders,

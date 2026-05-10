@@ -39,7 +39,7 @@ async def get_request_user(
     bearer_token = _extract_bearer_token(authorization)
 
     if settings.demo_auth_bypass:
-        if settings.app_env != "local":
+        if not settings.is_local():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="DEMO_AUTH_BYPASS is local-only and cannot be used in production",
@@ -52,7 +52,7 @@ async def get_request_user(
             access_token=bearer_token,
         )
 
-    if settings.dev_auth_bypass and settings.app_env == "local":
+    if settings.dev_auth_bypass and settings.is_local():
         return RequestUser(
             user_id="dev-doctor",
             role=Role.doctor,

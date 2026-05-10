@@ -50,7 +50,12 @@ from app.extraction_adapters import ExtractionError
 from app.fhir_client import OpenEMRFhirClient
 from app.extraction_pipeline import extract_document_facts_async
 from app.models import EvidenceObject, RequestUser, Role
-from app.observation_writer import ObservationWriteError, write_lab_fact_observation
+from app.observation_writer import (
+    OBSERVATION_WRITE_SCOPE_REQUIRED_MESSAGE,
+    ObservationWriteError,
+    user_can_write_observations,
+    write_lab_fact_observation,
+)
 from app.ocr_layout import LayoutExtractionError
 from app.openemr_auth import resolve_fhir_bearer_token
 from app.persistence import (
@@ -270,6 +275,8 @@ async def write_approved_facts(
     settings: Settings = Depends(get_settings),
 ) -> DocumentWriteResult:
     _require_document_access(user)
+    if not user_can_write_observations(user):
+        raise HTTPException(status_code=403, detail=OBSERVATION_WRITE_SCOPE_REQUIRED_MESSAGE)
     job = await _require_job_for_user(job_id, user, settings)
     if job.patient_id is None:
         raise HTTPException(
@@ -639,7 +646,7 @@ async def _require_patient_access(
     if patient_id is None:
         return
     if settings.demo_auth_bypass:
-        if settings.app_env != "local":
+        if not settings.is_local():
             raise HTTPException(
                 status_code=503,
                 detail="DEMO_AUTH_BYPASS is local-only and cannot be used in production",
