@@ -416,7 +416,7 @@ export function DocumentUploadPanel({
           }
         />
       </div>
-      {job ? <ExtractionReviewPanel facts={facts} trace={trace} /> : null}
+      {job ? <ExtractionReviewPanel facts={facts} job={job} trace={trace} /> : null}
       <section className="approvedEvidencePanel" aria-label="Approved patient document evidence">
         <header>
           <div>

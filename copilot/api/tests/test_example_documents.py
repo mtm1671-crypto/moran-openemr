@@ -12,6 +12,7 @@ from httpx import Response
 from app.config import Settings, get_settings
 from app.document_storage import reset_document_workflow_store
 from app.main import app
+from app.ocr_layout import LayoutExtractionError, extract_layout_async
 from app.openemr_auth import clear_dev_password_token_cache
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -110,7 +111,7 @@ def test_example_pdf_documents_extract_through_api(
         ("lab-results/p03-reyes-hba1c.png", "lab_pdf", {"Hemoglobin A1c"}),
     ],
 )
-def test_example_scan_documents_extract_with_local_synthetic_ocr_fixture(
+def test_example_scan_documents_extract_with_local_example_ocr_fixture(
     relative_path: str,
     doc_type: str,
     expected_labels: set[str],
@@ -131,6 +132,18 @@ def test_example_scan_documents_extract_with_local_synthetic_ocr_fixture(
 
     assert expected_labels <= labels
     assert all(fact["citation"]["bbox"]["page"] == 1 for fact in facts)
+
+
+@pytest.mark.asyncio
+async def test_example_image_fixture_is_disabled_in_phi_mode() -> None:
+    content = (EXAMPLE_DOCS / "intake-forms/p03-reyes-intake.png").read_bytes()
+
+    with pytest.raises(LayoutExtractionError, match="Image OCR is not configured"):
+        await extract_layout_async(
+            content,
+            "image/png",
+            Settings(app_env="production", ocr_provider="none"),
+        )
 
 
 @pytest.mark.parametrize(

@@ -51,7 +51,7 @@ def test_document_attach_fails_closed_without_fhir_when_demo_mode_is_disabled() 
     assert "real patient access cannot be verified" in response.json()["detail"]
 
 
-def test_production_demo_document_routes_require_bearer_token() -> None:
+def test_production_demo_document_routes_are_rejected() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="production",
         dev_auth_bypass=False,
@@ -60,8 +60,8 @@ def test_production_demo_document_routes_require_bearer_token() -> None:
     )
     response = TestClient(app).get("/api/documents/patients/demo-diabetes-001/approved-evidence")
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Missing bearer token"
+    assert response.status_code == 503
+    assert response.json()["detail"] == "DEMO_AUTH_BYPASS is local-only and cannot be used in production"
 
 
 @respx.mock
@@ -93,7 +93,7 @@ def test_attach_review_and_write_lab_document() -> None:
         json=_document_payload(
             doc_type="lab_pdf",
             content="""
-            Patient: Synthetic Demo
+            Patient: Margaret Chen
             Collection Date: 2026-03-12
             Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
                 LDL Cholesterol 142 mg/dL reference range 0-99 H
@@ -120,6 +120,14 @@ def test_attach_review_and_write_lab_document() -> None:
         return_value=Response(200, json=_observation_resource("obs-ldl", "p1", fact_ids[1]))
     )
     assert review["facts"][0]["citation"]["bbox"]["page"] == 1
+    source = client.get(
+        f"/api/documents/{job_id}/source-file",
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert source.status_code == 200
+    assert source.headers["content-type"].startswith("text/plain")
+    assert b"Hemoglobin A1c 8.6" in source.content
+    assert source.headers["x-document-source-sha256"] == body["job"]["source"]["source_sha256"]
 
     decision_response = client.post(
         f"/api/documents/{job_id}/review/decisions",
@@ -145,6 +153,128 @@ def test_attach_review_and_write_lab_document() -> None:
     assert [fact["written_resource_id"] for fact in write_body["facts"]] == ["obs-a1c", "obs-ldl"]
     assert observation_create.call_count == 2
     assert observation_create.calls[0].request.headers["authorization"] == "Bearer user-token"
+
+
+@respx.mock
+def test_observation_duplicate_search_404_allows_first_time_write() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=False,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    duplicate_search = respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(404, json=[])
+    )
+    observation_create = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(201, json={"resourceType": "Observation", "id": "obs-total-cholesterol"})
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="Total Cholesterol 244 mg/dL reference range 0-199 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    respx.get("http://openemr.test/apis/default/fhir/Observation/obs-total-cholesterol").mock(
+        return_value=Response(200, json=_observation_resource("obs-total-cholesterol", "p1", fact_id))
+    )
+
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert approve.status_code == 200
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 1
+    assert body["failed_count"] == 0
+    assert body["facts"][0]["written_resource_id"] == "obs-total-cholesterol"
+    assert duplicate_search.call_count == 1
+    assert observation_create.call_count == 1
+
+
+@respx.mock
+def test_observation_create_404_recovers_inserted_observation_by_identifier() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        app_env="local",
+        dev_auth_bypass=True,
+        demo_auth_bypass=False,
+        openemr_fhir_base_url="http://openemr.test/apis/default/fhir",
+    )
+    respx.get("http://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Patient/p1").mock(
+        return_value=Response(200, json={"resourceType": "Patient", "id": "p1"})
+    )
+    observation_create = respx.post("http://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(404, json=[])
+    )
+    client = TestClient(app)
+    upload = client.post(
+        "/api/documents/attach-and-extract",
+        json=_document_payload(
+            doc_type="lab_pdf",
+            content="Glucose 142 mg/dL reference range 70-99 H",
+        ),
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job"]["job_id"]
+    fact_id = client.get(
+        f"/api/documents/{job_id}/review",
+        headers={"Authorization": "Bearer user-token"},
+    ).json()["facts"][0]["fact_id"]
+    observation = _observation_resource("obs-glucose", "p1", fact_id)
+    duplicate_search = respx.get("http://openemr.test/apis/default/fhir/Observation").mock(
+        side_effect=[
+            Response(200, json={"resourceType": "Bundle", "entry": []}),
+            Response(200, json={"resourceType": "Bundle", "entry": [{"resource": observation}]}),
+        ]
+    )
+    respx.get("http://openemr.test/apis/default/fhir/Observation/obs-glucose").mock(
+        return_value=Response(200, json=observation)
+    )
+
+    approve = client.post(
+        f"/api/documents/{job_id}/review/decisions",
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    write = client.post(
+        f"/api/documents/{job_id}/write",
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert approve.status_code == 200
+    assert write.status_code == 200
+    body = write.json()
+    assert body["written_count"] == 1
+    assert body["failed_count"] == 0
+    assert body["facts"][0]["written_resource_id"] == "obs-glucose"
+    assert duplicate_search.call_count == 2
+    assert observation_create.call_count == 1
 
 
 def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() -> None:
@@ -192,8 +322,8 @@ def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() ->
 @respx.mock
 def test_profile_patient_chart_write_uses_seeded_openemr_patient_uuid() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
-        app_env="production",
-        dev_auth_bypass=False,
+        app_env="local",
+        dev_auth_bypass=True,
         demo_auth_bypass=True,
         openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
     )
@@ -730,7 +860,7 @@ def test_durable_source_lookup_reuses_persisted_document_after_cache_miss(
     persisted_job, _source, _created = create_document_workflow(
         patient_id="p1",
         doc_type=W2DocType.lab_pdf,
-        filename="synthetic.txt",
+        filename="example.txt",
         content_type="text/plain",
         content=content,
         actor_user_id="dev-doctor",
@@ -762,7 +892,7 @@ def test_durable_source_lookup_reuses_persisted_document_after_cache_miss(
         json={
             "patient_id": "p1",
             "doc_type": "lab_pdf",
-            "filename": "synthetic.txt",
+            "filename": "example.txt",
             "content_type": "text/plain",
             "content_base64": base64.b64encode(content).decode("ascii"),
         },
@@ -857,7 +987,7 @@ def _document_payload(
     *,
     doc_type: str,
     content: str,
-    filename: str = "synthetic.txt",
+    filename: str = "example.txt",
 ) -> dict[str, str]:
     return {
         "patient_id": "p1",

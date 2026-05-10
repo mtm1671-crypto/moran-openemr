@@ -4,7 +4,7 @@ from app.extraction_pipeline import extract_document_facts
 
 def test_extract_lab_document_returns_review_required_source_backed_facts() -> None:
     content = b"""
-    Patient: Synthetic Demo
+    Patient: Example Fixture
     Collection Date: 2026-03-12
     Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
     LDL Cholesterol 142 mg/dL reference range 0-99 H
@@ -52,4 +52,3 @@ def test_extract_intake_document_keeps_facts_as_derived_evidence() -> None:
     assert {fact.proposed_destination.value for fact in facts} == {"derived_evidence"}
     assert any(fact.normalized_value == "Penicillin - rash" for fact in facts)
     assert all(fact.citation.bbox is not None for fact in facts)
-

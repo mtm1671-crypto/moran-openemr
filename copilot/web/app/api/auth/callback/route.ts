@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
       tokenType: typeof token.token_type === "string" ? token.token_type : "Bearer",
       expiresAt: now + expiresIn * 1000,
       issuedAt: now,
-      scope: typeof token.scope === "string" ? token.scope : undefined
+      scope: typeof token.scope === "string" ? token.scope : undefined,
+      launch: oauthState.launch
     };
 
     if (!session.accessToken || session.tokenType.toLowerCase() !== "bearer") {

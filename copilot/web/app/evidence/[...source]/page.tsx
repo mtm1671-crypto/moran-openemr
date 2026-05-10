@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 import { evidenceApiHrefFromViewerLocation } from "../../lib/evidence-links";
 
@@ -213,6 +214,7 @@ function DocumentEvidenceView({
     () => payload.facts.find((fact) => fact.fact_id === selectedFactId) ?? payload.facts[0] ?? null,
     [payload.facts, selectedFactId]
   );
+  const sourceFileHref = documentSourceApiHref(apiHref);
 
   useEffect(() => {
     if (!payload.facts.length) {
@@ -248,12 +250,21 @@ function DocumentEvidenceView({
             <KeyValueRow item={{ label: "Size", value: `${payload.job.source.byte_count} bytes` }} />
             <KeyValueRow item={{ label: "SHA-256", value: payload.job.source.source_sha256 }} />
             <KeyValueRow item={{ label: "API source", value: apiHref }} />
+            {sourceFileHref ? <KeyValueRow item={{ label: "Source file", value: sourceFileHref }} /> : null}
           </dl>
         </article>
 
         <article className="evidencePanel factInspector">
           <h2>Selected Fact</h2>
-          {selectedFact ? <DocumentFactPreview fact={selectedFact} /> : <p>No extracted facts.</p>}
+          {selectedFact ? (
+            <DocumentFactPreview
+              contentType={payload.job.source.content_type}
+              fact={selectedFact}
+              sourceFileHref={sourceFileHref}
+            />
+          ) : (
+            <p>No extracted facts.</p>
+          )}
         </article>
       </section>
 
@@ -306,13 +317,35 @@ function GenericEvidenceView({ apiHref, payload }: { apiHref: string; payload: u
   );
 }
 
-function DocumentFactPreview({ fact }: { fact: DocumentFact }) {
+function DocumentFactPreview({
+  contentType,
+  fact,
+  sourceFileHref
+}: {
+  contentType: string;
+  fact: DocumentFact;
+  sourceFileHref: string | null;
+}) {
   const bbox = fact.citation.bbox;
   const confidence = Math.round(fact.extraction_confidence * 100);
+  const isImage = contentType.startsWith("image/");
 
   return (
     <div className="documentFactPreview">
       <div className="sourcePage" aria-label="Citation page preview">
+        {sourceFileHref && isImage ? (
+          <Image
+            alt=""
+            className="sourceDocumentImage"
+            fill
+            sizes="190px"
+            src={sourceFileHref}
+            unoptimized
+          />
+        ) : null}
+        {sourceFileHref && !isImage ? (
+          <iframe className="sourceDocumentFrame" src={sourceFileHref} title="Source document page" />
+        ) : null}
         {bbox ? (
           <span
             className="bbox"
@@ -357,6 +390,11 @@ function JsonDisclosure({
       <pre>{JSON.stringify(payload, null, 2)}</pre>
     </details>
   );
+}
+
+function documentSourceApiHref(reviewApiHref: string): string | null {
+  if (!reviewApiHref.endsWith("/review")) return null;
+  return reviewApiHref.replace(/\/review$/, "/source-file");
 }
 
 function Metric({ label, value }: KeyValue) {

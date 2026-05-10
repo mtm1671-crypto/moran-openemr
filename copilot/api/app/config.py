@@ -60,8 +60,8 @@ class Settings(BaseSettings):
         "user/MedicationRequest.read user/AllergyIntolerance.read user/DocumentReference.read"
     )
 
-    # Model/provider controls. Demo egress and real-PHI egress are intentionally
-    # separate so a synthetic OpenRouter setup cannot become a PHI path by accident.
+    # Model/provider controls. Non-PHI fixture egress and real-PHI egress are
+    # intentionally separate so development settings cannot become a PHI path by accident.
     llm_provider: str = "mock"
     embedding_provider: str = "none"
     openai_api_key: SecretStr | None = None
@@ -136,8 +136,7 @@ class Settings(BaseSettings):
     demo_auth_bypass: bool = Field(
         default=False,
         description=(
-            "Temporary demo-only switch that bypasses SMART auth and exposes only "
-            "the locked synthetic demo patient roster."
+            "Local-only switch that bypasses SMART auth for deterministic development fixtures."
         ),
     )
 
@@ -294,11 +293,8 @@ class Settings(BaseSettings):
         # local defaults because a misconfigured deployment is a security bug.
         if self.dev_auth_bypass:
             errors.append("DEV_AUTH_BYPASS must be false when PHI controls are required")
-        if self.demo_auth_bypass and not self.openrouter_demo_data_only:
-            errors.append(
-                "DEMO_AUTH_BYPASS requires OPENROUTER_DEMO_DATA_ONLY=true "
-                "when PHI controls are required"
-            )
+        if self.demo_auth_bypass:
+            errors.append("DEMO_AUTH_BYPASS must be false when PHI controls are required")
         if self.openemr_dev_password_grant:
             errors.append("OPENEMR_DEV_PASSWORD_GRANT must be false when PHI controls are required")
         if not self.openemr_tls_verify:
@@ -344,9 +340,8 @@ class Settings(BaseSettings):
                 and self.openrouter_baa_confirmed
                 and self.openrouter_data_policy_confirmed
             )
-            if not self.openrouter_demo_data_only and not has_phi_openrouter_path:
+            if not has_phi_openrouter_path:
                 errors.append(
-                    "OPENROUTER_DEMO_DATA_ONLY must be true for synthetic data, or "
                     "ALLOW_PHI_TO_OPENROUTER, OPENROUTER_BAA_CONFIRMED, and "
                     "OPENROUTER_DATA_POLICY_CONFIRMED must all be true before PHI can be sent "
                     "to OpenRouter"

@@ -185,34 +185,30 @@ def test_me_requires_bearer_token_when_dev_bypass_is_disabled() -> None:
     assert response.json()["detail"] == "Missing bearer token"
 
 
-def test_production_demo_auth_bypass_requires_bearer_token() -> None:
+def test_production_demo_auth_bypass_is_rejected_without_bearer_token() -> None:
     settings = Settings(app_env="production", dev_auth_bypass=False, demo_auth_bypass=True)
     app.dependency_overrides[get_settings] = lambda: settings
 
     response = TestClient(app).get("/api/me")
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Missing bearer token"
+    assert response.status_code == 503
+    assert response.json()["detail"] == "DEMO_AUTH_BYPASS is local-only and cannot be used in production"
 
 
-def test_production_demo_auth_bypass_accepts_bearer_token() -> None:
+def test_production_demo_auth_bypass_is_rejected_with_bearer_token() -> None:
     settings = Settings(app_env="production", dev_auth_bypass=False, demo_auth_bypass=True)
     app.dependency_overrides[get_settings] = lambda: settings
 
     response = TestClient(app).get("/api/me", headers={"Authorization": "Bearer demo-token"})
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["user_id"] == "demo-doctor"
-    assert body["role"] == "doctor"
-    assert "user/Observation.write" in body["scopes"]
-    assert "access_token" not in body
+    assert response.status_code == 503
+    assert response.json()["detail"] == "DEMO_AUTH_BYPASS is local-only and cannot be used in production"
 
 
 def test_demo_auth_bypass_returns_locked_margaret_chen_roster() -> None:
     settings = Settings(
-        app_env="production",
-        dev_auth_bypass=False,
+        app_env="local",
+        dev_auth_bypass=True,
         demo_auth_bypass=True,
         openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
     )

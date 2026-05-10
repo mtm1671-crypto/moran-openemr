@@ -201,10 +201,8 @@ async def readyz(settings: Settings = Depends(get_settings)) -> ReadinessRespons
     nightly_reindex_ok = not settings.nightly_reindex_enabled or service_account_configured
     if not nightly_reindex_ok:
         errors = [*errors, "OpenEMR service account is required for nightly reindex"]
-    openai_configured = not settings.uses_openai_models() or settings.openai_api_key is not None
-    openrouter_configured = (
-        not settings.uses_openrouter_models() or settings.openrouter_api_key is not None
-    )
+    openai_configured = settings.openai_api_key is not None
+    openrouter_configured = settings.openrouter_api_key is not None
     ocr_provider_configured = (
         settings.ocr_provider == "none"
         or (settings.ocr_provider == "openai" and settings.openai_api_key is not None)
@@ -296,10 +294,8 @@ async def model_status(settings: Settings = Depends(get_settings)) -> ModelStatu
         vision_ocr_enabled=settings.ocr_provider in {"openai", "openrouter"},
         external_model_egress=settings.uses_openai_models() or settings.uses_openrouter_models(),
         phi_controls_required=settings.requires_phi_controls(),
-        openai_configured=not settings.uses_openai_models() or settings.openai_api_key is not None,
-        openrouter_configured=(
-            not settings.uses_openrouter_models() or settings.openrouter_api_key is not None
-        ),
+        openai_configured=settings.openai_api_key is not None,
+        openrouter_configured=settings.openrouter_api_key is not None,
         openrouter_demo_data_only=settings.openrouter_demo_data_only,
         model_retry_attempts=settings.model_retry_attempts,
     )
@@ -1398,8 +1394,8 @@ async def _retrieve_evidence(
     plan = plan or plan_retrieval(request.message, request.quick_question_id)
     if settings.demo_auth_bypass:
         _require_demo_patient(request.patient_id)
-        # Explicit demo mode can answer from deterministic fixtures and approved
-        # document evidence. Real mode below never falls back to synthetic data.
+        # Explicit local demo mode can answer from deterministic fixtures and
+        # approved document evidence. Real mode below never falls back to fixture data.
         document_evidence = (
             await _approved_document_evidence(settings, request.patient_id)
             if plan.use_approved_documents

@@ -34,11 +34,11 @@ class DocumentLayout:
 
 
 def extract_layout(content: bytes, content_type: str) -> DocumentLayout:
-    """Extract reviewable text lines with deterministic synthetic bounding boxes.
+    """Extract reviewable text lines with deterministic normalized bounding boxes.
 
     The Week 2 implementation deliberately keeps bounding boxes owned by the layout
-    layer, not the LLM. For generated demo PDFs/forms this can decode embedded text
-    directly. Real OCR can replace this function without changing downstream schemas.
+    layer, not the LLM. For submitted example PDFs/forms this can decode embedded
+    text directly. Real OCR can replace this function without changing downstream schemas.
     """
 
     text = _decode_document_text(content, content_type)
@@ -53,6 +53,7 @@ async def extract_layout_async(
     if content_type in {"image/png", "image/jpeg", "image/jpg"}:
         from app.ocr_providers import OcrProviderError, extract_image_text_with_provider
 
+        allow_example_fixture = _allow_example_image_fixture(settings)
         if settings.ocr_provider in {"openai", "openrouter"}:
             try:
                 text = await extract_image_text_with_provider(
@@ -61,16 +62,16 @@ async def extract_layout_async(
                     settings=settings,
                 )
             except OcrProviderError as exc:
-                fixture_text = _known_synthetic_image_text(content)
+                fixture_text = _known_example_image_text(content) if allow_example_fixture else None
                 if fixture_text is None:
                     raise LayoutExtractionError(str(exc)) from exc
                 return _layout_from_text(fixture_text)
             return _layout_from_text(text)
 
-        fixture_text = _known_synthetic_image_text(content)
+        fixture_text = _known_example_image_text(content) if allow_example_fixture else None
         if fixture_text is not None:
             return _layout_from_text(fixture_text)
-        raise LayoutExtractionError("Image OCR is not configured for local deterministic extraction")
+        raise LayoutExtractionError("Image OCR is not configured for this environment")
 
     return extract_layout(content, content_type)
 
@@ -96,10 +97,10 @@ def _layout_from_text(text: str) -> DocumentLayout:
 
 def _decode_document_text(content: bytes, content_type: str) -> str:
     if content_type in {"image/png", "image/jpeg", "image/jpg"}:
-        fixture_text = _known_synthetic_image_text(content)
+        fixture_text = _known_example_image_text(content)
         if fixture_text is not None:
             return fixture_text
-        raise LayoutExtractionError("Image OCR is not configured for local deterministic extraction")
+        raise LayoutExtractionError("Image OCR is not configured for deterministic extraction")
 
     decoded = content.decode("utf-8", errors="ignore")
     if content_type == "application/pdf" or content.lstrip().startswith(b"%PDF"):
@@ -132,16 +133,20 @@ def _extract_pdfish_strings(text: str) -> str:
     return text
 
 
-def _known_synthetic_image_text(content: bytes) -> str | None:
-    """Return text for committed synthetic scan fixtures when OCR is offline.
+def _known_example_image_text(content: bytes) -> str | None:
+    """Return text for committed example scan fixtures when OCR is offline.
 
-    These hashes cover only the AgentForge demo images in `example-documents`.
+    These hashes cover only the submitted example images in `example-documents`.
     Unknown images still fail closed unless a configured OCR provider reads them,
     so this does not masquerade as general-purpose production OCR.
     """
 
     digest = hashlib.sha256(content).hexdigest().lower()
-    return _SYNTHETIC_IMAGE_TEXT_BY_SHA256.get(digest)
+    return _EXAMPLE_IMAGE_TEXT_BY_SHA256.get(digest)
+
+
+def _allow_example_image_fixture(settings: Settings) -> bool:
+    return settings.app_env == "local" and not settings.requires_phi_controls()
 
 
 def _clean_line(line: str) -> str:
@@ -157,7 +162,7 @@ def _line_bbox(*, index: int, line_count: int) -> DocumentBoundingBox:
     return DocumentBoundingBox(page=1, x0=0.08, y0=y0, x1=0.92, y1=y1)
 
 
-_SYNTHETIC_IMAGE_TEXT_BY_SHA256 = {
+_EXAMPLE_IMAGE_TEXT_BY_SHA256 = {
     "500077eb69905a31763bb3843417f9f89eade39ca1139e9bfd273b025de6f6c5": "\n".join(
         [
             "South Lamar Family Medicine",

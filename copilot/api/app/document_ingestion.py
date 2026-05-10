@@ -7,9 +7,10 @@ human review decision is required before lab facts are written to OpenEMR.
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.auth import get_request_user
 from app.config import Settings, get_settings
@@ -170,6 +171,28 @@ async def document_review(
 ) -> DocumentReviewPayload:
     job = await _require_job_for_user(job_id, user, settings)
     return DocumentReviewPayload(job=job, facts=read_document_facts(job.job_id), trace=job.trace)
+
+
+@router.get("/{job_id}/source-file")
+async def document_source_file(
+    job_id: str,
+    user: Annotated[RequestUser, Depends(get_request_user)],
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    job = await _require_job_for_user(job_id, user, settings)
+    source = read_document_source(job.source.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source document was not found")
+    return Response(
+        content=source.content,
+        media_type=source.content_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(source.filename)}",
+            "X-Document-Source-Id": source.source_id,
+            "X-Document-Source-Sha256": source.source_sha256,
+        },
+    )
 
 
 @router.post("/{job_id}/review/decisions", response_model=DocumentReviewResult)
@@ -616,8 +639,11 @@ async def _require_patient_access(
     if patient_id is None:
         return
     if settings.demo_auth_bypass:
-        if settings.app_env != "local" and user.access_token is None:
-            raise HTTPException(status_code=401, detail="Missing bearer token")
+        if settings.app_env != "local":
+            raise HTTPException(
+                status_code=503,
+                detail="DEMO_AUTH_BYPASS is local-only and cannot be used in production",
+            )
         if patient_id in DEMO_PATIENT_IDS:
             return
         raise HTTPException(status_code=404, detail="Demo patient was not found")

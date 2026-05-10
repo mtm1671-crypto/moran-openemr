@@ -52,12 +52,14 @@ export type DocumentFact = {
 };
 
 type ExtractionReviewPanelProps = {
+  job: DocumentJob;
   facts: DocumentFact[];
   trace: string[];
 };
 
-export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelProps) {
+export function ExtractionReviewPanel({ job, facts, trace }: ExtractionReviewPanelProps) {
   const [selectedFactId, setSelectedFactId] = useState<string | null>(facts[0]?.fact_id ?? null);
+  const sourceUrl = `/api/documents/${encodeURIComponent(job.job_id)}/source-file`;
   const selectedFact = useMemo(
     () => facts.find((fact) => fact.fact_id === selectedFactId) ?? facts[0] ?? null,
     [facts, selectedFactId]
@@ -75,7 +77,11 @@ export function ExtractionReviewPanel({ facts, trace }: ExtractionReviewPanelPro
 
   return (
     <div className="reviewGrid">
-      <PdfBoundingBoxPreview fact={selectedFact} />
+      <PdfBoundingBoxPreview
+        contentType={job.source.content_type}
+        fact={selectedFact}
+        sourceUrl={sourceUrl}
+      />
       <div className="factList" aria-label="Extracted facts">
         {facts.map((fact) => (
           <button

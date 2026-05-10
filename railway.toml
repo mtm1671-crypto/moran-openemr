@@ -15,6 +15,8 @@ restartPolicyMaxRetries = 3
 # compiles frontend assets. On Railway's smaller builders this can take
 # longer than the normal five-minute window, so keep the healthcheck
 # intentionally generous.
-# The readiness endpoint is served at /meta/health/readyz.
-healthcheckPath = "/meta/health/readyz"
+# Treat the FHIR metadata route as the deploy readiness signal. The generic
+# OpenEMR health route can report setup_required during container bootstrap even
+# after the FHIR API is already serving requests.
+healthcheckPath = "/apis/default/fhir/metadata"
 healthcheckTimeout = 900

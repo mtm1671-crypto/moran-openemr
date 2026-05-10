@@ -37,7 +37,7 @@ class EvidenceVectorizer(Protocol):
 
 
 class HashEmbeddingAdapter:
-    """Deterministic local embedding adapter for tests and synthetic demos.
+    """Deterministic local embedding adapter for tests and fixture-only runs.
 
     It is not semantically strong, but it avoids external PHI egress and gives
     predictable behavior for CI and smoke tests.

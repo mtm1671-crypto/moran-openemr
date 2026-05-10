@@ -57,7 +57,21 @@ async def write_lab_fact_observation(
     existing_id = await _find_existing_observation_id(client=client, fact=fact, patient_id=patient_id)
     if existing_id is not None:
         return existing_id
-    created = await client.create_resource("Observation", resource)
+    try:
+        created = await client.create_resource("Observation", resource)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+        existing_id = await _find_existing_observation_id(client=client, fact=fact, patient_id=patient_id)
+        if existing_id is None:
+            raise
+        await _verify_observation_roundtrip(
+            client=client,
+            fact=fact,
+            patient_id=patient_id,
+            resource_id=existing_id,
+        )
+        return existing_id
     resource_id = created.get("id")
     if not isinstance(resource_id, str) or not resource_id:
         raise ObservationWriteError("OpenEMR did not return an Observation id")
@@ -175,11 +189,16 @@ async def _find_existing_observation_id(
     if fact.patient_id is None:
         return None
     patient_id = patient_id or fact.patient_id
-    existing = await client.search_observations_by_identifier(
-        patient_id=patient_id,
-        system=DOCUMENT_FACT_IDENTIFIER_SYSTEM,
-        value=fact.fact_id,
-    )
+    try:
+        existing = await client.search_observations_by_identifier(
+            patient_id=patient_id,
+            system=DOCUMENT_FACT_IDENTIFIER_SYSTEM,
+            value=fact.fact_id,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return None
+        raise
     for resource in existing:
         resource_id = resource.get("id")
         if isinstance(resource_id, str) and resource_id:

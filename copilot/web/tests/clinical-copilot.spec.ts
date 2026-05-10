@@ -2,6 +2,8 @@ import { createServer, type Server } from "node:http";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { SESSION_COOKIE, sealJson, type TokenSession } from "../app/lib/auth-session";
+
 const openemrMockPort = Number(process.env.PLAYWRIGHT_OPENEMR_MOCK_PORT ?? "9821");
 let openemrMockServer: Server;
 let lastTokenBody = "";
@@ -29,7 +31,9 @@ test.beforeAll(async () => {
           JSON.stringify({
             access_token: "playwright-openemr-token",
             expires_in: 600,
-            scope: "openid api:fhir user/Patient.read",
+            scope: body.includes("code=auth-code-launch")
+              ? "openid api:fhir launch user/Patient.read"
+              : "openid api:fhir user/Patient.read",
             token_type: "Bearer"
           })
         );
@@ -56,7 +60,7 @@ test.afterAll(async () => {
 });
 
 test("local demo chat streams cited evidence and refuses treatment advice", async ({ page }) => {
-  const patientId = process.env.E2E_PATIENT_ID ?? "demo-diabetes-001";
+  const patientId = process.env.E2E_PATIENT_ID ?? "0f5c8cf1-0a22-4b70-9e83-3275d67cd901";
   const patientName = new RegExp(process.env.E2E_PATIENT_NAME ?? "Demo Patient");
   const labText = new RegExp(process.env.E2E_LAB_TEXT ?? "Demo A1c was 8\\.6%");
   const labLink = new RegExp(process.env.E2E_LAB_LINK ?? "Demo A1c");
@@ -84,7 +88,7 @@ test("local demo chat streams cited evidence and refuses treatment advice", asyn
 });
 
 test("OpenEMR launch context preselects a patient", async ({ page }) => {
-  const patientId = process.env.E2E_PATIENT_ID ?? "demo-diabetes-001";
+  const patientId = process.env.E2E_PATIENT_ID ?? "0f5c8cf1-0a22-4b70-9e83-3275d67cd901";
   const patientName = new RegExp(process.env.E2E_PATIENT_NAME ?? "Demo Patient");
 
   await page.goto(`/?launch_context=schedule&patient_id=${patientId}&appointment_eid=42`);
@@ -198,6 +202,13 @@ test("document evidence route renders review facts with a citation preview", asy
       })
     });
   });
+  await page.route("**/api/documents/job-alpha/source-file", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/plain",
+      body: "Alpha-only transportation barrier"
+    });
+  });
 
   await page.goto("/evidence/documents/job-alpha/review");
 
@@ -205,6 +216,9 @@ test("document evidence route renders review facts with a citation preview", asy
   await expect(page.getByLabel("Document evidence source")).toContainText("Patient patient-alpha");
   await expect(page.getByText("Alpha-only transportation barrier").first()).toBeVisible();
   await expect(page.getByLabel("Citation page preview")).toBeVisible();
+  await expect(page.frameLocator("iframe[title='Source document page']").locator("body")).toContainText(
+    "Alpha-only transportation barrier"
+  );
   await expect(page.getByText("Document JSON")).toBeVisible();
 });
 
@@ -229,7 +243,7 @@ test("document extraction approval feeds the chat evidence flow", async ({ page 
   await expect(page.getByLabel("Document workflow proof").getByText("Memory-only document workflow.")).toBeVisible();
   await page.getByLabel("Document type").selectOption("intake_form");
   await page.getByLabel("Document file").setInputFiles({
-    name: "synthetic-intake.txt",
+    name: "example-intake.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("Social History: Misses doses when work shifts change", "utf8")
   });
@@ -426,6 +440,7 @@ test("SMART callback exchanges code and creates an encrypted web session", async
   expect(authorizationUrl.pathname).toBe("/oauth2/default/authorize");
   expect(authorizationUrl.searchParams.get("client_id")).toBe("playwright-smart-client");
   expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+  expect(authorizationUrl.searchParams.get("scope")?.split(" ")).not.toContain("launch");
 
   const state = authorizationUrl.searchParams.get("state");
   expect(state).toBeTruthy();
@@ -466,6 +481,64 @@ test("SMART callback exchanges code and creates an encrypted web session", async
     headers: { Origin: "https://evil.example.test" }
   });
   expect(crossSiteResponse.status()).toBe(403);
+});
+
+test("SMART authorization start keeps launch scope only for launch sessions", async ({ request }) => {
+  const manualResponse = await request.get("/api/auth/start?redirect_to=%2F", { maxRedirects: 0 });
+  const manualAuthorizationUrl = new URL(manualResponse.headers()["location"]);
+  expect(manualAuthorizationUrl.searchParams.get("scope")?.split(" ")).not.toContain("launch");
+  expect(manualAuthorizationUrl.searchParams.has("launch")).toBe(false);
+
+  const launchResponse = await request.get("/api/auth/start?launch=launch-token&redirect_to=%2F", {
+    maxRedirects: 0
+  });
+  const launchAuthorizationUrl = new URL(launchResponse.headers()["location"]);
+  expect(launchAuthorizationUrl.searchParams.get("scope")?.split(" ")).toContain("launch");
+  expect(launchAuthorizationUrl.searchParams.get("launch")).toBe("launch-token");
+});
+
+test("SMART session rejects stale launch-scoped cookies without launch context", async ({ request }) => {
+  process.env.COPILOT_SESSION_SECRET = "playwright-session-secret-at-least-32-bytes";
+  const staleSession: TokenSession = {
+    accessToken: "stale-launch-token",
+    tokenType: "Bearer",
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    issuedAt: Date.now(),
+    scope: "openid api:fhir launch user/Patient.read"
+  };
+  const response = await request.get("/api/auth/session", {
+    headers: { Cookie: `${SESSION_COOKIE}=${sealJson(staleSession)}` }
+  });
+
+  expect(await response.json()).toEqual({
+    authenticated: false,
+    expires_at: null,
+    scope: null
+  });
+});
+
+test("SMART callback preserves valid launch context for launch-scoped sessions", async ({ request }) => {
+  const startResponse = await request.get("/api/auth/start?launch=launch-token&redirect_to=%2F", {
+    maxRedirects: 0
+  });
+  const authorizationUrl = new URL(startResponse.headers()["location"]);
+  const state = authorizationUrl.searchParams.get("state");
+  expect(state).toBeTruthy();
+
+  const callbackResponse = await request.get(
+    `/api/auth/callback?code=auth-code-launch&state=${state}`,
+    { maxRedirects: 0 }
+  );
+  expect(callbackResponse.status()).toBeGreaterThanOrEqual(300);
+  expect(callbackResponse.status()).toBeLessThan(400);
+
+  const sessionResponse = await request.get("/api/auth/session");
+  expect(await sessionResponse.json()).toEqual(
+    expect.objectContaining({
+      authenticated: true,
+      scope: "openid api:fhir launch user/Patient.read"
+    })
+  );
 });
 
 test("SMART authorization start rejects untrusted launch issuers", async ({ request }) => {

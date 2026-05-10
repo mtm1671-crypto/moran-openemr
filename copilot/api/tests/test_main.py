@@ -29,10 +29,7 @@ def test_production_config_rejects_dev_shortcuts_and_insecure_urls() -> None:
     errors = settings.runtime_config_errors()
 
     assert "DEV_AUTH_BYPASS must be false when PHI controls are required" in errors
-    assert (
-        "DEMO_AUTH_BYPASS requires OPENROUTER_DEMO_DATA_ONLY=true "
-        "when PHI controls are required"
-    ) in errors
+    assert "DEMO_AUTH_BYPASS must be false when PHI controls are required" in errors
     assert "OPENEMR_DEV_PASSWORD_GRANT must be false when PHI controls are required" in errors
     assert "OPENEMR_TLS_VERIFY must be true when PHI controls are required" in errors
     assert "DATABASE_URL is required when PHI controls are required" in errors
@@ -193,7 +190,9 @@ def test_production_config_rejects_openai_ocr_without_phi_approvals() -> None:
 def test_production_config_rejects_openrouter_without_api_key() -> None:
     settings = _phi_ready_settings(
         llm_provider="openrouter",
-        openrouter_demo_data_only=True,
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
     )
 
     assert "OPENROUTER_API_KEY is required when OpenRouter is enabled" in (
@@ -204,7 +203,9 @@ def test_production_config_rejects_openrouter_without_api_key() -> None:
 def test_production_config_rejects_openrouter_ocr_without_api_key() -> None:
     settings = _phi_ready_settings(
         ocr_provider="openrouter",
-        openrouter_demo_data_only=True,
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
     )
 
     assert "OPENROUTER_API_KEY is required when OpenRouter is enabled" in (
@@ -216,7 +217,9 @@ def test_production_config_rejects_generic_openrouter_free_for_phi_ocr() -> None
     settings = _phi_ready_settings(
         ocr_provider="openrouter",
         openrouter_api_key="test-key",
-        openrouter_demo_data_only=True,
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
         openrouter_ocr_model="openrouter/free",
     )
 
@@ -238,7 +241,9 @@ def test_production_config_rejects_blank_ocr_models() -> None:
     openrouter_settings = _phi_ready_settings(
         ocr_provider="openrouter",
         openrouter_api_key="test-key",
-        openrouter_demo_data_only=True,
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
         openrouter_ocr_model=" ",
     )
 
@@ -254,7 +259,9 @@ def test_production_config_rejects_invalid_openrouter_ocr_token_budget() -> None
     settings = _phi_ready_settings(
         ocr_provider="openrouter",
         openrouter_api_key="test-key",
-        openrouter_demo_data_only=True,
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
         openrouter_ocr_max_tokens=0,
     )
 
@@ -263,19 +270,19 @@ def test_production_config_rejects_invalid_openrouter_ocr_token_budget() -> None
     )
 
 
-def test_production_config_rejects_openrouter_without_demo_or_phi_approval() -> None:
+def test_production_config_rejects_openrouter_without_phi_approval() -> None:
     settings = _phi_ready_settings(
         llm_provider="openrouter",
         openrouter_api_key="test-key",
     )
 
     assert any(
-        error.startswith("OPENROUTER_DEMO_DATA_ONLY must be true")
+        error.startswith("ALLOW_PHI_TO_OPENROUTER, OPENROUTER_BAA_CONFIRMED")
         for error in settings.runtime_config_errors()
     )
 
 
-def test_production_config_accepts_openrouter_for_synthetic_demo_data() -> None:
+def test_production_config_rejects_openrouter_demo_data_flag_for_phi() -> None:
     settings = _phi_ready_settings(
         llm_provider="openrouter",
         ocr_provider="openrouter",
@@ -283,10 +290,26 @@ def test_production_config_accepts_openrouter_for_synthetic_demo_data() -> None:
         openrouter_demo_data_only=True,
     )
 
+    assert any(
+        error.startswith("ALLOW_PHI_TO_OPENROUTER, OPENROUTER_BAA_CONFIRMED")
+        for error in settings.runtime_config_errors()
+    )
+
+
+def test_production_config_accepts_explicit_openrouter_phi_path() -> None:
+    settings = _phi_ready_settings(
+        llm_provider="openrouter",
+        ocr_provider="openrouter",
+        openrouter_api_key="test-key",
+        allow_phi_to_openrouter=True,
+        openrouter_baa_confirmed=True,
+        openrouter_data_policy_confirmed=True,
+    )
+
     assert settings.runtime_config_errors() == []
 
 
-def test_production_config_accepts_locked_demo_auth_for_synthetic_demo_data() -> None:
+def test_production_config_rejects_locked_demo_auth_even_for_non_phi_model_data() -> None:
     settings = _phi_ready_settings(
         demo_auth_bypass=True,
         llm_provider="openrouter",
@@ -295,7 +318,9 @@ def test_production_config_accepts_locked_demo_auth_for_synthetic_demo_data() ->
         openrouter_demo_data_only=True,
     )
 
-    assert settings.runtime_config_errors() == []
+    assert "DEMO_AUTH_BYPASS must be false when PHI controls are required" in (
+        settings.runtime_config_errors()
+    )
 
 
 def test_production_config_accepts_explicit_openai_phi_path() -> None:

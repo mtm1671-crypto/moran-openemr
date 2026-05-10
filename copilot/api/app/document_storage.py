@@ -314,6 +314,7 @@ def _fact_to_evidence(job: DocumentJobRecord, fact: ExtractedFact) -> EvidenceOb
         metadata={
             "schema": "w2_document_fact_v1",
             "document_job_id": job.job_id,
+            "source_file_url": f"/api/documents/{job.job_id}/source-file",
             "doc_type": job.doc_type.value,
             "citation": fact.citation.model_dump(mode="json"),
             "proposed_destination": fact.proposed_destination.value,

@@ -50,11 +50,14 @@ def test_guideline_evidence_keeps_source_chunk_metadata() -> None:
     assert evidence
     assert evidence[0].source_type == "guideline"
     assert evidence[0].metadata["retrieval_mode"] == "hybrid_sparse_dense_guideline_rag"
-    assert evidence[0].metadata["corpus_id"] == "af-w2-primary-care-guidelines-v1"
+    assert evidence[0].metadata["corpus_id"] == "af-w2-primary-care-source-guidelines-v1"
+    assert evidence[0].metadata["source_authority"]
     assert evidence[0].metadata["source_id"] == evidence[0].source_id
     assert evidence[0].metadata["section"]
     assert evidence[0].metadata["section_heading"]
     assert evidence[0].metadata["snippet"]
+    assert evidence[0].source_url
+    assert evidence[0].source_url.startswith("https://")
     assert evidence[0].metadata["sparse_score"] >= 0
     assert evidence[0].metadata["dense_score"] >= 0
 

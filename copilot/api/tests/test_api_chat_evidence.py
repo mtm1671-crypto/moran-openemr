@@ -418,8 +418,8 @@ def test_demo_patient_demographic_question_does_not_fall_back_to_cholesterol() -
 
 def test_chat_uses_demo_auth_bypass_when_fhir_is_configured() -> None:
     settings = Settings(
-        app_env="production",
-        dev_auth_bypass=False,
+        app_env="local",
+        dev_auth_bypass=True,
         demo_auth_bypass=True,
         openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
     )

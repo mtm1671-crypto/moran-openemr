@@ -118,7 +118,7 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
             'code' => new FhirSearchParameterDefinition('code', SearchFieldType::TOKEN, ['result_code']),
             'category' => new FhirSearchParameterDefinition('category', SearchFieldType::TOKEN, ['category']),
             'date' => new FhirSearchParameterDefinition('date', SearchFieldType::DATETIME, ['report_date']),
-            '_id' => new FhirSearchParameterDefinition('_id', SearchFieldType::TOKEN, [new ServiceField('result_uuid', ServiceField::TYPE_UUID)]),
+            '_id' => new FhirSearchParameterDefinition('_id', SearchFieldType::TOKEN, [new ServiceField('presult.result_uuid', ServiceField::TYPE_UUID)]),
             'identifier' => new FhirSearchParameterDefinition('identifier', SearchFieldType::TOKEN, ['identifier']),
             '_lastUpdated' => $this->getLastModifiedSearchField()
         ];
@@ -628,7 +628,7 @@ class FhirObservationLaboratoryService extends FhirServiceBase implements IPatie
 
     public function getPatientContextSearchField(): FhirSearchParameterDefinition
     {
-        return new FhirSearchParameterDefinition('patient', SearchFieldType::REFERENCE, [new ServiceField('puuid', ServiceField::TYPE_UUID)]);
+        return new FhirSearchParameterDefinition('patient', SearchFieldType::REFERENCE, [new ServiceField('patients.puuid', ServiceField::TYPE_UUID)]);
     }
 
     public function getProfileURIs(): array

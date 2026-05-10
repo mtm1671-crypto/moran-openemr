@@ -1024,10 +1024,10 @@ class ProcedureService extends BaseService
     public function getLabObservationByResultUuid(string $resultUuid, ?string $patientUuid = null): ProcessingResult
     {
         $search = [
-            'result_uuid' => new TokenSearchField('result_uuid', [$resultUuid], true)
+            'presult.result_uuid' => new TokenSearchField('presult.result_uuid', [$resultUuid], true)
         ];
         if (!empty($patientUuid)) {
-            $search['puuid'] = new TokenSearchField('puuid', [$patientUuid], true);
+            $search['patients.puuid'] = new TokenSearchField('patients.puuid', [$patientUuid], true);
         }
         return $this->search($search, true);
     }

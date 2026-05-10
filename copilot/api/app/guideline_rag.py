@@ -13,6 +13,7 @@ class GuidelineChunk:
     corpus_id: str
     chunk_id: str
     domain: str
+    source_authority: str
     title: str
     section_heading: str
     snippet: str
@@ -29,31 +30,52 @@ class GuidelineHit:
 
 GUIDELINE_CORPUS = [
     GuidelineChunk(
-        corpus_id="af-w2-primary-care-guidelines-v1",
-        chunk_id="diabetes-a1c-monitoring",
+        corpus_id="af-w2-primary-care-source-guidelines-v1",
+        chunk_id="ada-standards-2026-glycemic-assessment",
         domain="diabetes",
-        title="Synthetic Diabetes Guideline",
-        section_heading="A1c monitoring",
-        snippet="Use recent A1c values as context for diabetes follow-up and monitoring.",
-        source_url_or_path="synthetic://guidelines/diabetes#a1c-monitoring",
+        source_authority="American Diabetes Association",
+        title="Standards of Care in Diabetes - 2026",
+        section_heading="Glycemic goals and hypoglycemia",
+        snippet=(
+            "Use A1C and other glycemic data as source-backed context when reviewing diabetes "
+            "control, follow-up needs, and patient-specific risk."
+        ),
+        source_url_or_path=(
+            "https://professional.diabetes.org/standards-of-care/practice-guidelines-resources"
+            "#diabetes-a1c-monitoring"
+        ),
     ),
     GuidelineChunk(
-        corpus_id="af-w2-primary-care-guidelines-v1",
-        chunk_id="hypertension-bp-followup",
+        corpus_id="af-w2-primary-care-source-guidelines-v1",
+        chunk_id="aha-acc-2025-hypertension-bp-confirmation",
         domain="hypertension",
-        title="Synthetic Hypertension Guideline",
-        section_heading="Blood pressure follow-up",
-        snippet="Use repeated blood pressure readings and medication adherence context during follow-up.",
-        source_url_or_path="synthetic://guidelines/hypertension#bp-followup",
+        source_authority="American Heart Association and American College of Cardiology",
+        title="2025 Guideline for the Prevention, Detection, Evaluation, and Management of High Blood Pressure in Adults",
+        section_heading="Blood pressure confirmation and longitudinal management",
+        snippet=(
+            "Treat single blood pressure readings as context that should be interpreted with "
+            "confirmed measurements, longitudinal trend, adherence, and cardiovascular risk."
+        ),
+        source_url_or_path=(
+            "https://professional.heart.org/en/science-news/2025-guideline-for-the-prevention-detection-evaluation-and-management-of-high-blood-pressure-in-adults"
+            "#hypertension-blood-pressure"
+        ),
     ),
     GuidelineChunk(
-        corpus_id="af-w2-primary-care-guidelines-v1",
-        chunk_id="lipids-ldl-risk",
+        corpus_id="af-w2-primary-care-source-guidelines-v1",
+        chunk_id="aha-acc-2018-cholesterol-ldl-risk",
         domain="lipids",
-        title="Synthetic Lipid Guideline",
+        source_authority="American Heart Association and American College of Cardiology",
+        title="2018 Guideline on the Management of Blood Cholesterol",
         section_heading="LDL and cardiovascular risk",
-        snippet="Use LDL results with cardiovascular risk factors when preparing chart summaries.",
-        source_url_or_path="synthetic://guidelines/lipids#ldl-risk",
+        snippet=(
+            "Use LDL cholesterol values together with ASCVD risk factors when preparing "
+            "source-backed lipid summaries for clinician review."
+        ),
+        source_url_or_path=(
+            "https://www.acc.org/Latest-in-Cardiology/ten-points-to-remember/2018/11/09/14/36/2018-Guideline-on-Management-of-Blood-Cholesterol"
+            "#lipids-ldl-risk"
+        ),
     ),
 ]
 
@@ -111,6 +133,7 @@ def guideline_hits_to_evidence(
                 "corpus_id": hit.chunk.corpus_id,
                 "source_type": "guideline",
                 "source_id": hit.chunk.chunk_id,
+                "source_authority": hit.chunk.source_authority,
                 "title": hit.chunk.title,
                 "section": hit.chunk.section_heading,
                 "section_heading": hit.chunk.section_heading,
@@ -127,7 +150,15 @@ def guideline_hits_to_evidence(
 
 def _sparse_score_chunk(query_tokens: set[str], chunk: GuidelineChunk) -> float:
     chunk_tokens = _tokens(
-        " ".join([chunk.domain, chunk.title, chunk.section_heading, chunk.snippet])
+        " ".join(
+            [
+                chunk.domain,
+                chunk.source_authority,
+                chunk.title,
+                chunk.section_heading,
+                chunk.snippet,
+            ]
+        )
     )
     if not query_tokens or not chunk_tokens:
         return 0.0
@@ -137,7 +168,17 @@ def _sparse_score_chunk(query_tokens: set[str], chunk: GuidelineChunk) -> float:
 
 def _dense_score_chunk(query_vector: list[float], chunk: GuidelineChunk) -> float:
     chunk_vector = _hashed_vector(
-        _tokens(" ".join([chunk.domain, chunk.title, chunk.section_heading, chunk.snippet]))
+        _tokens(
+            " ".join(
+                [
+                    chunk.domain,
+                    chunk.source_authority,
+                    chunk.title,
+                    chunk.section_heading,
+                    chunk.snippet,
+                ]
+            )
+        )
     )
     return _cosine(query_vector, chunk_vector)
 

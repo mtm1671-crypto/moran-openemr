@@ -33,6 +33,8 @@ const webServer = shouldStartServers
           OPENEMR_BASE_URL: openemrMockBaseUrl,
           OPENEMR_CLIENT_ID: "playwright-smart-client",
           OPENEMR_CLIENT_SECRET: "playwright-smart-secret",
+          OPENEMR_SCOPES:
+            "openid api:oemr api:fhir fhirUser launch user/Patient.read user/Observation.write",
           OPENEMR_TOKEN_AUTH_METHOD: "client_secret_basic",
           PUBLIC_BASE_URL: "https://copilot.example.test"
         } as Record<string, string>,

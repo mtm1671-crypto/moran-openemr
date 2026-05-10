@@ -16,6 +16,7 @@ export type TokenSession = {
   issuedAt: number;
   scope?: string;
   idToken?: string;
+  launch?: string;
 };
 
 export type OAuthState = {
@@ -67,6 +68,10 @@ export function readTokenSession(request: NextRequest): TokenSession | null {
 }
 
 export function isTokenSessionValid(session: TokenSession): boolean {
+  const scopes = new Set((session.scope ?? "").split(/\s+/).filter(Boolean));
+  if (scopes.has("launch") && !session.launch) {
+    return false;
+  }
   return Boolean(
     session.accessToken &&
       session.tokenType.toLowerCase() === "bearer" &&
@@ -191,6 +196,9 @@ export function resolveScopes(hasLaunchContext: boolean): string {
     "user/DocumentReference.read"
   ];
   const scopes = new Set((configured ?? defaultScopes.join(" ")).split(/\s+/).filter(Boolean));
+  if (!hasLaunchContext) {
+    scopes.delete("launch");
+  }
   if (hasLaunchContext) {
     scopes.add("launch");
   }

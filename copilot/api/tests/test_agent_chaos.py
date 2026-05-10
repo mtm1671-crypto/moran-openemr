@@ -278,7 +278,7 @@ def test_agent_returns_safe_failure_after_openemr_timeout() -> None:
     )
     app.dependency_overrides[get_settings] = lambda: settings
     respx.get("http://openemr.test/apis/default/fhir/Patient/p-timeout").mock(
-        side_effect=httpx.ReadTimeout("synthetic timeout")
+        side_effect=httpx.ReadTimeout("example timeout")
     )
 
     response = TestClient(app).post(
@@ -303,7 +303,7 @@ def test_agent_document_write_is_idempotent_under_concurrent_pressure(
         "/api/documents/attach-and-extract",
         json=_document_payload(
             """
-            Patient: Synthetic Demo
+            Patient: Example Fixture
             Collection Date: 2026-03-12
             Hemoglobin A1c 8.6 % reference range 4.0-5.6 H
             """,
