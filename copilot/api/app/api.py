@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.auth import get_request_user
 from app.config import Settings, get_settings
 from app.demo_patients import (
+    canonical_profile_patient_id,
     demo_evidence as demo_patient_evidence,
     demo_patient_fhir_resource,
     demo_patient_summaries,
@@ -895,7 +896,7 @@ async def demo_chen_lipid_source(settings: Settings = Depends(get_settings)) -> 
         "id": "demo-chen-lipid-panel",
         "status": "final",
         "code": {"text": "LDL Cholesterol"},
-        "subject": {"reference": "Patient/p1"},
+        "subject": {"reference": f"Patient/{canonical_profile_patient_id('p1')}"},
         "valueQuantity": {"value": 158, "unit": "mg/dL"},
         "interpretation": [{"text": "High"}],
         "effectiveDateTime": "2026-04-23",

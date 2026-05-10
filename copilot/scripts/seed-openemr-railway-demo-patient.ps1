@@ -16,7 +16,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sqlFiles = @(
     "seed-openemr-demo-patient.sql",
     "seed-openemr-demo-population.sql",
-    "seed-openemr-demo-notes.sql"
+    "seed-openemr-demo-notes.sql",
+    "seed-openemr-profile-patients.sql"
 )
 $sqlParts = foreach ($sqlFile in $sqlFiles) {
     $sqlPath = Join-Path $scriptDir $sqlFile

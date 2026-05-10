@@ -70,6 +70,21 @@ def plan_retrieval(message: str, quick_question_id: str | None = None) -> Retrie
             use_approved_documents=False,
         )
 
+    if _mentions_explicit_medications(tokens) and _mentions_social_or_documents(text, tokens):
+        return RetrievalPlan(
+            intent="document_medication_history_lookup",
+            evidence_limit=5 if restrictive else 6,
+            fhir_tools=("get_recent_notes", "get_medications"),
+            use_demo_evidence=False,
+            approved_document_source_types=(
+                "intake_medication",
+                "intake_history",
+                "intake_allergy",
+                "intake_chief_concern",
+            ),
+            use_vector_search=not restrictive,
+        )
+
     if _mentions_medications(tokens) and _mentions_allergies(tokens):
         return RetrievalPlan(
             intent="medications_allergies_lookup",
@@ -190,6 +205,7 @@ def _mentions_labs(tokens: set[str]) -> bool:
             "egfr",
             "cholesterol",
             "lipid",
+            "lipids",
             "ldl",
             "hdl",
             "triglyceride",
@@ -210,13 +226,25 @@ def _mentions_medications(tokens: set[str]) -> bool:
     return bool(tokens & {"medication", "medications", "medicine", "meds", "prescription", "drug"})
 
 
+def _mentions_explicit_medications(tokens: set[str]) -> bool:
+    return bool(tokens & {"medication", "medications", "medicine", "meds", "prescription"})
+
+
 def _mentions_allergies(tokens: set[str]) -> bool:
     return bool(tokens & {"allergy", "allergies", "intolerance"})
 
 
 def _mentions_guidelines(text: str, tokens: set[str]) -> bool:
-    return bool(tokens & {"guideline", "guidelines", "threshold", "goal", "goals"}) or (
-        "guideline evidence" in text
+    return (
+        bool(tokens & {"guideline", "guidelines", "threshold", "goal", "goals"})
+        or "guideline evidence" in text
+        or (
+            bool(tokens & {"diabetes", "lipid", "lipids", "ldl", "hypertension"})
+            and (
+                "pay attention" in text
+                or bool(tokens & {"abnormality", "abnormalities", "changed", "review", "summarize"})
+            )
+        )
     )
 
 

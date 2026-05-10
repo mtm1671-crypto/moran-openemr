@@ -16,6 +16,7 @@ Use this file as the source of truth while filling out the AgentForge submission
 Latest submitted code:
 
 ```text
+Current HEAD: Map example profiles to writable OpenEMR patients
 81a85a6ae Record Week 2 redeploy status
 6e7a3ef5f Implement Week 2 document evidence workflow
 ```
@@ -59,15 +60,12 @@ Paste the uploaded video link into the submission form.
 Local checks:
 
 ```text
-API tests: 178 passed, 6 skipped
+API tests: 192 passed, 6 skipped
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
 Web lint: passed
 Web build: passed
-Playwright: 13 passed
-pip-audit: no known vulnerabilities found
-npm audit: 0 vulnerabilities
 git diff --check: passed
 ```
 
@@ -82,13 +80,17 @@ Co-Pilot API /api/capabilities document_workflow_persistence_ready: true
 Co-Pilot API document route without auth: 401
 Co-Pilot API bearer upload/review/approved-evidence/chat: passed
 Co-Pilot API patient/guideline bundle separation in live chat: passed
+Co-Pilot API profile roster returns OpenEMR UUIDs for Margaret, James, Sofia, Robert, and Demo Patient
+Co-Pilot API document bbox/citation/source roundtrip: passed
+Co-Pilot API demo-bearer write reaches OpenEMR and returns 401 re-authorization instead of demo-profile block
+OpenEMR /: 302 to login page
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
 ```
 
 ## Final Manual Capture Checklist
 
-Record or verify these in the final video:
+Record or verify these in the final video with audible narration:
 
 1. Open deployed OpenEMR.
 2. Log in with the Railway demo clinician credentials.
@@ -128,6 +130,6 @@ LDL Cholesterol 142 mg/dL reference range 0-99 H
 - Retrieval includes PHI-local sparse evidence matching, hybrid sparse+dense guideline retrieval, patient/guideline answer-bundle separation, and an intent-aware reranker before model context; the regression suite covers newly approved document facts beating stale cholesterol-only evidence and demographic questions staying on demographics.
 - Local/default Week 2 document workflow storage remains in-memory for demo speed. A production path now persists encrypted document sources, jobs, facts, and approved evidence in Postgres when `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true` with `DATABASE_URL` and `ENCRYPTION_KEY`; uploads first check durable storage by deterministic source key so a process restart does not create a duplicate workflow. The Railway demo now reports document workflow persistence enabled and ready.
 - Synthetic text/PDF extraction is deterministic. The committed synthetic scanned intake/lab images have offline OCR fixtures; arbitrary real-world scanned PDF/image OCR still requires the configured provider-backed OCR path.
-- `Observation.create` writeback requires an OpenEMR-launched SMART session so the web proxy can inject a real bearer token with `user/Observation.write`; successful creates must round-trip by read and retain the deterministic document-fact identifier. Missing FHIR config, demo bypass, or no-token sessions fail closed and retain approved evidence.
+- `Observation.create` writeback requires an OpenEMR-launched SMART session so the web proxy can inject a real bearer token with `user/Observation.write`; successful creates must round-trip by read and retain the deterministic document-fact identifier. The seeded example profiles use real OpenEMR patient UUIDs for this path. Missing FHIR config, missing SMART token, or OpenEMR authorization failures fail closed and retain approved evidence.
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; current source preview proves citation and bounding-box plumbing inside Co-Pilot.
 - The Week 2 eval gate now enforces at least 50 committed deterministic cases, explicit per-category thresholds, and a 5% regression bound with a passing 50-case baseline. GitHub Actions wires this as `.github/workflows/copilot-week2-gate.yml`; `.github/branch-protection-week2.json` records the required `API, Safety, and Eval Gate` protected-branch status check for GitHub settings.

@@ -190,15 +190,22 @@ def test_demo_auth_bypass_fails_closed_on_chart_write_without_openemr_token() ->
 
 
 @respx.mock
-def test_demo_fixture_patient_chart_write_fails_closed_even_with_bearer_token() -> None:
+def test_profile_patient_chart_write_uses_seeded_openemr_patient_uuid() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(
         app_env="production",
         dev_auth_bypass=False,
         demo_auth_bypass=True,
         openemr_fhir_base_url="https://openemr.test/apis/default/fhir",
     )
+    patient_uuid = "5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02"
+    respx.get("https://openemr.test/apis/default/fhir/metadata").mock(
+        return_value=Response(200, json=_capability_statement(create_observation=True))
+    )
+    respx.get("https://openemr.test/apis/default/fhir/Observation").mock(
+        return_value=Response(200, json={"resourceType": "Bundle", "entry": []})
+    )
     observation_create = respx.post("https://openemr.test/apis/default/fhir/Observation").mock(
-        return_value=Response(201, json={"resourceType": "Observation", "id": "should-not-write"})
+        return_value=Response(201, json={"resourceType": "Observation", "id": "obs-demo"})
     )
     client = TestClient(app)
     upload = client.post(
@@ -215,10 +222,14 @@ def test_demo_fixture_patient_chart_write_fails_closed_even_with_bearer_token() 
         f"/api/documents/{job_id}/review",
         headers={"Authorization": "Bearer user-token"},
     ).json()
+    fact_id = review["facts"][0]["fact_id"]
+    respx.get("https://openemr.test/apis/default/fhir/Observation/obs-demo").mock(
+        return_value=Response(200, json=_observation_resource("obs-demo", patient_uuid, fact_id))
+    )
 
     approve = client.post(
         f"/api/documents/{job_id}/review/decisions",
-        json={"decisions": [{"fact_id": review["facts"][0]["fact_id"], "action": "approve"}]},
+        json={"decisions": [{"fact_id": fact_id, "action": "approve"}]},
         headers={"Authorization": "Bearer user-token"},
     )
     assert approve.status_code == 200
@@ -230,11 +241,12 @@ def test_demo_fixture_patient_chart_write_fails_closed_even_with_bearer_token() 
 
     assert write.status_code == 200
     body = write.json()
-    assert body["written_count"] == 0
-    assert body["failed_count"] == 1
-    assert body["facts"][0]["status"] == "write_failed"
-    assert "Demo patient profiles are extraction and chat fixtures" in body["facts"][0]["write_error"]
-    assert observation_create.call_count == 0
+    assert body["written_count"] == 1
+    assert body["failed_count"] == 0
+    assert body["facts"][0]["status"] == "written"
+    assert observation_create.call_count >= 1
+    created_payload = json.loads(observation_create.calls[0].request.content)
+    assert created_payload["subject"]["reference"] == f"Patient/{patient_uuid}"
 
 
 @respx.mock

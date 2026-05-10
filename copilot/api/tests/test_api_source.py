@@ -311,7 +311,7 @@ def test_demo_chen_source_returns_demo_observation() -> None:
     assert response.status_code == 200
     assert response.json()["resourceType"] == "Observation"
     assert response.json()["id"] == "demo-chen-lipid-panel"
-    assert response.json()["subject"]["reference"] == "Patient/p1"
+    assert response.json()["subject"]["reference"] == "Patient/5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02"
 
 
 def test_demo_sources_are_hidden_when_demo_mode_is_disabled() -> None:

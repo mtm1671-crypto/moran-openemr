@@ -226,7 +226,7 @@ def test_demo_auth_bypass_returns_locked_margaret_chen_roster() -> None:
     assert response.status_code == 200
     assert response.json() == [
         {
-            "patient_id": "p1",
+            "patient_id": "5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02",
             "display_name": "Margaret Chen",
             "birth_date": "1967-08-14",
             "gender": "female",
@@ -249,11 +249,14 @@ def test_demo_auth_bypass_returns_example_document_patient_profiles() -> None:
     reyes = client.get("/api/patients/p3")
 
     assert roster.status_code == 200
-    profile_names = {patient["display_name"] for patient in roster.json()}
-    assert {"Margaret Chen", "James Whitaker", "Sofia Reyes", "Robert Kowalski"} <= profile_names
+    profiles = {patient["display_name"]: patient["patient_id"] for patient in roster.json()}
+    assert profiles["Margaret Chen"] == "5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02"
+    assert profiles["James Whitaker"] == "19d0e928-5953-474e-b8ee-0f50b731a662"
+    assert profiles["Sofia Reyes"] == "6c3ef6a6-7b81-4e4d-bb76-92f5dcf72103"
+    assert profiles["Robert Kowalski"] == "8b08c918-a991-41d8-82ce-6c0c98dbdb58"
     assert reyes.status_code == 200
     assert reyes.json() == {
-        "patient_id": "p3",
+        "patient_id": "6c3ef6a6-7b81-4e4d-bb76-92f5dcf72103",
         "display_name": "Sofia Reyes",
         "birth_date": "1983-12-19",
         "gender": "female",
@@ -274,7 +277,7 @@ def test_demo_patient_context_returns_summary_without_fhir() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "patient_id": "demo-diabetes-001",
+        "patient_id": "0f5c8cf1-0a22-4b70-9e83-3275d67cd901",
         "display_name": "Demo Patient",
         "birth_date": "1975-04-12",
         "gender": "female",

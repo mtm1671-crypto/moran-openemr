@@ -263,10 +263,6 @@ export function DocumentUploadPanel({
       onStatus("Re-authorize OpenEMR with user/Observation.write before writing labs.");
       return;
     }
-    if (isDemoFixturePatient(patientId)) {
-      onStatus("Demo profiles save approved evidence only. Launch a real OpenEMR patient before writing labs.");
-      return;
-    }
     if (observationWriteSupported === false) {
       onStatus("This OpenEMR deployment does not expose FHIR Observation.create; approved evidence remains retrievable, but lab writeback is unavailable.");
       return;
@@ -315,15 +311,12 @@ export function DocumentUploadPanel({
   const writtenCount = facts.filter((fact) => fact.status === "written").length;
   const failedWriteCount = facts.filter((fact) => fact.status === "write_failed").length;
   const sourceDigest = job?.source.source_sha256.slice(0, 12) ?? "pending";
-  const selectedPatientIsDemoFixture = isDemoFixturePatient(patientId);
   const writeDisabledReason = !canWriteObservations
     ? "Re-authorize OpenEMR with user/Observation.write before writing labs."
-    : selectedPatientIsDemoFixture
-      ? "Demo profiles save approved evidence only. Launch a real OpenEMR patient before writing labs."
     : observationWriteSupported === false
       ? "This OpenEMR deployment does not expose FHIR Observation.create."
       : undefined;
-  const canAttemptWrite = canWriteObservations && !selectedPatientIsDemoFixture && observationWriteSupported !== false;
+  const canAttemptWrite = canWriteObservations && observationWriteSupported !== false;
 
   return (
     <section className="documentPanel" aria-label="Document evidence workflow">
@@ -524,10 +517,6 @@ function writeStatusMessage(payload: {
 
 function sourceHref(sourceUrl: string | null) {
   return evidenceViewerHref(sourceUrl);
-}
-
-function isDemoFixturePatient(patientId: string | null): boolean {
-  return ["p1", "p2", "p3", "p4", "demo-diabetes-001"].includes(patientId ?? "");
 }
 
 function formatTimestamp(value: string): string {

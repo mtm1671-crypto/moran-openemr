@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.demo_patients import DEMO_PATIENT_IDS
+from app.demo_patients import canonical_profile_patient_id
 from app.document_models import ExtractedFact, W2FactType, W2ProposedDestination
 from app.fhir_client import OpenEMRFhirClient
 from app.models import RequestUser
@@ -41,33 +41,32 @@ async def write_lab_fact_observation(
     if fact.proposed_destination != W2ProposedDestination.openemr_observation:
         raise ObservationWriteError("Fact is not proposed for OpenEMR Observation write")
 
-    resource = build_observation_resource(fact)
+    patient_id = _openemr_patient_id(fact, settings)
+    resource = build_observation_resource(fact, patient_id=patient_id)
     if settings.demo_auth_bypass and user.access_token is None:
         raise ObservationWriteError(
             "Observation writeback is disabled while demo auth bypass is active; "
             "approved document evidence remains retrievable."
         )
-    if settings.demo_auth_bypass and fact.patient_id in DEMO_PATIENT_IDS:
-        raise ObservationWriteError(
-            "Demo patient profiles are extraction and chat fixtures, not writable OpenEMR chart patients. "
-            "Launch the copilot from OpenEMR with a real patient before writing labs; "
-            "approved document evidence remains retrievable."
-        )
-
     if settings.openemr_fhir_base_url is None:
         raise ObservationWriteError("OPENEMR_FHIR_BASE_URL is required before writing Observations")
 
     bearer_token = await resolve_fhir_bearer_token(user, settings)
     client = OpenEMRFhirClient(settings=settings, bearer_token=bearer_token)
     await _require_observation_create_supported(client)
-    existing_id = await _find_existing_observation_id(client=client, fact=fact)
+    existing_id = await _find_existing_observation_id(client=client, fact=fact, patient_id=patient_id)
     if existing_id is not None:
         return existing_id
     created = await client.create_resource("Observation", resource)
     resource_id = created.get("id")
     if not isinstance(resource_id, str) or not resource_id:
         raise ObservationWriteError("OpenEMR did not return an Observation id")
-    await _verify_observation_roundtrip(client=client, fact=fact, resource_id=resource_id)
+    await _verify_observation_roundtrip(
+        client=client,
+        fact=fact,
+        patient_id=patient_id,
+        resource_id=resource_id,
+    )
     return resource_id
 
 
@@ -94,9 +93,10 @@ async def _require_observation_create_supported(client: OpenEMRFhirClient) -> No
         raise ObservationWriteError(OBSERVATION_CREATE_UNAVAILABLE_MESSAGE)
 
 
-def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
+def build_observation_resource(fact: ExtractedFact, *, patient_id: str | None = None) -> dict[str, Any]:
     if fact.patient_id is None:
         raise ObservationWriteError("Fact must be assigned to a patient before writing")
+    patient_id = patient_id or fact.patient_id
 
     # Map the extracted fact into a minimal FHIR Observation. Keep provenance in
     # the note so a reviewer can trace the chart write back to the source span.
@@ -141,7 +141,7 @@ def build_observation_resource(fact: ExtractedFact) -> dict[str, Any]:
             }
         ],
         "code": {"coding": code_coding, "text": test_name},
-        "subject": {"reference": f"Patient/{fact.patient_id}"},
+        "subject": {"reference": f"Patient/{patient_id}"},
         "note": [
             {
                 "text": (
@@ -170,11 +170,13 @@ async def _find_existing_observation_id(
     *,
     client: OpenEMRFhirClient,
     fact: ExtractedFact,
+    patient_id: str | None = None,
 ) -> str | None:
     if fact.patient_id is None:
         return None
+    patient_id = patient_id or fact.patient_id
     existing = await client.search_observations_by_identifier(
-        patient_id=fact.patient_id,
+        patient_id=patient_id,
         system=DOCUMENT_FACT_IDENTIFIER_SYSTEM,
         value=fact.fact_id,
     )
@@ -189,6 +191,7 @@ async def _verify_observation_roundtrip(
     *,
     client: OpenEMRFhirClient,
     fact: ExtractedFact,
+    patient_id: str,
     resource_id: str,
 ) -> None:
     try:
@@ -200,8 +203,10 @@ async def _verify_observation_roundtrip(
         raise ObservationWriteError("OpenEMR round-trip did not return an Observation")
     if resource.get("id") != resource_id:
         raise ObservationWriteError("OpenEMR round-trip returned the wrong Observation id")
+    if fact.patient_id is None:
+        raise ObservationWriteError("Fact must be assigned to a patient before verification")
     subject = resource.get("subject")
-    if not isinstance(subject, dict) or subject.get("reference") != f"Patient/{fact.patient_id}":
+    if not isinstance(subject, dict) or subject.get("reference") != f"Patient/{patient_id}":
         raise ObservationWriteError("OpenEMR round-trip Observation subject did not match patient")
     identifiers = resource.get("identifier")
     if not isinstance(identifiers, list) or not any(
@@ -211,6 +216,14 @@ async def _verify_observation_roundtrip(
         for identifier in identifiers
     ):
         raise ObservationWriteError("OpenEMR round-trip Observation lost the document identifier")
+
+
+def _openemr_patient_id(fact: ExtractedFact, settings: Settings) -> str:
+    if fact.patient_id is None:
+        raise ObservationWriteError("Fact must be assigned to a patient before writing")
+    if settings.demo_auth_bypass:
+        return canonical_profile_patient_id(fact.patient_id)
+    return fact.patient_id
 
 
 def _coerce_float(value: str) -> float | None:

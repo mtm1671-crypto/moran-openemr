@@ -1,5 +1,6 @@
 import re
 
+from app.demo_patients import canonical_profile_patient_id
 from app.models import EvidenceObject, VerifiedAnswer
 
 
@@ -10,12 +11,13 @@ class VerificationError(ValueError):
 def verify_answer(answer: VerifiedAnswer, evidence: list[EvidenceObject], patient_id: str) -> None:
     evidence_by_id = {item.evidence_id: item for item in evidence}
     cited_evidence: list[EvidenceObject] = []
+    selected_patient_id = canonical_profile_patient_id(patient_id)
 
     for citation in answer.citations:
         item = evidence_by_id.get(citation.evidence_id)
         if item is None:
             raise VerificationError(f"Unknown evidence id: {citation.evidence_id}")
-        if item.patient_id != patient_id:
+        if canonical_profile_patient_id(item.patient_id) != selected_patient_id:
             raise VerificationError("Citation does not belong to the selected patient")
         if citation.source_url != item.source_url:
             raise VerificationError("Citation source URL does not match verified evidence")

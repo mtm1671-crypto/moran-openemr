@@ -1,67 +1,93 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.models import EvidenceObject, PatientSummary
 
 
-_CANONICAL_DEMO_PATIENTS: tuple[PatientSummary, ...] = (
-    PatientSummary(
-        patient_id="p1",
+@dataclass(frozen=True)
+class ProfilePatient:
+    profile_key: str
+    openemr_patient_id: str
+    display_name: str
+    birth_date: str
+    gender: str
+    aliases: tuple[str, ...] = ()
+
+    def summary(self) -> PatientSummary:
+        return PatientSummary(
+            patient_id=self.openemr_patient_id,
+            display_name=self.display_name,
+            birth_date=self.birth_date,
+            gender=self.gender,
+        )
+
+
+_PROFILE_PATIENTS: tuple[ProfilePatient, ...] = (
+    ProfilePatient(
+        profile_key="p1",
+        openemr_patient_id="5b8f4d2a-5e0a-4a7d-91f6-e507321f6d02",
         display_name="Margaret Chen",
         birth_date="1967-08-14",
         gender="female",
+        aliases=("p01",),
     ),
-    PatientSummary(
-        patient_id="p2",
+    ProfilePatient(
+        profile_key="p2",
+        openemr_patient_id="19d0e928-5953-474e-b8ee-0f50b731a662",
         display_name="James Whitaker",
         birth_date="1958-11-03",
         gender="male",
+        aliases=("p02",),
     ),
-    PatientSummary(
-        patient_id="p3",
+    ProfilePatient(
+        profile_key="p3",
+        openemr_patient_id="6c3ef6a6-7b81-4e4d-bb76-92f5dcf72103",
         display_name="Sofia Reyes",
         birth_date="1983-12-19",
         gender="female",
+        aliases=("p03",),
     ),
-    PatientSummary(
-        patient_id="p4",
+    ProfilePatient(
+        profile_key="p4",
+        openemr_patient_id="8b08c918-a991-41d8-82ce-6c0c98dbdb58",
         display_name="Robert Kowalski",
         birth_date="1971-06-08",
         gender="male",
+        aliases=("p04",),
     ),
-    PatientSummary(
-        patient_id="demo-diabetes-001",
+    ProfilePatient(
+        profile_key="demo-diabetes-001",
+        openemr_patient_id="0f5c8cf1-0a22-4b70-9e83-3275d67cd901",
         display_name="Demo Patient",
         birth_date="1975-04-12",
         gender="female",
     ),
 )
 
-_DEMO_PATIENT_ALIASES = {
-    "p01": "p1",
-    "p02": "p2",
-    "p03": "p3",
-    "p04": "p4",
-}
+_PROFILE_PATIENT_BY_KEY: dict[str, ProfilePatient] = {}
+for _patient in _PROFILE_PATIENTS:
+    _PROFILE_PATIENT_BY_KEY[_patient.profile_key] = _patient
+    _PROFILE_PATIENT_BY_KEY[_patient.openemr_patient_id] = _patient
+    for _alias in _patient.aliases:
+        _PROFILE_PATIENT_BY_KEY[_alias] = _patient
 
-DEMO_PATIENT_IDS = {
-    patient.patient_id for patient in _CANONICAL_DEMO_PATIENTS
-} | set(_DEMO_PATIENT_ALIASES)
+DEMO_PATIENT_IDS = set(_PROFILE_PATIENT_BY_KEY)
 
 
 def demo_patient_summaries() -> list[PatientSummary]:
-    return list(_CANONICAL_DEMO_PATIENTS)
+    return [patient.summary() for patient in _PROFILE_PATIENTS]
 
 
 def demo_patient_summary(patient_id: str) -> PatientSummary | None:
-    canonical_id = _canonical_demo_patient_id(patient_id)
-    for patient in _CANONICAL_DEMO_PATIENTS:
-        if patient.patient_id == canonical_id:
-            if patient_id == canonical_id:
-                return patient
-            return patient.model_copy(update={"patient_id": patient_id})
-    return None
+    patient = _profile_patient(patient_id)
+    return patient.summary() if patient is not None else None
+
+
+def canonical_profile_patient_id(patient_id: str) -> str:
+    patient = _profile_patient(patient_id)
+    return patient.openemr_patient_id if patient is not None else patient_id
 
 
 def demo_patient_fhir_resource(patient_id: str) -> dict[str, object] | None:
@@ -80,16 +106,23 @@ def demo_patient_fhir_resource(patient_id: str) -> dict[str, object] | None:
 
 def demo_evidence(patient_id: str) -> list[EvidenceObject]:
     now = datetime.now(tz=UTC)
-    patient = demo_patient_summary(patient_id)
-    if patient is None:
+    profile = _profile_patient(patient_id)
+    if profile is None:
         return []
+    patient = profile.summary()
     evidence = _demographic_evidence(patient=patient, retrieved_at=now)
-    evidence.extend(_profile_evidence(patient_id=patient_id, retrieved_at=now))
+    evidence.extend(
+        _profile_evidence(
+            profile_key=profile.profile_key,
+            patient_id=profile.openemr_patient_id,
+            retrieved_at=now,
+        )
+    )
     return evidence
 
 
-def _canonical_demo_patient_id(patient_id: str) -> str:
-    return _DEMO_PATIENT_ALIASES.get(patient_id, patient_id)
+def _profile_patient(patient_id: str) -> ProfilePatient | None:
+    return _PROFILE_PATIENT_BY_KEY.get(patient_id)
 
 
 def _split_display_name(display_name: str) -> tuple[list[str], str]:
@@ -152,9 +185,13 @@ def _demographic_evidence(
     return evidence
 
 
-def _profile_evidence(patient_id: str, retrieved_at: datetime) -> list[EvidenceObject]:
-    canonical_id = _canonical_demo_patient_id(patient_id)
-    if canonical_id == "p1":
+def _profile_evidence(
+    *,
+    profile_key: str,
+    patient_id: str,
+    retrieved_at: datetime,
+) -> list[EvidenceObject]:
+    if profile_key == "p1":
         return [
             _lab(
                 patient_id=patient_id,
@@ -171,7 +208,7 @@ def _profile_evidence(patient_id: str, retrieved_at: datetime) -> list[EvidenceO
             _medication(patient_id, "Metformin", "Metformin 500 mg PO twice daily.", retrieved_at),
             _allergy(patient_id, "Penicillin", "Penicillin allergy: hives, moderate severity.", retrieved_at),
         ]
-    if canonical_id == "p2":
+    if profile_key == "p2":
         return [
             _problem(patient_id, "atrial fibrillation", "Atrial fibrillation is active.", retrieved_at),
             _problem(patient_id, "hyperlipidemia", "Hyperlipidemia is active.", retrieved_at),
@@ -199,7 +236,7 @@ def _profile_evidence(patient_id: str, retrieved_at: datetime) -> list[EvidenceO
                 retrieved_at=retrieved_at,
             ),
         ]
-    if canonical_id == "p3":
+    if profile_key == "p3":
         return [
             _problem(patient_id, "type 2 diabetes", "Type 2 diabetes is active.", retrieved_at),
             _problem(patient_id, "mild recurrent depression", "Mild recurrent depression is active.", retrieved_at),
@@ -217,7 +254,7 @@ def _profile_evidence(patient_id: str, retrieved_at: datetime) -> list[EvidenceO
                 retrieved_at=retrieved_at,
             ),
         ]
-    if canonical_id == "p4":
+    if profile_key == "p4":
         return [
             _problem(patient_id, "hypertension", "Hypertension is active.", retrieved_at),
             _problem(patient_id, "hyperlipidemia", "Hyperlipidemia is active.", retrieved_at),

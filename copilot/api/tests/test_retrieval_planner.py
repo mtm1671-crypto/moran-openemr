@@ -40,6 +40,23 @@ def test_guideline_plan_enables_guidelines() -> None:
     assert "get_recent_labs" in plan.fhir_tools
 
 
+def test_lipid_review_plan_enables_guideline_grounding() -> None:
+    plan = plan_retrieval("What LDL or triglyceride values should I review?")
+
+    assert plan.intent == "guideline_context"
+    assert plan.use_guidelines is True
+    assert "get_recent_labs" in plan.fhir_tools
+
+
+def test_intake_medication_family_history_plan_keeps_both_document_types() -> None:
+    plan = plan_retrieval("What intake medication and family history facts are available?")
+
+    assert plan.intent == "document_medication_history_lookup"
+    assert plan.use_demo_evidence is False
+    assert "intake_medication" in plan.approved_document_source_types
+    assert "intake_history" in plan.approved_document_source_types
+
+
 def test_recreational_drug_question_routes_to_document_context() -> None:
     plan = plan_retrieval("Has this patient ever taken recreational drugs?")
 

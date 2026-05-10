@@ -82,32 +82,33 @@ Working in the deployed demo:
 - Answers include citations and source links.
 - Unsupported treatment recommendation requests are refused.
 - OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
-- Week 2 document workflow supports lab/intake upload, extraction, bounding-box citation preview, supervisor/worker handoff trace events, human approval, hybrid sparse+dense guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. Query retrieval now adds PHI-local sparse matching and an intent-aware reranker before model context, so newly approved facts can beat stale lab clusters and demographic questions do not fall back to unrelated labs. The committed synthetic scanned intake/lab images extract through SHA-256-pinned OCR fixtures when external OCR is offline, while configured OpenAI/OpenRouter OCR paths still run when enabled. The lab write adapter is idempotent and uses OpenEMR FHIR `Observation.create` with round-trip read verification when the same-origin web proxy supplies a SMART bearer token with `user/Observation.write`; missing FHIR config, demo bypass, or no-token sessions fail closed while approved evidence remains retrievable.
+- Week 2 document workflow supports lab/intake upload, extraction, bounding-box citation preview, supervisor/worker handoff trace events, human approval, hybrid sparse+dense guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. Query retrieval now adds PHI-local sparse matching and an intent-aware reranker before model context, so newly approved facts can beat stale lab clusters and demographic questions do not fall back to unrelated labs. The committed synthetic scanned intake/lab images extract through SHA-256-pinned OCR fixtures when external OCR is offline, while configured OpenAI/OpenRouter OCR paths still run when enabled. The lab write adapter is idempotent and uses OpenEMR FHIR `Observation.create` with round-trip read verification when the same-origin web proxy supplies a SMART bearer token with `user/Observation.write`; the seeded example profiles now use real OpenEMR patient UUIDs for writeback, while missing FHIR config, missing SMART token, or OpenEMR authorization failures still fail closed and keep approved evidence retrievable.
 
-Latest local verification, run on 2026-05-08:
+Latest local verification, run on 2026-05-10:
 
 ```text
-pytest: 178 passed, 6 skipped
+pytest: 192 passed, 6 skipped
 ruff: all checks passed
 mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
-pip-audit: no known vulnerabilities found
-npm audit: no known vulnerabilities found
 web lint: passed
 web build: passed
-Playwright: 13 passed
 git diff --check: passed
 ```
 
-Latest deployed smoke checks, recorded after the 2026-05-08 Railway redeploy:
+Latest deployed smoke checks, recorded after the 2026-05-10 Railway redeploy:
 
 ```text
 production /readyz: ok
 openrouter_configured: true
 pgvector_backend: true
-document route without auth: 401
+OpenEMR login: 302 to login page
+Co-Pilot web /: 200
+profile roster returns UUID-backed Margaret, James, Sofia, Robert, and Demo Patient
 bearer document upload/review/evidence/chat: passed
-patient/guideline answer bundle separation: passed
+document bbox/citation/source roundtrip: passed
+patient/guideline answer bundle separation: passed with guideline_rag in trace
+demo bearer write reaches OpenEMR and fails as 401 re-authorization, not as a demo-profile block
 web document panel markup: present
 document_workflow_persistence_enabled: true
 document_workflow_storage: true
@@ -116,7 +117,7 @@ document_workflow_persistence_ready: true
 
 ## Demo Data
 
-The Railway seed script refreshes 15 synthetic patients. Each has demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent lab results, and 4 unstructured clinical notes exposed through FHIR `DocumentReference`.
+The Railway seed script refreshes 15 synthetic MVP patients and then upserts the current Co-Pilot profile patients used by the example documents. Each MVP patient has demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent lab results, and 4 unstructured clinical notes exposed through FHIR `DocumentReference`. The profile seed keeps Elena Morrison intact and adds/updates UUID-backed records for Margaret Chen, James Whitaker, Sofia Reyes, Robert Kowalski, and Demo Patient.
 
 | Public ID | Patient | Search |
 |---|---|---|
@@ -429,7 +430,7 @@ Before submitting:
 - Confirm unstructured notes are included in answers.
 - Confirm source links open the readable evidence viewer, with raw JSON available behind details.
 - Confirm treatment recommendations are refused.
-- Record the required 35-minute walkthrough video.
+- Record the required 35-minute walkthrough video with audible narration.
 - Include repo URL, deployed URLs, and video URL in the AgentForge submission.
 
 ## Reference Documents

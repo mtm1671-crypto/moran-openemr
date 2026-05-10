@@ -166,6 +166,8 @@ def _rerank_score(message: str, item: EvidenceObject, intents: set[str]) -> floa
 
     if "documents" in intents and _is_document_context(item):
         score += 45
+    if "family_history" in intents and source_type == "intake_history":
+        score += 55
 
     if "problems" in intents and source_type == "active_problem":
         score += 35
@@ -261,6 +263,8 @@ def _query_intents(message: str) -> set[str]:
         "shift",
     }:
         intents.add("documents")
+    if tokens & {"family"} and tokens & {"history"}:
+        intents.add("family_history")
     if "before seeing" in text or "pre-room" in text or "brief" in tokens or "overview" in tokens:
         intents.update({"demographics", "problems", "labs", "documents"})
     if tokens & {"abnormal", "abnormalities", "high", "low", "flagged"}:
