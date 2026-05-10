@@ -46,7 +46,7 @@ async def extract_image_text_with_provider(
             content_type=content_type,
             settings=settings,
         )
-    raise OcrProviderError("Image OCR is not configured for local deterministic extraction")
+    raise OcrProviderError("Image OCR is not configured for this environment")
 
 
 async def _extract_image_text_with_openai(
