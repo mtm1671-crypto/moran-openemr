@@ -107,6 +107,8 @@ def test_attach_review_and_write_lab_document() -> None:
     job_id = body["job"]["job_id"]
     assert body["job"]["status"] == "review_required"
     assert body["fact_counts"] == {"review_required": 2}
+    assert "worker:intake_extractor:started" in body["job"]["trace"]
+    assert "worker:intake_extractor:succeeded" in body["job"]["trace"]
 
     review = client.get(
         f"/api/documents/{job_id}/review",
@@ -149,6 +151,8 @@ def test_attach_review_and_write_lab_document() -> None:
     assert write_body["written_count"] == 2
     assert write_body["failed_count"] == 0
     assert write_body["job"]["status"] == "completed"
+    assert "worker:observation_writer:started" in write_body["job"]["trace"]
+    assert "worker:observation_writer:finished" in write_body["job"]["trace"]
     assert all(fact["status"] == "written" for fact in write_body["facts"])
     assert [fact["written_resource_id"] for fact in write_body["facts"]] == ["obs-a1c", "obs-ldl"]
     assert observation_create.call_count == 2

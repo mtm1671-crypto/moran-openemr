@@ -67,6 +67,7 @@ from app.persistence import (
 )
 from app.telemetry import emit_telemetry_event
 from app.w2_graph import W2GraphState, handoff_trace_events, supervisor_route
+from app.w2_observability import observe_async_step
 
 router = APIRouter(prefix="/api/documents", tags=["week2-documents"])
 
@@ -112,16 +113,27 @@ async def attach_and_extract(
         return _job_response(job.job_id)
 
     update_document_job(job.job_id, status=W2JobStatus.extracting, trace="extracting_started")
+    append_document_job_trace(job.job_id, "worker:intake_extractor:started")
     await _persist_document_job(settings, job.job_id)
     try:
-        facts = await extract_document_facts_async(
-            job_id=job.job_id,
-            patient_id=request.patient_id,
-            doc_type=request.doc_type,
-            source_id=source.source_id,
-            content=source.content,
-            content_type=source.content_type,
+        facts = await observe_async_step(
             settings=settings,
+            step="document_extraction",
+            metadata={
+                "document_job_id": job.job_id,
+                "route_id": "attach_and_extract",
+                "worker": "intake_extractor",
+                "provider": settings.ocr_provider,
+            },
+            fn=lambda: extract_document_facts_async(
+                job_id=job.job_id,
+                patient_id=request.patient_id,
+                doc_type=request.doc_type,
+                source_id=source.source_id,
+                content=source.content,
+                content_type=source.content_type,
+                settings=settings,
+            ),
         )
     except (ExtractionError, LayoutExtractionError, ValueError) as exc:
         update_document_job(
@@ -130,6 +142,7 @@ async def attach_and_extract(
             trace="extracting_failed",
             error_code=exc.__class__.__name__,
         )
+        append_document_job_trace(job.job_id, "worker:intake_extractor:failed")
         await _persist_document_job(settings, job.job_id)
         emit_telemetry_event(
             settings,
@@ -139,6 +152,7 @@ async def attach_and_extract(
         raise HTTPException(status_code=422, detail="Document extraction failed") from exc
 
     replace_document_facts(job.job_id, facts)
+    append_document_job_trace(job.job_id, "worker:intake_extractor:succeeded")
     update_document_job(
         job.job_id,
         status=W2JobStatus.review_required,
@@ -301,6 +315,8 @@ async def write_approved_facts(
     written_count = 0
     skipped_count = 0
     failed_count = 0
+    append_document_job_trace(job.job_id, "worker:observation_writer:started")
+    await _persist_document_job(settings, job.job_id)
     writable_statuses = {W2FactStatus.approved, W2FactStatus.write_failed}
     for fact in read_document_facts(job.job_id):
         if fact.status not in writable_statuses:
@@ -310,7 +326,16 @@ async def write_approved_facts(
             skipped_count += 1
             continue
         try:
-            resource_id = await write_lab_fact_observation(fact=fact, user=user, settings=settings)
+            resource_id = await observe_async_step(
+                settings=settings,
+                step="document_fact_write",
+                metadata={
+                    "document_job_id": job.job_id,
+                    "route_id": "write_approved_facts",
+                    "worker": "observation_writer",
+                },
+                fn=lambda: write_lab_fact_observation(fact=fact, user=user, settings=settings),
+            )
         except (ObservationWriteError, httpx.HTTPError) as exc:
             # Keep per-fact write diagnostics visible to the reviewer. This is
             # how the UI can explain whether scope, value mapping, or FHIR failed.
@@ -360,7 +385,9 @@ async def write_approved_facts(
         status=final_status,
         trace="write_finished",
     )
+    append_document_job_trace(job.job_id, "worker:observation_writer:finished")
     _append_supervisor_trace(job.job_id, review_submitted=True)
+    updated_job = require_document_job(job.job_id)
     await _persist_document_job(settings, job.job_id)
     emit_telemetry_event(
         settings,

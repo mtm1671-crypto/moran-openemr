@@ -3,5 +3,6 @@
 !Dockerfile
 !railway.toml
 !pyproject.toml
+!constraints.txt
 !app
 !app/**

@@ -341,6 +341,10 @@ class Settings(BaseSettings):
             errors.append("ENCRYPTION_KEY is required when document workflow persistence is enabled")
         if self.openemr_api_log_option != 1:
             errors.append("OPENEMR_API_LOG_OPTION must be 1 when PHI controls are required")
+        if not self.document_workflow_persistence_enabled:
+            errors.append(
+                "DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED must be true when PHI controls are required"
+            )
         if uses_openai:
             if not self.allow_phi_to_openai:
                 errors.append(

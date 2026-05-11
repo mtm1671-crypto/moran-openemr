@@ -196,9 +196,12 @@ def main(argv: list[str] | None = None) -> int:
         enforce_minimum_case_count(summary)
         enforce_pass_thresholds(summary)
         enforce_strict_safety(summary)
-        if args.baseline.exists():
-            baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-            enforce_regression_thresholds(summary, baseline)
+        if not args.baseline.exists():
+            raise EvalGateFailed(
+                f"Week 2 eval baseline is required when --enforce is used: {args.baseline}"
+            )
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        enforce_regression_thresholds(summary, baseline)
 
     passed_cases = sum(
         1 for result in results if all(result.rubric.get(key, False) for key in HARD_GATE_KEYS)

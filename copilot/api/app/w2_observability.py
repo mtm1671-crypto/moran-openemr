@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import perf_counter
 from typing import TypeVar
 
@@ -75,6 +75,46 @@ def observe_step(
     return result
 
 
+async def observe_async_step(
+    *,
+    settings: Settings,
+    step: str,
+    metadata: dict[str, object] | None,
+    fn: Callable[[], Awaitable[T]],
+) -> T:
+    started = perf_counter()
+    try:
+        result = await fn()
+    except Exception as exc:
+        emit_telemetry_event(
+            settings,
+            event="w2_step_failed",
+            metadata=phi_safe_metadata(
+                {
+                    **(metadata or {}),
+                    "step": step,
+                    "outcome": "failure",
+                    "latency_ms": int((perf_counter() - started) * 1000),
+                    "verifier_code": exc.__class__.__name__,
+                }
+            ),
+        )
+        raise
+    emit_telemetry_event(
+        settings,
+        event="w2_step_completed",
+        metadata=phi_safe_metadata(
+            {
+                **(metadata or {}),
+                "step": step,
+                "outcome": "success",
+                "latency_ms": int((perf_counter() - started) * 1000),
+            }
+        ),
+    )
+    return result
+
+
 def estimated_llm_cost_usd(
     *,
     input_tokens: int,
@@ -87,4 +127,3 @@ def estimated_llm_cost_usd(
         + (output_tokens / 1_000_000 * output_cost_per_million),
         6,
     )
-

@@ -35,6 +35,7 @@ def test_production_config_rejects_dev_shortcuts_and_insecure_urls() -> None:
     assert "DATABASE_URL is required when PHI controls are required" in errors
     assert "ENCRYPTION_KEY is required when PHI controls are required" in errors
     assert "OPENEMR_API_LOG_OPTION must be 1 when PHI controls are required" in errors
+    assert "DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED must be true when PHI controls are required" in errors
     assert "ALLOW_PHI_TO_LOCAL must be false for the initial PHI-ready mock deployment" in errors
     assert "OPENEMR_JWT_AUDIENCE is required when PHI controls are required" in errors
     assert "PUBLIC_BASE_URL must use https when PHI controls are required" in errors
@@ -132,6 +133,15 @@ def test_document_workflow_persistence_requires_database_and_encryption_key() ->
 
     assert "DATABASE_URL is required when document workflow persistence is enabled" in errors
     assert "ENCRYPTION_KEY is required when document workflow persistence is enabled" in errors
+
+
+def test_phi_mode_requires_document_workflow_persistence() -> None:
+    settings = _phi_ready_settings(document_workflow_persistence_enabled=False)
+
+    assert (
+        "DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED must be true when PHI controls are required"
+        in settings.runtime_config_errors()
+    )
 
 
 def test_production_config_rejects_openai_without_api_key() -> None:
@@ -352,6 +362,7 @@ def test_phi_mode_applies_hard_gates_outside_production_name() -> None:
         openemr_jwt_issuer="https://openemr.example.test",
         openemr_jwt_audience="clinical-copilot",
         openemr_api_log_option=1,
+        document_workflow_persistence_enabled=True,
         allow_phi_to_local=False,
     )
 
@@ -372,6 +383,7 @@ def test_phi_mode_rejects_invalid_encryption_key() -> None:
         openemr_jwt_issuer="https://openemr.example.test",
         openemr_jwt_audience="clinical-copilot",
         openemr_api_log_option=1,
+        document_workflow_persistence_enabled=True,
         allow_phi_to_local=False,
     )
 
@@ -585,6 +597,7 @@ def test_readyz_fails_phi_mode_when_database_is_unreachable() -> None:
         openemr_jwt_issuer="https://openemr.example.test",
         openemr_jwt_audience="clinical-copilot",
         openemr_api_log_option=1,
+        document_workflow_persistence_enabled=True,
         allow_phi_to_local=False,
     )
     app.dependency_overrides[get_settings] = lambda: settings
@@ -613,6 +626,7 @@ def _phi_ready_settings(**overrides: object) -> Settings:
         "openemr_jwt_issuer": "https://openemr.example.test",
         "openemr_jwt_audience": "clinical-copilot",
         "openemr_api_log_option": 1,
+        "document_workflow_persistence_enabled": True,
         "allow_phi_to_local": False,
     }
     values.update(overrides)

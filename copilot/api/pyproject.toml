@@ -38,6 +38,9 @@ strict = true
 addopts = "-p no:cacheprovider"
 testpaths = ["tests"]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [build-system]
 requires = ["setuptools>=69.0"]
 build-backend = "setuptools.build_meta"
