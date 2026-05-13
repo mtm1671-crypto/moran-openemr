@@ -1,0 +1,13 @@
+*
+
+!Dockerfile
+!railway.toml
+!pyproject.toml
+!.dockerignore
+!.railwayignore
+!app/
+!app/**
+!evals/
+!evals/**
+!migrations/
+!migrations/**

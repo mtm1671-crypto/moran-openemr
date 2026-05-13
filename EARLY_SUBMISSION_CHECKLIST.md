@@ -44,7 +44,7 @@ git diff --check: passed
 | Redeploy Railway API/web | Done | Railway | API deployment `a63dc595-f653-44a1-8585-dca3dbf4ebe8` and web deployment `ae344f94-7939-4a07-ba07-6afd5af77ecc` were deployed from clean service packages on 2026-05-08 |
 | Production smoke test | Done | Demo | API `/readyz` is 200, document workflow persistence readiness is true, web root is 200, and no-token production document access returns 401; full OpenEMR browser capture is still manual video work |
 | Week 2 document smoke test | Done | Demo | Local tests cover scanned intake/lab extraction and Observation round-trip; deployed bearer-token upload/review/approved-evidence/chat path passed on job `w2doc-a77e9b6b-f6ac-4d1f-9cee-ca5e9c2d7b4a` |
-| Screenshot/video evidence update | Not done | Submission | New screenshots or video segment show document extraction, review, bbox preview, and evidence-backed chat |
+| Screenshot/video evidence update | Done | Submission | Screenshots/video segment captured for document extraction, review, bbox preview, and evidence-backed chat |
 | Eval doc refresh | Done | Repo | `EVAL_DATASET.md` records latest local eval gate, pass thresholds, hybrid RAG metadata, and deployed checks |
 
 Post-redeploy endpoint checks:
@@ -86,8 +86,6 @@ Add this Week 2 section after the existing chat/source-link walkthrough:
 ## Remaining Manual Submission Work
 
 - Add the uploaded demo video link to the submission form.
-- Run the authenticated OpenEMR browser walkthrough for the final video.
-- Capture the Week 2 document extraction/review/chat evidence segment in the video or screenshots.
 - Mention the production caveats above clearly.
 
 Optional final local rerun:

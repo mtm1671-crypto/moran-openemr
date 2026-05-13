@@ -52,6 +52,26 @@
 !MVP_STATUS.md
 !OPENEMR_VERSION_PIN.md
 
+!pyproject.toml
+!app/
+!app/**
+!evals/
+!evals/**
+!migrations/
+!migrations/**
+
+!adversarial/
+!adversarial/Dockerfile
+!adversarial/railway.toml
+!adversarial/pyproject.toml
+!adversarial/.dockerignore
+!adversarial/app/
+!adversarial/app/**
+!adversarial/evals/
+!adversarial/evals/**
+!adversarial/migrations/
+!adversarial/migrations/**
+
 !copilot/
 !copilot/api/
 !copilot/api/Dockerfile

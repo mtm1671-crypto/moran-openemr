@@ -147,6 +147,44 @@ Using the routed production mix above gives a more realistic target:
 - Keep OpenRouter and open-source hosted models available for synthetic-data economics and eval comparison, but do not enable them for real PHI until contractual and data-policy gates pass.
 - Record provider, model, token counts, cache-hit flags, latency, verifier outcome, and estimated cost for every model call.
 
+## Week 3 Adversarial Eval Cost Projection
+
+The adversarial platform is designed to keep release-blocking checks mostly deterministic. Seed and regression runs use HTTP target execution plus deterministic Judge rules by default, so the expected metered AI cost is `$0.00` unless optional Red Team generation or advisory LLM judging is explicitly enabled.
+
+The Week 3 runtime budget caps one adversarial case at:
+
+```text
+max_provider_cost_usd_per_case = $0.25
+max_requests_per_case = 8
+max_variants_per_case = 3
+```
+
+Worst-case optional LLM spend if every case hit the full `$0.25` cap:
+
+| Test runs | Worst-case optional model spend |
+|---:|---:|
+| 100 | $25 |
+| 1,000 | $250 |
+| 10,000 | $2,500 |
+| 100,000 | $25,000 |
+
+Expected spend for deterministic seed/regression mode:
+
+| Test runs | Expected model spend | Notes |
+|---:|---:|---|
+| 100 | $0 | CI and local regression can stay deterministic. |
+| 1,000 | $0 | HTTP, SQLite, and judge CPU dominate. |
+| 10,000 | $0 | Infrastructure and target rate limits become the concern. |
+| 100,000 | $0 | Requires queueing, batching, retention policy, and scheduled target windows. |
+
+Cost controls for Week 3:
+
+- Keep LLM attack mutation and advisory judging off by default.
+- Run `report-only` for exploratory campaigns and reserve `enforce` for stable regression suites.
+- Cap per-case requests, retries, latency, variants, and wall-clock runtime.
+- Store only synthetic black-box evidence and redact credentials from exports.
+- Schedule large campaigns away from demo clinician workflows to avoid target noise.
+
 ## Latency And Concurrency
 
 The latency target for common chart questions is under 5 seconds p95 after authentication. The request path should stream status immediately, retrieve structured evidence first, run vector search only for note/document questions, cap evidence count, cap output tokens, and fail with a clear verified message if the provider or verifier cannot complete safely.

@@ -172,3 +172,13 @@ Possible later users, not MVP targets:
 - Specialist.
 - Clinic manager.
 - Patient-facing portal user.
+
+## Week 3 Adversarial Platform Users
+
+Week 3 adds security and governance users for the separate adversarial operator app:
+
+- Security engineer: runs adversarial campaigns, reviews Judge evidence, and triages vulnerability reports.
+- AI platform engineer: uses regression runs to decide whether Co-Pilot changes are safe to release.
+- Clinical product owner: reviews patient-safety and clinical-workflow impact for confirmed findings.
+- Compliance or privacy reviewer: checks PHI boundaries, synthetic-only evidence, and auditability.
+- Engineering manager: reviews coverage, trend, cost, and release recommendation before submission or deployment.

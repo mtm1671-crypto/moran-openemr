@@ -12,6 +12,7 @@ Use this file as the source of truth while filling out the AgentForge submission
 | Co-Pilot web deployment | https://copilot-web-production.up.railway.app |
 | Co-Pilot API deployment | https://copilot-api-production-9f84.up.railway.app |
 | API readiness | https://copilot-api-production-9f84.up.railway.app/readyz |
+| Week 3 adversarial operator | https://adversarial-production.up.railway.app |
 
 Latest submitted code:
 
@@ -32,6 +33,7 @@ Current local working tree includes post-review Week 2 hardening for executable 
 | User doc with target user and use cases | [USER.md](USER.md) |
 | Agent architecture doc with one-page overview, framework choices, verification strategy, and tradeoffs | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Week 2 multimodal/agent architecture | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
+| Week 3 adversarial platform architecture and evidence | [W3_ARCHITECTURE.md](W3_ARCHITECTURE.md), [WEEK3_SUBMISSION_CHECKLIST.md](WEEK3_SUBMISSION_CHECKLIST.md), and [VULNERABILITY_REPORTS.md](VULNERABILITY_REPORTS.md) |
 | Eval dataset and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
 | AI cost analysis | [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) |
 | Demo plan and deployed proof notes | [DEMO_PLAN.md](DEMO_PLAN.md), [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
@@ -40,7 +42,7 @@ Current local working tree includes post-review Week 2 hardening for executable 
 Demo video:
 
 ```text
-Paste the uploaded video link into the submission form.
+Captured; paste the uploaded video link into the submission form.
 ```
 
 ## What The Product Demonstrates
