@@ -70,6 +70,8 @@
 !security/adversarial/app/**
 !security/adversarial/evals/
 !security/adversarial/evals/**
+!security/adversarial/knowledge/
+!security/adversarial/knowledge/**
 !security/adversarial/migrations/
 !security/adversarial/migrations/**
 

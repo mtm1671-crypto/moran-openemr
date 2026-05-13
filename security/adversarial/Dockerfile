@@ -9,6 +9,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
 COPY evals ./evals
+COPY knowledge ./knowledge
 COPY migrations ./migrations
 
 RUN python -m pip install --no-cache-dir --upgrade pip \

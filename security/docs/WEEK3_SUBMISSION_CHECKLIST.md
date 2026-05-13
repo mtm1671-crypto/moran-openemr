@@ -8,6 +8,7 @@ This file tracks the adversarial AI security platform submission separately from
 - `WEEK3_PRD.md` records goals, non-goals, acceptance criteria, and deliverables.
 - `W3_SYSTEM_DESIGN.md` and `security/docs/diagrams/w3-adversarial-platform.png` provide the container-level system design.
 - `W3_ARCHITECTURE.md` explains the implementation architecture, framework choices, verification strategy, and tradeoffs.
+- `WEB_VULNERABILITY_KNOWLEDGE_BASE.md` and `security/adversarial/knowledge/site_vulnerability_knowledge_base.json` define the authorized-site scanner knowledge base, evidence standards, safety limits, and future scanner backlog.
 - `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
 - `security/adversarial/evals/week3/cases/` contains seed cases for the expanded Week 3 hospital-director risk families, including direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, and three indirect-injection layers.
 - Railway service `adversarial` is deployed at `https://adversarial-production.up.railway.app`.

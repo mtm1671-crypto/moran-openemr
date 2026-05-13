@@ -33,6 +33,7 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 | Week 3 threat model | [THREAT_MODEL.md](security/docs/THREAT_MODEL.md) |
 | Week 3 adversarial architecture | [W3_ARCHITECTURE.md](security/docs/W3_ARCHITECTURE.md) |
 | Week 3 system design | [W3_SYSTEM_DESIGN.md](security/docs/W3_SYSTEM_DESIGN.md) and [w3-adversarial-platform.png](security/docs/diagrams/w3-adversarial-platform.png) |
+| Web vulnerability scanner knowledge base | [WEB_VULNERABILITY_KNOWLEDGE_BASE.md](security/docs/WEB_VULNERABILITY_KNOWLEDGE_BASE.md) and [site_vulnerability_knowledge_base.json](security/adversarial/knowledge/site_vulnerability_knowledge_base.json) |
 | Final product plan | [FINAL_PRODUCT_PLAN.md](security/docs/FINAL_PRODUCT_PLAN.md) |
 | Week 3 readiness checklist | [WEEK3_SUBMISSION_CHECKLIST.md](security/docs/WEEK3_SUBMISSION_CHECKLIST.md) |
 | Week 3 vulnerability report register | [VULNERABILITY_REPORTS.md](security/docs/VULNERABILITY_REPORTS.md) |
@@ -116,7 +117,7 @@ git diff --check: passed
 Latest Week 3 adversarial verification, run on 2026-05-13:
 
 ```text
-adversarial pytest: 38 passed
+adversarial pytest: 40 passed
 adversarial ruff: all checks passed
 adversarial mypy: success
 deployed adversarial /readyz: 200
