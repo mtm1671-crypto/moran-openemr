@@ -5,7 +5,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from app.config import Settings
-from app.models import Severity, SiteScanFinding, SiteScanMode, SiteScanRun
+from app.models import AuthorizedScope, Severity, SiteScanFinding, SiteScanMode, SiteScanRun
 from app.run_site_scan import run_passive_site_scan
 from app.run_store import RunStore
 from app.sensitive_findings import SensitiveFindingStore
@@ -119,6 +119,47 @@ def test_low_priv_site_scanner_checks_exposure_paths_without_leaking_secret_valu
     assert "super-secret-value" not in str(findings)
 
 
+def test_low_priv_site_scanner_honors_scope_limits_and_excluded_paths() -> None:
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            request=request,
+            headers={"content-type": "text/html"},
+            text='<html><script src="/assets/app.js"></script></html>',
+        )
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_bearer_token="low-priv-token",
+        site_scan_extra_paths=["/robots.txt", "/admin"],
+    )
+    scope = AuthorizedScope(
+        scope_id="scope_limited",
+        client_id="client_limited",
+        project_id="project_limited",
+        name="Limited scope",
+        allowed_hosts=["owned.example"],
+        allowed_scan_modes=[SiteScanMode.LOW_PRIV_AUTHENTICATED],
+        excluded_paths=["/admin"],
+        max_urls=2,
+        authorization_note="Owned target.",
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    scan, _findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+        scope=scope,
+    )
+
+    assert scan.scope_id == "scope_limited"
+    assert scan.request_count == 2
+    assert "/admin" not in requested_paths
+
+
 def test_run_site_scan_persists_scan_and_findings(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -132,11 +173,15 @@ def test_run_site_scan_persists_scan_and_findings(
             target_url: str,
             authorization_note: str,
             mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP,
+            scope: AuthorizedScope | None = None,
         ) -> tuple[SiteScanRun, list[SiteScanFinding]]:
             scan = SiteScanRun(
                 target_url=target_url,
                 authorization_note=authorization_note,
                 scan_mode=mode,
+                client_id=scope.client_id if scope else None,
+                project_id=scope.project_id if scope else None,
+                scope_id=scope.scope_id if scope else None,
             )
             finding = SiteScanFinding(
                 scan_id=scan.scan_id,
@@ -166,6 +211,7 @@ def test_run_site_scan_persists_scan_and_findings(
 
     store = RunStore(settings.sqlite_path)
     assert store.site_scan_runs()[0]["scan_id"] == result["scan"]["scan_id"]
+    assert store.site_scan_runs()[0]["scope_id"] == "scope_agentforge_demo"
     public_finding = store.site_scan_findings(result["scan"]["scan_id"])[0]
     assert public_finding["evidence"] == "Redacted from public operator storage."
     private_finding = SensitiveFindingStore(settings.private_sqlite_path).site_scan_findings()[0]

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .models import RunMode, TargetMode
 
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     run_mode: RunMode = RunMode.REPORT_ONLY
     local_target_url: str = "http://127.0.0.1:8001"
     deployed_target_url: str = "https://copilot-api-production-9f84.up.railway.app"
-    allowed_hosts: list[str] = Field(
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "127.0.0.1",
             "localhost",
@@ -56,7 +57,7 @@ class Settings(BaseSettings):
     site_scan_bearer_token: SecretStr | None = None
     site_scan_cookie: SecretStr | None = None
     site_scan_max_urls: int = Field(default=12, ge=1, le=50)
-    site_scan_extra_paths: list[str] = Field(
+    site_scan_extra_paths: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "/.well-known/security.txt",
             "/robots.txt",

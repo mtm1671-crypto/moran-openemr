@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -271,6 +272,65 @@ class SuiteSummary(BaseModel):
     inconclusive_count: int = 0
 
 
+class Client(BaseModel):
+    client_id: str = Field(default_factory=lambda: new_id("client"))
+    name: str
+    created_at: datetime = Field(default_factory=utc_now)
+    active: bool = True
+
+
+class Project(BaseModel):
+    project_id: str = Field(default_factory=lambda: new_id("project"))
+    client_id: str
+    name: str
+    created_at: datetime = Field(default_factory=utc_now)
+    active: bool = True
+
+
+class AuthorizedScope(BaseModel):
+    scope_id: str = Field(default_factory=lambda: new_id("scope"))
+    client_id: str
+    project_id: str
+    name: str
+    allowed_hosts: list[str]
+    allowed_scan_modes: list[SiteScanMode] = Field(default_factory=lambda: [SiteScanMode.PASSIVE_HTTP])
+    excluded_paths: list[str] = Field(default_factory=list)
+    max_urls: int = Field(default=12, ge=1, le=50)
+    authorization_note: str
+    authorization_expires_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    active: bool = True
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def allowed_hosts_must_not_be_empty(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("authorized scope must include at least one allowed host")
+        return value
+
+    @field_validator("excluded_paths")
+    @classmethod
+    def excluded_paths_must_be_absolute(cls, value: list[str]) -> list[str]:
+        invalid = [path for path in value if not path.startswith("/")]
+        if invalid:
+            raise ValueError("excluded paths must start with /")
+        return value
+
+    def assert_allows(self, target_url: str, mode: SiteScanMode) -> None:
+        if not self.active:
+            raise ValueError(f"authorized scope is inactive: {self.scope_id}")
+        if self.authorization_expires_at and self.authorization_expires_at <= utc_now():
+            raise ValueError(f"authorized scope is expired: {self.scope_id}")
+        if mode not in set(self.allowed_scan_modes):
+            raise ValueError(f"scan mode is not allowed by scope {self.scope_id}: {mode}")
+        parsed = urlparse(target_url)
+        if parsed.hostname not in set(self.allowed_hosts):
+            raise ValueError(f"target host is not authorized by scope {self.scope_id}: {parsed.hostname}")
+        path = parsed.path or "/"
+        if any(path == excluded or path.startswith(f"{excluded.rstrip('/')}/") for excluded in self.excluded_paths):
+            raise ValueError(f"target path is excluded by scope {self.scope_id}: {path}")
+
+
 class SiteScanFinding(BaseModel):
     finding_id: str = Field(default_factory=lambda: new_id("sitefind"))
     scan_id: str
@@ -288,6 +348,9 @@ class SiteScanFinding(BaseModel):
 class SiteScanRun(BaseModel):
     scan_id: str = Field(default_factory=lambda: new_id("sitescan"))
     target_url: str
+    client_id: str | None = None
+    project_id: str | None = None
+    scope_id: str | None = None
     scan_mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP
     status: SiteScanStatus = SiteScanStatus.COMPLETED
     started_at: datetime = Field(default_factory=utc_now)

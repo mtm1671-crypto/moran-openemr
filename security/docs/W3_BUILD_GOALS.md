@@ -636,8 +636,10 @@ This order keeps the credibility anchor early: data contracts, safe config, blac
 The adversarial platform can expand into an authorized multi-site scanner by adding scan profiles rather than weakening the target allowlist. The safe default is passive scanning only:
 
 - Every non-Co-Pilot target must be present in `ADVERSARIAL_ALLOWED_HOSTS`.
+- Every site scan must resolve an authorized client/project/scope record before it runs.
 - The operator must attest that the site is owned or explicitly authorized.
 - Passive HTTP/header/cookie checks may run from the UI or CLI.
+- Each site scan stores `client_id`, `project_id`, and `scope_id` with the run evidence.
 - The source-backed scanner knowledge base lives in `WEB_VULNERABILITY_KNOWLEDGE_BASE.md` and `security/adversarial/knowledge/site_vulnerability_knowledge_base.json`.
 - OWASP ZAP baseline scanning can be integrated as a future optional profile because it performs a short spider followed by passive analysis, not active exploitation.
 - Active attack profiles require separate approval, rate limits, scope constraints, and written authorization evidence.

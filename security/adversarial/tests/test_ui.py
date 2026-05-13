@@ -43,6 +43,8 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert 'data-run-status' in response.text
     assert "Campaign running" in response.text
     assert "Authorized site scan" in response.text
+    assert 'name="scope_id"' in response.text
+    assert "Default allowlisted demo scope" in response.text
     assert 'name="target_url"' in response.text
     assert 'name="scan_mode"' in response.text
     assert 'value="low-priv-authenticated"' in response.text
@@ -151,6 +153,24 @@ def test_dashboard_and_run_detail_expose_coverage_and_exports(
     markdown_export = client.get("/runs/run_ui_1.md")
     assert markdown_export.status_code == 200
     assert "Week 3 Adversarial Run run_ui_1" in markdown_export.text
+
+
+def test_site_scan_rejects_out_of_scope_target(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_ALLOWED_HOSTS", "owned.example")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/site-scans/passive",
+        data={
+            "scope_id": "scope_agentforge_demo",
+            "target_url": "https://evil.example",
+            "scan_mode": "passive-http",
+        },
+    )
+
+    assert response.status_code == 502
+    assert "not authorized by scope" in response.text
 
 
 def test_latest_verdict_by_case_uses_newest_run() -> None:

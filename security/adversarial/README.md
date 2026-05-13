@@ -18,7 +18,7 @@ cd security\adversarial
 python -m app.run_week3_eval --target local --suite seed --report-only
 python -m app.run_week3_eval --target deployed --suite seed --report-only
 python -m app.run_week3_eval --target local --suite regression --enforce
-python -m app.run_site_scan --target-url https://owned.example --authorization-note "Owned test target"
+python -m app.run_site_scan --target-url https://owned.example --scope-id scope_agentforge_demo --authorization-note "Owned test target"
 python -m app.export_run --run-id <run_id> --out evals\week3\exports
 python -m uvicorn app.ui:create_app --factory --host 0.0.0.0 --port 8080
 ```
@@ -62,6 +62,7 @@ Required variables:
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_CLIENT_SECRET=<Railway secret, if client requires it>`
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_USERNAME=<Railway secret>`
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_PASSWORD=<Railway secret>`
+- `ADVERSARIAL_ALLOWED_HOSTS=adversarial-production.up.railway.app,copilot-api-production-9f84.up.railway.app,<owned client host>`
 - `ADVERSARIAL_SITE_SCAN_BEARER_TOKEN=<optional low-privileged test-user bearer token>`
 - `ADVERSARIAL_SITE_SCAN_COOKIE=<optional low-privileged test-user cookie>`
 - `ADVERSARIAL_SITE_SCAN_MAX_URLS=12`
@@ -75,6 +76,7 @@ Mount `/data` as a persistent volume so run history survives restarts.
 - Non-allowlisted targets are rejected.
 - The operator dashboard and exports require `ADVERSARIAL_OPERATOR_TOKEN` when deployed for client work; `/readyz` remains public for health checks.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
+- Site scans are bound to an authorized client/project/scope record. The default scope is seeded from `ADVERSARIAL_ALLOWED_HOSTS`, scan-mode limits, excluded paths, and request caps.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
 - Low-privileged authenticated site scanning uses only configured test-user credentials, same-origin GET checks, and capped request counts.
 - Public run exports redact vulnerability reproduction steps, passive scan evidence, and remediation specifics.
@@ -84,9 +86,21 @@ Mount `/data` as a persistent volume so run history survives restarts.
 - LLM judging is advisory until separately validated.
 - SQLite must be writable or readiness fails.
 
+## Authorized Scope Registry
+
+The scanner keeps client, project, and authorized scope records in the adversarial SQLite database. Each site scan stores `client_id`, `project_id`, and `scope_id` so findings can be traced to the correct authorization boundary without mixing client evidence into the Co-Pilot app runtime.
+
+By default, the app seeds:
+
+- `client_agentforge_demo`
+- `project_agentforge_security`
+- `scope_agentforge_demo`
+
+The seeded scope inherits allowlisted hosts from `ADVERSARIAL_ALLOWED_HOSTS`, permits passive and low-privileged scanning, and caps same-origin low-privileged checks with `ADVERSARIAL_SITE_SCAN_MAX_URLS`.
+
 ## Generalized Site Scanning
 
-The operator can run bounded passive checks against non-Co-Pilot sites when they are explicitly allowlisted. This is intended for owned apps, staging environments, and authorized demos.
+The operator can run bounded passive checks against non-Co-Pilot sites when they are explicitly allowlisted and selected through an authorized scope. This is intended for owned apps, staging environments, and authorized demos.
 
 Current checks include:
 

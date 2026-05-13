@@ -6,12 +6,18 @@ from app.config import Settings
 from app.models import (
     AttackCase,
     AttackCategory,
+    AuthorizedScope,
+    Client,
     ImpactDomain,
+    Project,
     Severity,
     SiteScanFinding,
+    SiteScanMode,
+    SiteScanRun,
     VulnerabilityReport,
 )
 from app.run_store import RunStore
+from app.scope_registry import ensure_default_scope, resolve_scope_for_scan
 from app.sensitive_findings import SensitiveFindingStore
 
 
@@ -58,6 +64,71 @@ def test_run_store_initializes_and_saves_case(tmp_path: Path) -> None:
     )
     store.save_cases([case])
     assert store.cases()[0]["case_id"] == "case_1"
+
+
+def test_run_store_persists_client_project_scope_and_scan_scope(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs.sqlite")
+    store.initialize()
+    client = Client(client_id="client_test", name="Client Test")
+    project = Project(project_id="project_test", client_id=client.client_id, name="Project Test")
+    scope = AuthorizedScope(
+        scope_id="scope_test",
+        client_id=client.client_id,
+        project_id=project.project_id,
+        name="Owned site scope",
+        allowed_hosts=["owned.example"],
+        allowed_scan_modes=[SiteScanMode.PASSIVE_HTTP],
+        excluded_paths=["/billing"],
+        max_urls=3,
+        authorization_note="Written authorization recorded.",
+    )
+    scan = SiteScanRun(
+        scan_id="sitescan_scope_test",
+        target_url="https://owned.example",
+        client_id=client.client_id,
+        project_id=project.project_id,
+        scope_id=scope.scope_id,
+    )
+
+    store.save_client(client)
+    store.save_project(project)
+    store.save_authorized_scope(scope)
+    store.save_site_scan_run(scan)
+
+    assert store.clients()[0]["client_id"] == "client_test"
+    assert store.projects(client.client_id)[0]["project_id"] == "project_test"
+    assert store.authorized_scope(scope.scope_id) == scope
+    assert store.site_scan_runs()[0]["scope_id"] == "scope_test"
+
+
+def test_default_scope_is_seeded_and_enforced(tmp_path: Path) -> None:
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        sqlite_path=tmp_path / "runs.sqlite",
+    )
+    store = RunStore(settings.sqlite_path)
+    store.initialize()
+
+    scope = ensure_default_scope(store, settings)
+
+    assert scope.allowed_hosts == ["owned.example"]
+    assert scope.scope_id in {stored["scope_id"] for stored in store.authorized_scopes()}
+    resolved = resolve_scope_for_scan(
+        store=store,
+        settings=settings,
+        scope_id=scope.scope_id,
+        target_url="https://owned.example",
+        mode=SiteScanMode.PASSIVE_HTTP,
+    )
+    assert resolved.scope_id == scope.scope_id
+    with pytest.raises(ValueError, match="not authorized by scope"):
+        resolve_scope_for_scan(
+            store=store,
+            settings=settings,
+            scope_id=scope.scope_id,
+            target_url="https://evil.example",
+            mode=SiteScanMode.PASSIVE_HTTP,
+        )
 
 
 def test_public_reports_are_redacted_and_private_store_keeps_details(tmp_path: Path) -> None:

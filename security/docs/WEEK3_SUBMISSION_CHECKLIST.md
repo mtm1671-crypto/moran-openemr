@@ -11,6 +11,7 @@ This file tracks the adversarial AI security platform submission separately from
 - `WEB_VULNERABILITY_KNOWLEDGE_BASE.md` and `security/adversarial/knowledge/site_vulnerability_knowledge_base.json` define the authorized-site scanner knowledge base, evidence standards, safety limits, and future scanner backlog.
 - `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
 - `security/adversarial/evals/week3/cases/` contains seed cases for the expanded Week 3 hospital-director risk families, including direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, and three indirect-injection layers.
+- Authorized site scanning now uses client/project/scope records seeded from `ADVERSARIAL_ALLOWED_HOSTS`, and each site scan records its scope ID.
 - Railway service `adversarial` is deployed at `https://adversarial-production.up.railway.app`.
 - The adversarial operator supports token-gated dashboard/export access while keeping `/readyz` public for deployment health checks.
 - Persistent `/data` SQLite storage is mounted and `/readyz` returns `200`.
@@ -32,7 +33,7 @@ This file tracks the adversarial AI security platform submission separately from
   - `run_db74a32744c2` authorization/session confusion
 - The deployed dashboard shows 13 latest verdicts, expanded risk-family coverage, and 1 current draft report. No official confirmed vulnerability report exists until deterministic replay or human review confirms it.
 - Each deployed run has reviewer-accessible JSON and Markdown export links.
-- Local checks pass for tests, lint, and type checking.
+- Local checks pass for tests, lint, and type checking: 47 pytest tests, Ruff, and mypy.
 
 ## Not Ready Yet
 

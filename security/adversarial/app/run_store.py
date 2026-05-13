@@ -14,8 +14,11 @@ from .models import (
     AgentTraceEvent,
     AttackCase,
     AttackRun,
+    AuthorizedScope,
+    Client,
     JudgeVerdict,
     ObservedResponse,
+    Project,
     RegressionCase,
     ResilienceSnapshot,
     SiteScanFinding,
@@ -29,7 +32,7 @@ from .sensitive_findings import (
     public_site_scan_finding_view,
 )
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "migrations" / "001_initial.sql"
 
 
@@ -64,12 +67,25 @@ class RunStore:
     def initialize(self) -> None:
         with self.connect() as conn:
             conn.executescript(_schema_sql())
+            self._ensure_site_scan_scope_columns(conn)
             self._redact_existing_public_reports(conn)
             self._redact_existing_site_scan_findings(conn)
             conn.execute(
                 "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
             )
+
+    def _ensure_site_scan_scope_columns(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(site_scan_runs)").fetchall()
+        existing = {str(row["name"]) for row in rows}
+        columns = {
+            "client_id": "TEXT",
+            "project_id": "TEXT",
+            "scope_id": "TEXT",
+        }
+        for column_name, column_type in columns.items():
+            if column_name not in existing:
+                conn.execute(f"ALTER TABLE site_scan_runs ADD COLUMN {column_name} {column_type}")
 
     def _redact_existing_public_reports(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute(
@@ -292,18 +308,75 @@ class RunStore:
                 ),
             )
 
+    def save_client(self, client: Client) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO clients
+                (client_id, name, active, created_at, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    client.client_id,
+                    client.name,
+                    int(client.active),
+                    client.created_at.isoformat(),
+                    _to_json(client),
+                ),
+            )
+
+    def save_project(self, project: Project) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO projects
+                (project_id, client_id, name, active, created_at, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project.project_id,
+                    project.client_id,
+                    project.name,
+                    int(project.active),
+                    project.created_at.isoformat(),
+                    _to_json(project),
+                ),
+            )
+
+    def save_authorized_scope(self, scope: AuthorizedScope) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO authorized_scopes
+                (scope_id, client_id, project_id, name, active, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scope.scope_id,
+                    scope.client_id,
+                    scope.project_id,
+                    scope.name,
+                    int(scope.active),
+                    _to_json(scope),
+                ),
+            )
+
     def save_site_scan_run(self, scan: SiteScanRun) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO site_scan_runs
-                (scan_id, target_url, scan_mode, status, started_at, completed_at,
+                (scan_id, target_url, client_id, project_id, scope_id,
+                 scan_mode, status, started_at, completed_at,
                  finding_count, highest_severity, payload_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scan.scan_id,
                     scan.target_url,
+                    scan.client_id,
+                    scan.project_id,
+                    scan.scope_id,
                     scan.scan_mode,
                     scan.status,
                     scan.started_at.isoformat(),
@@ -400,6 +473,44 @@ class RunStore:
                 "SELECT payload_json FROM suite_summaries ORDER BY created_at DESC"
             ).fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
+
+    def clients(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT payload_json FROM clients ORDER BY name").fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def projects(self, client_id: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if client_id:
+                rows = conn.execute(
+                    "SELECT payload_json FROM projects WHERE client_id = ? ORDER BY name",
+                    (client_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT payload_json FROM projects ORDER BY name").fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def authorized_scopes(self, active_only: bool = True) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if active_only:
+                rows = conn.execute(
+                    "SELECT payload_json FROM authorized_scopes WHERE active = 1 ORDER BY name"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT payload_json FROM authorized_scopes ORDER BY name"
+                ).fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def authorized_scope(self, scope_id: str) -> AuthorizedScope | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM authorized_scopes WHERE scope_id = ?",
+                (scope_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return AuthorizedScope.model_validate(_from_json(row["payload_json"]))
 
     def site_scan_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:

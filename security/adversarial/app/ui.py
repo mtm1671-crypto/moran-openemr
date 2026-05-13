@@ -19,6 +19,7 @@ from .models import RunMode, SiteScanMode
 from .reporting import dashboard_summary
 from .run_store import RunStore
 from .run_week3_eval import run_suite
+from .scope_registry import ensure_default_scope, resolve_scope_for_scan
 from .site_scanner import PassiveSiteScanner
 
 OPERATOR_SESSION_COOKIE = "agentforge_operator_session"
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> str:
         store.initialize()
+        ensure_default_scope(store, settings)
         runs = store.latest_runs(limit=20)
         cases = store.cases()
         verdicts = store.verdicts()
@@ -133,6 +135,7 @@ def create_app() -> FastAPI:
         observations = store.observations()
         snapshots = store.snapshots()
         site_scans = store.site_scan_runs(limit=10)
+        scopes = store.authorized_scopes()
         summary = dashboard_summary(
             cases=cases,
             runs=runs,
@@ -217,6 +220,10 @@ def create_app() -> FastAPI:
                 <strong>Authorized site scan</strong>
               </div>
               <form class="site-scan-form" method="post" action="/site-scans/passive" data-run-suite="site-scan">
+                <label for="site-scope-id">Scope</label>
+                <select id="site-scope-id" name="scope_id" required>
+                  {_scope_options(scopes)}
+                </select>
                 <label for="site-target-url">Allowlisted URL</label>
                 <input id="site-target-url" name="target_url" type="url" placeholder="https://example.your-domain.com" required>
                 <label for="site-scan-mode">Mode</label>
@@ -304,15 +311,26 @@ def create_app() -> FastAPI:
     async def start_passive_site_scan(request: Request) -> Response:
         body = (await request.body()).decode()
         params = parse_qs(body)
+        scope_id = params.get("scope_id", [""])[0].strip()
         target_url = params.get("target_url", [""])[0].strip()
         scan_mode_value = params.get("scan_mode", [SiteScanMode.PASSIVE_HTTP.value])[0].strip()
         if not target_url:
             return HTMLResponse(_page("Invalid target", "<h1>Invalid target</h1>"), status_code=400)
         try:
             scan_mode = SiteScanMode(scan_mode_value)
-            settings.validate_target_allowed(target_url)
             store.initialize()
-            scan, findings = PassiveSiteScanner(settings).scan(target_url, mode=scan_mode)
+            scope = resolve_scope_for_scan(
+                store=store,
+                settings=settings,
+                scope_id=scope_id,
+                target_url=target_url,
+                mode=scan_mode,
+            )
+            scan, findings = PassiveSiteScanner(settings).scan(
+                target_url,
+                mode=scan_mode,
+                scope=scope,
+            )
             store.save_site_scan_run(scan)
             store.save_site_scan_findings(findings)
         except Exception as exc:
@@ -358,7 +376,7 @@ def create_app() -> FastAPI:
             </header>
             <section class="hero compact command-slab">
               <div>
-                <p class="eyebrow">Authorized passive scan // allowlisted target</p>
+                <p class="eyebrow">Authorized site scan // scoped target</p>
                 <h1>Site Scan {escape(scan_id)}</h1>
               </div>
             </section>
@@ -758,6 +776,16 @@ def _reports_table(reports: list[dict[str, object]]) -> str:
     )
 
 
+def _scope_options(scopes: list[dict[str, object]]) -> str:
+    if not scopes:
+        return '<option value="">No authorized scopes</option>'
+    return "\n".join(
+        f"<option value=\"{escape(str(scope['scope_id']))}\">"
+        f"{escape(str(scope['name']))}</option>"
+        for scope in scopes
+    )
+
+
 def _site_scans_table(scans: list[dict[str, object]]) -> str:
     if not scans:
         return (
@@ -771,6 +799,7 @@ def _site_scans_table(scans: list[dict[str, object]]) -> str:
         f"<td><a class=\"run-link\" href=\"/site-scans/{escape(str(scan['scan_id']))}\">"
         f"{escape(str(scan['scan_id']))}</a></td>"
         f"<td>{escape(str(scan['target_url']))}</td>"
+        f"<td>{escape(str(scan.get('scope_id') or 'legacy'))}</td>"
         f"<td>{escape(str(scan['scan_mode']))}</td>"
         f"<td>{_status_badge(scan['status'])}</td>"
         f"<td>{_status_badge(scan['highest_severity'])}</td>"
@@ -781,7 +810,7 @@ def _site_scans_table(scans: list[dict[str, object]]) -> str:
     return (
         "<table><caption class=\"sr-only\">Latest authorized passive site scans</caption>"
         "<thead><tr><th scope=\"col\">Scan</th><th scope=\"col\">Target</th>"
-        "<th scope=\"col\">Mode</th><th scope=\"col\">Status</th>"
+        "<th scope=\"col\">Scope</th><th scope=\"col\">Mode</th><th scope=\"col\">Status</th>"
         "<th scope=\"col\">Highest</th><th scope=\"col\">Findings</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
     )

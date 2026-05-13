@@ -10,7 +10,14 @@ from urllib.parse import ParseResult, urljoin, urlparse, urlunparse
 import httpx
 
 from .config import Settings
-from .models import Severity, SiteScanFinding, SiteScanMode, SiteScanRun, SiteScanStatus
+from .models import (
+    AuthorizedScope,
+    Severity,
+    SiteScanFinding,
+    SiteScanMode,
+    SiteScanRun,
+    SiteScanStatus,
+)
 
 
 SEVERITY_RANK = {
@@ -76,8 +83,11 @@ class PassiveSiteScanner:
         target_url: str,
         authorization_note: str = "Operator attests this target is owned or explicitly authorized.",
         mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP,
+        scope: AuthorizedScope | None = None,
     ) -> tuple[SiteScanRun, list[SiteScanFinding]]:
         self.settings.validate_target_allowed(target_url)
+        if scope is not None:
+            scope.assert_allows(target_url, mode)
         authenticated = mode == SiteScanMode.LOW_PRIV_AUTHENTICATED
         if authenticated and not self.settings.has_site_scan_low_priv_auth:
             raise ValueError(
@@ -88,6 +98,9 @@ class PassiveSiteScanner:
         started_at = datetime.now(UTC)
         scan = SiteScanRun(
             target_url=target_url,
+            client_id=scope.client_id if scope else None,
+            project_id=scope.project_id if scope else None,
+            scope_id=scope.scope_id if scope else None,
             scan_mode=mode,
             started_at=started_at,
             authorization_note=authorization_note,
@@ -127,6 +140,7 @@ class PassiveSiteScanner:
             "redirected": str(response.url) != target_url,
             "scan_mode": mode,
             "low_priv_auth_configured": authenticated,
+            "scope_id": scope.scope_id if scope else None,
         }
 
         findings.extend(self._transport_findings(scan.scan_id, parsed, response))
@@ -135,11 +149,14 @@ class PassiveSiteScanner:
         findings.extend(self._content_findings(scan.scan_id, parsed, response, authenticated))
 
         if authenticated:
-            for candidate_url in self._candidate_urls(target_url, response):
-                if len(responses) >= self.settings.site_scan_max_urls:
+            max_urls = scope.max_urls if scope else self.settings.site_scan_max_urls
+            for candidate_url in self._candidate_urls(target_url, response, scope):
+                if len(responses) >= max_urls:
                     break
                 try:
                     self.settings.validate_target_allowed(candidate_url)
+                    if scope is not None:
+                        scope.assert_allows(candidate_url, mode)
                     candidate = self._get(candidate_url, authenticated=True)
                 except (ValueError, httpx.HTTPError):
                     continue
@@ -183,7 +200,12 @@ class PassiveSiteScanner:
             headers["Cookie"] = self.settings.site_scan_cookie.get_secret_value()
         return headers
 
-    def _candidate_urls(self, target_url: str, response: httpx.Response) -> list[str]:
+    def _candidate_urls(
+        self,
+        target_url: str,
+        response: httpx.Response,
+        scope: AuthorizedScope | None = None,
+    ) -> list[str]:
         base_url = _origin_base(target_url)
         candidates: list[str] = []
         for path in self.settings.site_scan_extra_paths:
@@ -203,7 +225,14 @@ class PassiveSiteScanner:
         for path in LOW_PRIV_DEFAULT_PATHS:
             candidates.append(urljoin(base_url, path))
 
-        return _unique_urls([url for url in candidates if _same_origin(target_url, url)])
+        return _unique_urls(
+            [
+                url
+                for url in candidates
+                if _same_origin(target_url, url)
+                and (scope is None or not _scope_excludes_url(scope, url))
+            ]
+        )
 
     def _transport_findings(
         self,
@@ -592,6 +621,14 @@ def _unique_urls(urls: list[str]) -> list[str]:
             seen.add(url)
             unique.append(url)
     return unique
+
+
+def _scope_excludes_url(scope: AuthorizedScope, url: str) -> bool:
+    path = urlparse(url).path or "/"
+    return any(
+        path == excluded or path.startswith(f"{excluded.rstrip('/')}/")
+        for excluded in scope.excluded_paths
+    )
 
 
 def _highest_severity(findings: list[SiteScanFinding]) -> Severity:

@@ -86,9 +86,38 @@ CREATE TABLE IF NOT EXISTS suite_summaries (
     payload_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS clients (
+    client_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    project_id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS authorized_scopes (
+    scope_id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS site_scan_runs (
     scan_id TEXT PRIMARY KEY,
     target_url TEXT NOT NULL,
+    client_id TEXT,
+    project_id TEXT,
+    scope_id TEXT,
     scan_mode TEXT NOT NULL,
     status TEXT NOT NULL,
     started_at TEXT NOT NULL,

@@ -10,6 +10,7 @@ from typing import Any
 from .config import Settings
 from .models import SiteScanMode
 from .run_store import RunStore
+from .scope_registry import resolve_scope_for_scan
 from .site_scanner import PassiveSiteScanner
 
 
@@ -18,13 +19,22 @@ def run_passive_site_scan(
     target_url: str,
     authorization_note: str,
     mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP,
+    scope_id: str | None = None,
 ) -> dict[str, Any]:
     store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     store.initialize()
+    scope = resolve_scope_for_scan(
+        store=store,
+        settings=settings,
+        scope_id=scope_id,
+        target_url=target_url,
+        mode=mode,
+    )
     scan, findings = PassiveSiteScanner(settings).scan(
         target_url=target_url,
         authorization_note=authorization_note,
         mode=mode,
+        scope=scope,
     )
     store.save_site_scan_run(scan)
     store.save_site_scan_findings(findings)
@@ -50,6 +60,7 @@ def main() -> None:
         default="Operator attests this target is owned or explicitly authorized.",
     )
     parser.add_argument("--db", type=Path, default=None)
+    parser.add_argument("--scope-id", default=None)
     args = parser.parse_args()
 
     settings = Settings()
@@ -60,6 +71,7 @@ def main() -> None:
         target_url=args.target_url,
         authorization_note=args.authorization_note,
         mode=SiteScanMode(args.mode),
+        scope_id=args.scope_id,
     )
     print(json.dumps(result, indent=2))
 

@@ -207,7 +207,29 @@ Verification:
 
 Remaining final-product work:
 
-- Add richer charting and reviewer auth/rate limiting.
+- Add richer charting and rate limiting.
+
+## 11. Authorized Client/Project Scope Registry
+
+Status: implemented for MVP.
+
+What changed:
+
+- Added client, project, and authorized-scope models.
+- Added SQLite persistence and migration coverage for `clients`, `projects`, `authorized_scopes`, and site-scan scope IDs.
+- Added a default scope seeded from `ADVERSARIAL_ALLOWED_HOSTS`, allowed scan modes, excluded paths, and max URL caps.
+- Required site scans from the UI and CLI to resolve an authorized scope before running.
+- Stored `client_id`, `project_id`, and `scope_id` on each site scan run.
+- Kept site-scan evidence in the adversarial security database path rather than the OpenEMR/Co-Pilot app runtime.
+
+Verification:
+
+- Unit tests cover scope persistence, default-scope seeding, out-of-scope rejection, excluded paths, and low-privileged URL caps.
+- Local quality gates pass.
+
+Remaining final-product work:
+
+- Add an operator workflow for creating and retiring client scopes without editing environment configuration.
 
 ## Verification Commands
 
@@ -222,9 +244,9 @@ Run from `security/adversarial/`:
 
 Current result:
 
-- `pytest`: 43 passed.
+- `pytest`: 47 passed.
 - `ruff`: all checks passed.
-- `mypy`: success, no issues in 23 source files.
+- `mypy`: success, no issues in 24 source files.
 - `run_judge_eval --enforce`: passes with no critical/high false negatives.
 
 ## Suggested Final-Product Order
@@ -233,6 +255,6 @@ Current result:
 2. Run the expanded deployed suite and capture new screenshots/video if the UI state changes materially.
 3. Add target fixture setup for uploaded-document and seeded-note cases.
 4. Add CI regression execution.
-5. Add reviewer auth and rate limiting.
+5. Add rate limiting.
 6. Add richer historical charts once multiple suite snapshots exist.
 7. Package confirmed vulnerability reports only if deterministic failures are observed or approved by human review.
