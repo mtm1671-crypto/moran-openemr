@@ -60,6 +60,9 @@ Required variables:
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_CLIENT_SECRET=<Railway secret, if client requires it>`
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_USERNAME=<Railway secret>`
 - `ADVERSARIAL_SYNTHETIC_CLINICIAN_PASSWORD=<Railway secret>`
+- `ADVERSARIAL_SITE_SCAN_BEARER_TOKEN=<optional low-privileged test-user bearer token>`
+- `ADVERSARIAL_SITE_SCAN_COOKIE=<optional low-privileged test-user cookie>`
+- `ADVERSARIAL_SITE_SCAN_MAX_URLS=12`
 
 For a short-lived manual run, `ADVERSARIAL_SYNTHETIC_CLINICIAN_TOKEN` can be supplied instead of the password-grant settings.
 
@@ -70,6 +73,7 @@ Mount `/data` as a persistent volume so run history survives restarts.
 - Non-allowlisted targets are rejected.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
+- Low-privileged authenticated site scanning uses only configured test-user credentials, same-origin GET checks, and capped request counts.
 - Public run exports redact vulnerability reproduction steps, passive scan evidence, and remediation specifics.
 - Sensitive report and site-scan finding details are stored separately in `ADVERSARIAL_PRIVATE_SQLITE_PATH`.
 - Real PHI is out of scope.
@@ -88,5 +92,8 @@ Current checks include:
 - Broad CORS wildcard detection.
 - Cookie `Secure`, `HttpOnly`, and `SameSite` attributes.
 - Informational server-header disclosure.
+- Low-privileged authenticated checks for same-origin exposed `.env`, `.git`, debug/runtime endpoints, API schemas, backup artifacts, source maps, and privileged route responses.
+
+Low-privileged mode is still bounded reconnaissance, not exploitation. It does not brute force, submit mutating forms, fuzz parameters, or attempt credential bypasses. It is intended for synthetic accounts on owned or explicitly authorized targets.
 
 Future active or semi-active scanning should use an explicit scan profile and human approval. OWASP ZAP baseline mode is the right next integration point because it is designed around passive scanning rather than active exploitation.

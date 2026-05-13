@@ -73,6 +73,7 @@ class RegressionStatus(StrEnum):
 
 class SiteScanMode(StrEnum):
     PASSIVE_HTTP = "passive-http"
+    LOW_PRIV_AUTHENTICATED = "low-priv-authenticated"
     ZAP_BASELINE = "zap-baseline"
 
 

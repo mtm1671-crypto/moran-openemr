@@ -17,18 +17,20 @@ def run_passive_site_scan(
     settings: Settings,
     target_url: str,
     authorization_note: str,
+    mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP,
 ) -> dict[str, Any]:
     store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     store.initialize()
     scan, findings = PassiveSiteScanner(settings).scan(
         target_url=target_url,
         authorization_note=authorization_note,
+        mode=mode,
     )
     store.save_site_scan_run(scan)
     store.save_site_scan_findings(findings)
     return {
         "scan": scan.model_dump(mode="json"),
-        "findings": [finding.model_dump(mode="json") for finding in findings],
+        "findings": store.site_scan_findings(scan.scan_id),
     }
 
 
@@ -39,9 +41,9 @@ def main() -> None:
     parser.add_argument("--target-url", required=True)
     parser.add_argument(
         "--mode",
-        choices=[SiteScanMode.PASSIVE_HTTP],
+        choices=[SiteScanMode.PASSIVE_HTTP, SiteScanMode.LOW_PRIV_AUTHENTICATED],
         default=SiteScanMode.PASSIVE_HTTP,
-        help="Only passive HTTP checks are executable in this CLI today.",
+        help="Use low-priv-authenticated only with owned test-user credentials in env.",
     )
     parser.add_argument(
         "--authorization-note",
@@ -57,6 +59,7 @@ def main() -> None:
         settings=settings,
         target_url=args.target_url,
         authorization_note=args.authorization_note,
+        mode=SiteScanMode(args.mode),
     )
     print(json.dumps(result, indent=2))
 

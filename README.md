@@ -116,7 +116,7 @@ git diff --check: passed
 Latest Week 3 adversarial verification, run on 2026-05-13:
 
 ```text
-adversarial pytest: 36 passed
+adversarial pytest: 38 passed
 adversarial ruff: all checks passed
 adversarial mypy: success
 deployed adversarial /readyz: 200

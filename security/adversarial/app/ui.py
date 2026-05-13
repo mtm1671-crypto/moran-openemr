@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from .config import Settings
 from .export_run import build_run_export, render_run_markdown
-from .models import RunMode
+from .models import RunMode, SiteScanMode
 from .reporting import dashboard_summary
 from .run_store import RunStore
 from .run_week3_eval import run_suite
@@ -127,8 +127,13 @@ def create_app() -> FastAPI:
               <form class="site-scan-form" method="post" action="/site-scans/passive" data-run-suite="site-scan">
                 <label for="site-target-url">Allowlisted URL</label>
                 <input id="site-target-url" name="target_url" type="url" placeholder="https://example.your-domain.com" required>
+                <label for="site-scan-mode">Mode</label>
+                <select id="site-scan-mode" name="scan_mode">
+                  <option value="passive-http">Passive</option>
+                  <option value="low-priv-authenticated">Low-Priv Auth</option>
+                </select>
                 <button type="submit" data-loading-label="Scanning Site">
-                  <span class="button-label">Run Passive Scan</span>
+                  <span class="button-label">Run Site Scan</span>
                   <span class="button-spinner" aria-hidden="true"></span>
                 </button>
               </form>
@@ -208,12 +213,14 @@ def create_app() -> FastAPI:
         body = (await request.body()).decode()
         params = parse_qs(body)
         target_url = params.get("target_url", [""])[0].strip()
+        scan_mode_value = params.get("scan_mode", [SiteScanMode.PASSIVE_HTTP.value])[0].strip()
         if not target_url:
             return HTMLResponse(_page("Invalid target", "<h1>Invalid target</h1>"), status_code=400)
         try:
+            scan_mode = SiteScanMode(scan_mode_value)
             settings.validate_target_allowed(target_url)
             store.initialize()
-            scan, findings = PassiveSiteScanner(settings).scan(target_url)
+            scan, findings = PassiveSiteScanner(settings).scan(target_url, mode=scan_mode)
             store.save_site_scan_run(scan)
             store.save_site_scan_findings(findings)
         except Exception as exc:
@@ -252,7 +259,7 @@ def create_app() -> FastAPI:
                 <span class="brand-sigil" aria-hidden="true"></span>
                 <span>
                   <strong>AgentForge</strong>
-                  <small>Passive Site Scan</small>
+                  <small>Authorized Site Scan</small>
                 </span>
               </a>
               <a class="header-link" href="/">Risk overview</a>
@@ -1191,7 +1198,8 @@ def _page_css() -> str:
     }
 
     input[type="search"],
-    input[type="url"] {
+    input[type="url"],
+    select {
       min-height: 38px;
       min-width: min(360px, 100%);
       padding: 8px 10px;
@@ -1202,6 +1210,8 @@ def _page_css() -> str:
       color: var(--bone);
       font-family: var(--font-data);
     }
+
+    select { min-width: 190px; }
 
     table {
       width: 100%;

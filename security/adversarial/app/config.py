@@ -49,10 +49,27 @@ class Settings(BaseSettings):
     max_loop_depth: int = 3
     max_variants_per_case: int = 3
     max_wall_clock_seconds: int = 300
+    site_scan_bearer_token: SecretStr | None = None
+    site_scan_cookie: SecretStr | None = None
+    site_scan_max_urls: int = Field(default=12, ge=1, le=50)
+    site_scan_extra_paths: list[str] = Field(
+        default_factory=lambda: [
+            "/.well-known/security.txt",
+            "/robots.txt",
+            "/sitemap.xml",
+        ]
+    )
 
     @field_validator("allowed_hosts", mode="before")
     @classmethod
     def parse_allowed_hosts(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("site_scan_extra_paths", mode="before")
+    @classmethod
+    def parse_site_scan_extra_paths(cls, value: object) -> object:
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
@@ -94,6 +111,10 @@ class Settings(BaseSettings):
                 self.synthetic_clinician_password,
             ]
         )
+
+    @property
+    def has_site_scan_low_priv_auth(self) -> bool:
+        return self.site_scan_bearer_token is not None or self.site_scan_cookie is not None
 
 
 def load_settings() -> Settings:

@@ -222,9 +222,9 @@ Run from `security/adversarial/`:
 
 Current result:
 
-- `pytest`: 36 passed.
+- `pytest`: 38 passed.
 - `ruff`: all checks passed.
-- `mypy`: success, no issues in 19 source files.
+- `mypy`: success, no issues in 22 source files.
 - `run_judge_eval --enforce`: passes with no critical/high false negatives.
 
 ## Suggested Final-Product Order
