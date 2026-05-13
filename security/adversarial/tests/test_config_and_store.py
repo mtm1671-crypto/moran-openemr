@@ -6,10 +6,16 @@ from app.config import Settings
 from app.models import (
     AttackCase,
     AttackCategory,
+    AuditAction,
+    AuditEvent,
     AuthorizedScope,
     Client,
+    FindingStatus,
     ImpactDomain,
     Project,
+    ReportStatus,
+    ScanJob,
+    ScanJobStatus,
     Severity,
     SiteScanFinding,
     SiteScanMode,
@@ -190,3 +196,72 @@ def test_site_scan_findings_are_redacted_and_private_store_keeps_details(
     private_finding = SensitiveFindingStore(private_db).site_scan_findings()[0]
     assert private_finding["evidence"] == "Server: Example/1.2.3"
     assert private_finding["remediation"] == "Reduce version/detail disclosure."
+
+
+def test_b2b_workflow_records_jobs_audit_and_status_updates(tmp_path: Path) -> None:
+    public_db = tmp_path / "runs.sqlite"
+    private_db = tmp_path / "private.sqlite"
+    store = RunStore(public_db, private_path=private_db, evidence_retention_days=30)
+    store.initialize()
+    job = ScanJob(
+        job_id="scanjob_1",
+        scope_id="scope_1",
+        client_id="client_1",
+        project_id="project_1",
+        target_url="https://owned.example",
+        status=ScanJobStatus.QUEUED,
+    )
+    finding = SiteScanFinding(
+        finding_id="sitefind_workflow_1",
+        scan_id="scan_1",
+        check_id="header.csp.missing",
+        title="CSP missing",
+        severity=Severity.MEDIUM,
+        description="No CSP.",
+        evidence="Missing header.",
+        remediation="Add CSP.",
+    )
+    report = VulnerabilityReport(
+        vulnerability_id="vuln_workflow_1",
+        source_run_id="run_1",
+        case_id="case_1",
+        severity=Severity.HIGH,
+        impact_domain=ImpactDomain.CLINICAL_WORKFLOW,
+        clinical_or_privacy_impact="Impact.",
+        minimal_reproduction=["Step"],
+        observed_behavior="Observed.",
+        expected_behavior="Expected.",
+        recommended_remediation="Fix.",
+    )
+
+    store.save_scan_job(job)
+    store.save_audit_event(
+        AuditEvent(
+            action=AuditAction.QUEUE_SITE_SCAN,
+            target_type="scan_job",
+            target_id=job.job_id,
+        )
+    )
+    store.save_site_scan_findings([finding])
+    store.save_report(report)
+    updated_finding = store.update_site_scan_finding_status(
+        finding.finding_id,
+        FindingStatus.RISK_ACCEPTED,
+        "Accepted for one release.",
+        "scan_retest_1",
+    )
+    updated_report = store.update_report_status(
+        report.vulnerability_id,
+        ReportStatus.CONFIRMED,
+        "Confirmed by reviewer.",
+    )
+
+    assert store.scan_jobs()[0]["job_id"] == "scanjob_1"
+    assert store.audit_events()[0]["action"] == AuditAction.QUEUE_SITE_SCAN
+    assert updated_finding.status == FindingStatus.RISK_ACCEPTED
+    assert updated_finding.retest_scan_ids == ["scan_retest_1"]
+    assert updated_report.status == ReportStatus.CONFIRMED
+    assert store.site_scan_findings()[0]["retention_expires_at"] is not None
+    assert store.reports()[0]["retention_expires_at"] is not None
+    private_finding = SensitiveFindingStore(private_db).site_scan_findings()[0]
+    assert private_finding["status"] == FindingStatus.RISK_ACCEPTED

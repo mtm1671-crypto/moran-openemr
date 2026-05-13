@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,16 +16,22 @@ from .models import (
     AttackCase,
     AttackRun,
     AuthorizedScope,
+    AuditEvent,
     Client,
+    FindingStatus,
     JudgeVerdict,
     ObservedResponse,
     Project,
     RegressionCase,
+    ReportStatus,
     ResilienceSnapshot,
+    ScanJob,
+    ScanJobStatus,
     SiteScanFinding,
     SiteScanRun,
     SuiteSummary,
     VulnerabilityReport,
+    utc_now,
 )
 from .sensitive_findings import (
     SensitiveFindingStore,
@@ -32,7 +39,7 @@ from .sensitive_findings import (
     public_site_scan_finding_view,
 )
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "migrations" / "001_initial.sql"
 
 
@@ -54,9 +61,15 @@ def _from_json(value: str) -> dict[str, Any]:
 
 
 class RunStore:
-    def __init__(self, path: Path, private_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        private_path: Path | None = None,
+        evidence_retention_days: int = 180,
+    ) -> None:
         self.path = path
         self.private_store = SensitiveFindingStore(private_path) if private_path else None
+        self.evidence_retention_days = evidence_retention_days
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +81,7 @@ class RunStore:
         with self.connect() as conn:
             conn.executescript(_schema_sql())
             self._ensure_site_scan_scope_columns(conn)
+            self._ensure_site_scan_finding_columns(conn)
             self._redact_existing_public_reports(conn)
             self._redact_existing_site_scan_findings(conn)
             conn.execute(
@@ -86,6 +100,34 @@ class RunStore:
         for column_name, column_type in columns.items():
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE site_scan_runs ADD COLUMN {column_name} {column_type}")
+
+    def _ensure_site_scan_finding_columns(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(site_scan_findings)").fetchall()
+        existing = {str(row["name"]) for row in rows}
+        columns = {
+            "status": "TEXT",
+        }
+        for column_name, column_type in columns.items():
+            if column_name not in existing:
+                conn.execute(f"ALTER TABLE site_scan_findings ADD COLUMN {column_name} {column_type}")
+
+    def _apply_report_retention(self, report: VulnerabilityReport) -> VulnerabilityReport:
+        if report.retention_expires_at is not None:
+            return report
+        return report.model_copy(
+            update={
+                "retention_expires_at": utc_now() + timedelta(days=self.evidence_retention_days),
+            }
+        )
+
+    def _apply_finding_retention(self, finding: SiteScanFinding) -> SiteScanFinding:
+        if finding.retention_expires_at is not None:
+            return finding
+        return finding.model_copy(
+            update={
+                "retention_expires_at": utc_now() + timedelta(days=self.evidence_retention_days),
+            }
+        )
 
     def _redact_existing_public_reports(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute(
@@ -232,6 +274,7 @@ class RunStore:
             )
 
     def save_report(self, report: VulnerabilityReport) -> None:
+        report = self._apply_report_retention(report)
         if self.private_store is not None:
             self.private_store.save_report(report)
         public_report = public_report_view(report)
@@ -390,14 +433,15 @@ class RunStore:
     def save_site_scan_findings(self, findings: Iterable[SiteScanFinding]) -> None:
         with self.connect() as conn:
             for finding in findings:
+                finding = self._apply_finding_retention(finding)
                 if self.private_store is not None:
                     self.private_store.save_site_scan_finding(finding)
                 public_finding = public_site_scan_finding_view(finding)
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO site_scan_findings
-                    (finding_id, scan_id, check_id, severity, title, payload_json)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (finding_id, scan_id, check_id, severity, title, status, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         finding.finding_id,
@@ -405,9 +449,138 @@ class RunStore:
                         finding.check_id,
                         finding.severity,
                         finding.title,
+                        finding.status,
                         _to_json(public_finding),
                     ),
                 )
+
+    def save_scan_job(self, job: ScanJob) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO scan_jobs
+                (job_id, scope_id, client_id, project_id, target_url, scan_mode,
+                 status, created_at, completed_at, scan_id, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job.job_id,
+                    job.scope_id,
+                    job.client_id,
+                    job.project_id,
+                    job.target_url,
+                    job.scan_mode,
+                    job.status,
+                    job.created_at.isoformat(),
+                    job.completed_at.isoformat() if job.completed_at else None,
+                    job.scan_id,
+                    _to_json(job),
+                ),
+            )
+
+    def save_audit_event(self, event: AuditEvent) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO audit_events
+                (audit_id, action, actor_role, target_type, target_id, created_at, success, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.audit_id,
+                    event.action,
+                    event.actor_role,
+                    event.target_type,
+                    event.target_id,
+                    event.created_at.isoformat(),
+                    int(event.success),
+                    _to_json(event),
+                ),
+            )
+
+    def update_report_status(
+        self,
+        vulnerability_id: str,
+        status: ReportStatus,
+        status_note: str = "",
+    ) -> VulnerabilityReport:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM vulnerability_reports WHERE vulnerability_id = ?",
+                (vulnerability_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"vulnerability report not found: {vulnerability_id}")
+            report = VulnerabilityReport.model_validate(_from_json(row["payload_json"]))
+            updated = report.model_copy(
+                update={
+                    "status": status,
+                    "status_note": status_note,
+                    "last_status_change_at": utc_now(),
+                }
+            )
+            conn.execute(
+                """
+                UPDATE vulnerability_reports
+                SET status = ?, payload_json = ?
+                WHERE vulnerability_id = ?
+                """,
+                (updated.status, _to_json(updated), vulnerability_id),
+            )
+        if self.private_store is not None:
+            self.private_store.update_report_status(vulnerability_id, updated.status, status_note)
+        return updated
+
+    def update_site_scan_finding_status(
+        self,
+        finding_id: str,
+        status: FindingStatus,
+        status_note: str = "",
+        retest_scan_id: str | None = None,
+    ) -> SiteScanFinding:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM site_scan_findings WHERE finding_id = ?",
+                (finding_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"site scan finding not found: {finding_id}")
+            finding = SiteScanFinding.model_validate(_from_json(row["payload_json"]))
+            retest_scan_ids = list(finding.retest_scan_ids)
+            if retest_scan_id and retest_scan_id not in retest_scan_ids:
+                retest_scan_ids.append(retest_scan_id)
+            updated = finding.model_copy(
+                update={
+                    "status": status,
+                    "status_note": status_note,
+                    "retest_scan_ids": retest_scan_ids,
+                    "last_status_change_at": utc_now(),
+                }
+            )
+            conn.execute(
+                """
+                UPDATE site_scan_findings
+                SET status = ?, payload_json = ?
+                WHERE finding_id = ?
+                """,
+                (updated.status, _to_json(updated), finding_id),
+            )
+        if self.private_store is not None:
+            self.private_store.update_site_scan_finding_status(
+                finding_id,
+                updated.status,
+                status_note,
+                retest_scan_id,
+            )
+        return updated
+
+    def deactivate_scope(self, scope_id: str) -> AuthorizedScope:
+        scope = self.authorized_scope(scope_id)
+        if scope is None:
+            raise ValueError(f"authorized scope not found: {scope_id}")
+        updated = scope.model_copy(update={"active": False, "updated_at": utc_now()})
+        self.save_authorized_scope(updated)
+        return updated
 
     def latest_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -474,6 +647,43 @@ class RunStore:
             ).fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
 
+    def scan_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM scan_jobs ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def scan_job(self, job_id: str) -> ScanJob | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM scan_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ScanJob.model_validate(_from_json(row["payload_json"]))
+
+    def cancel_scan_job(self, job_id: str) -> ScanJob:
+        job = self.scan_job(job_id)
+        if job is None:
+            raise ValueError(f"scan job not found: {job_id}")
+        if job.status == ScanJobStatus.QUEUED:
+            updated = job.model_copy(
+                update={
+                    "status": ScanJobStatus.CANCELLED,
+                    "cancellation_requested": True,
+                    "completed_at": utc_now(),
+                }
+            )
+        elif job.status == ScanJobStatus.RUNNING:
+            updated = job.model_copy(update={"cancellation_requested": True})
+        else:
+            updated = job
+        self.save_scan_job(updated)
+        return updated
+
     def clients(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute("SELECT payload_json FROM clients ORDER BY name").fetchall()
@@ -534,6 +744,14 @@ class RunStore:
                 ).fetchall()
             else:
                 rows = conn.execute("SELECT payload_json FROM site_scan_findings").fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def audit_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM audit_events ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
 
     def trace_events(self, run_id: str | None = None) -> list[dict[str, Any]]:

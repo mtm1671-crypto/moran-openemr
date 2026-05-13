@@ -14,8 +14,8 @@ Source requirements:
 
 | View | Grade | Meaning |
 |---|---:|---|
-| MVP readiness | 95 / 100 | Week 3 MVP is now implementation-ready: deployed operator path, expanded seed suite, deterministic Judge, judge eval, Red Team variants, regression promotion, resilience scoring, scoped authorized-site scanning, reporting/export evidence, and passing quality gates. |
-| Full Week 3 PRD coverage | 85 / 100 | The major PRD mechanics are implemented. Remaining gaps are final-product hardening: deeper autonomous looping, real provider-cost accounting, CI wiring, rate limiting, and confirmed vulnerability reports if deterministic failures are found. |
+| MVP readiness | 96 / 100 | Week 3 MVP is now implementation-ready: deployed operator path, expanded seed suite, deterministic Judge, judge eval, Red Team variants, regression promotion, resilience scoring, scoped authorized-site scanning, B2B control-plane foundations, reporting/export evidence, and passing quality gates. |
+| Full Week 3 PRD coverage | 87 / 100 | The major PRD mechanics are implemented. Remaining gaps are final-product hardening: deeper autonomous looping, real provider-cost accounting, CI wiring, named-user SSO, and confirmed vulnerability reports if deterministic failures are found. |
 
 ## Rubric Checklist
 
@@ -30,11 +30,11 @@ Source requirements:
 | 7. Documentation Agent and vulnerability reports | 8 | 6 | Mostly met | `documentation_agent.py` drafts reports for non-pass verdicts with evidence and export links. Reports are stored and surfaced through the dashboard and exports. | There are no confirmed findings to package into three final vulnerability reports; the project should not invent them. |
 | 8. Regression and validation harness | 8 | 7 | Mostly met | `regression_harness.py` promotes confirmed reports into replayable `RegressionCase` records. The graph persists regression candidates on failures, and the regression suite replays promoted cases. | CI integration is not wired yet. |
 | 9. Observability and reporting | 8 | 7 | Mostly met | SQLite stores cases, runs, observations, traces, verdicts, reports, resilience snapshots, regression cases, and suite summaries. `reporting.py`, `costing.py`, and `export_run.py` add category rollups, dashboard summary, cost rollups, trace detail, and resilience exports. | Trending is available from stored snapshots, but richer historical visualizations can still improve the final product. |
-| 10. Operator UI | 8 | 7 | Mostly met | `ui.py` shows target mode, recommendation, metrics, coverage, latest runs, findings, exports, black-box observations, trace detail, a scoped site-scan form, and a risk posture panel with resilience/cost signals. | Rate limiting and deeper trend charts remain final hardening items. |
+| 10. Operator UI | 8 | 8 | Met for MVP | `ui.py` shows target mode, recommendation, metrics, coverage, latest runs, findings, exports, black-box observations, trace detail, scoped site scanning, client/scope admin, scan jobs, report workflow updates, audit log, and a risk posture panel with resilience/cost signals. | Deeper trend charts remain final hardening items. |
 | 11. Cost and scale controls | 4 | 3 | Mostly met | `RunBudget`, Judge budget checks, per-run cost fields, and `costing.py` suite rollups are implemented. | Provider cost still depends on captured usage; token estimates are approximate when the target does not expose usage. |
-| 12. Trust, safety, and authorization | 4 | 4 | Met for MVP | Allowlist checks reject arbitrary hosts. Site scans require authorized client/project/scope records and store findings in the adversarial database path. Synthetic clinician auth is environment-provided. Seed cases are synthetic. Credentials are not serialized in run metadata. | Public operator hardening should add rate limiting before broader exposure. |
+| 12. Trust, safety, and authorization | 4 | 4 | Met for MVP | Allowlist checks reject arbitrary hosts. Site scans require authorized client/project/scope records and store findings in the adversarial database path. Operator actions use auth, CSRF, rate limiting, audit logs, and public/private evidence separation. Synthetic clinician auth is environment-provided. Seed cases are synthetic. Credentials are not serialized in run metadata. | Named-user SSO/OIDC remains the main enterprise auth gap. |
 
-Total full-PRD score: 85 / 100.
+Total full-PRD score: 87 / 100.
 
 ## MVP Capability Checklist
 
@@ -42,7 +42,7 @@ Total full-PRD score: 85 / 100.
 |---|---|---|
 | Top-level `security/adversarial/` app scaffold | Met | `security/adversarial/pyproject.toml`, `security/adversarial/app/`, `security/adversarial/tests/`, `security/adversarial/README.md`. |
 | Deployed FastAPI operator UI | Met | Live operator path remains `https://adversarial-production.up.railway.app`; `/readyz` is part of the deployment verification. |
-| SQLite run store with migrations/readiness | Met | `run_store.py` schema version 7 plus `migrations/001_initial.sql`. |
+| SQLite run store with migrations/readiness | Met | `run_store.py` schema version 8 plus `migrations/001_initial.sql`. |
 | Local and deployed target modes | Met | `TargetMode`, `Settings.target_url`, `run_week3_eval --target`. |
 | Target allowlist and synthetic auth config | Met for MVP | Allowlist and synthetic clinician password-grant config are implemented; credentials are not exported. |
 | Expanded eval cases for hospital-director suite | Met | Case corpus now covers all core PRD attack families and indirect-injection layers. |
@@ -53,7 +53,7 @@ Total full-PRD score: 85 / 100.
 | Basic deployment docs and final demo path | Met | `security/adversarial/README.md`, root README/submission docs, Railway service path. |
 | End-to-end proof | Met locally; deploy verification pending after this pass | Local tests, lint, typecheck, and judge eval are clean. |
 
-MVP grade: 95 / 100.
+MVP grade: 96 / 100.
 
 ## Remaining Important Gaps
 
@@ -64,7 +64,7 @@ MVP grade: 95 / 100.
    The reporting workflow is implemented, but confirmed reports should only be produced from deterministic failures or human review. If the expanded suite still finds no vulnerabilities, the correct final artifact is a clean evidence register, not invented findings.
 
 3. Operational hardening.
-   Add rate limiting and CI regression execution before treating the public operator as a long-lived service.
+   Add named-user SSO/OIDC and CI regression execution before treating the public operator as a larger multi-user client service.
 
 4. Provider-grade cost accounting.
    Suite rollups exist, but exact provider cost requires usage data from the target or model provider.
@@ -82,7 +82,7 @@ Commands run from `security/adversarial/`:
 
 Results:
 
-- `pytest`: 47 passed.
+- `pytest`: 50 passed.
 - `ruff`: all checks passed.
 - `mypy`: success, no issues in 24 source files.
 - `run_judge_eval --enforce`: 6 fixtures, 0 false positives, 0 false negatives, 0 critical/high false negatives.

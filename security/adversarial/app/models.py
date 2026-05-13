@@ -59,6 +59,15 @@ class ReportStatus(StrEnum):
     FALSE_POSITIVE = "false_positive"
     NEEDS_HUMAN_REVIEW = "needs_human_review"
     RESOLVED = "resolved"
+    RISK_ACCEPTED = "risk_accepted"
+
+
+class FindingStatus(StrEnum):
+    OPEN = "open"
+    NEEDS_REVIEW = "needs_review"
+    FIXED = "fixed"
+    RISK_ACCEPTED = "risk_accepted"
+    FALSE_POSITIVE = "false_positive"
 
 
 class CaseApprovalStatus(StrEnum):
@@ -81,6 +90,35 @@ class SiteScanMode(StrEnum):
 class SiteScanStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class ScanJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AuditAction(StrEnum):
+    LOGIN = "login"
+    LOGOUT = "logout"
+    RUN_SUITE = "run_suite"
+    CREATE_CLIENT = "create_client"
+    CREATE_PROJECT = "create_project"
+    CREATE_SCOPE = "create_scope"
+    DEACTIVATE_SCOPE = "deactivate_scope"
+    QUEUE_SITE_SCAN = "queue_site_scan"
+    COMPLETE_SITE_SCAN = "complete_site_scan"
+    CANCEL_SCAN_JOB = "cancel_scan_job"
+    UPDATE_REPORT_STATUS = "update_report_status"
+    UPDATE_FINDING_STATUS = "update_finding_status"
+
+
+class OperatorRole(StrEnum):
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    AUDITOR = "auditor"
 
 
 class InjectionLayer(StrEnum):
@@ -240,6 +278,10 @@ class VulnerabilityReport(BaseModel):
     export_links: list[str] = Field(default_factory=list)
     sensitive_details_redacted: bool = False
     private_storage_ref: str | None = None
+    data_classification: str = "restricted"
+    retention_expires_at: datetime | None = None
+    last_status_change_at: datetime | None = None
+    status_note: str = ""
 
 
 class RegressionCase(BaseModel):
@@ -298,6 +340,10 @@ class AuthorizedScope(BaseModel):
     max_urls: int = Field(default=12, ge=1, le=50)
     authorization_note: str
     authorization_expires_at: datetime | None = None
+    rules_of_engagement_ref: str | None = None
+    operator_contact: str | None = None
+    rate_limit_per_hour: int = Field(default=60, ge=1, le=5000)
+    updated_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     active: bool = True
 
@@ -343,6 +389,12 @@ class SiteScanFinding(BaseModel):
     reference_url: str | None = None
     sensitive_details_redacted: bool = False
     private_storage_ref: str | None = None
+    status: FindingStatus = FindingStatus.OPEN
+    status_note: str = ""
+    retest_scan_ids: list[str] = Field(default_factory=list)
+    last_status_change_at: datetime | None = None
+    data_classification: str = "restricted"
+    retention_expires_at: datetime | None = None
 
 
 class SiteScanRun(BaseModel):
@@ -360,6 +412,37 @@ class SiteScanRun(BaseModel):
     highest_severity: Severity = Severity.INFO
     authorization_note: str = "Operator attests this target is owned or explicitly authorized."
     target_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScanJob(BaseModel):
+    job_id: str = Field(default_factory=lambda: new_id("scanjob"))
+    scope_id: str
+    client_id: str
+    project_id: str
+    target_url: str
+    scan_mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP
+    status: ScanJobStatus = ScanJobStatus.QUEUED
+    requested_by: OperatorRole = OperatorRole.ADMIN
+    created_at: datetime = Field(default_factory=utc_now)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    scan_id: str | None = None
+    cancellation_requested: bool = False
+    error: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditEvent(BaseModel):
+    audit_id: str = Field(default_factory=lambda: new_id("audit"))
+    action: AuditAction
+    actor_role: OperatorRole = OperatorRole.ADMIN
+    target_type: str
+    target_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    ip_address_hash: str | None = None
+    user_agent: str | None = None
+    success: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CampaignPriority(BaseModel):

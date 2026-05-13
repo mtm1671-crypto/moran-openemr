@@ -6,11 +6,15 @@ from app.models import (
     AttackCase,
     AttackCategory,
     AttackRun,
+    AuthorizedScope,
     ImpactDomain,
     JudgeVerdict,
     ObservedResponse,
     RunMode,
     Severity,
+    SiteScanFinding,
+    SiteScanMode,
+    SiteScanRun,
     StopReason,
     TargetMode,
     Verdict,
@@ -48,6 +52,77 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert 'name="target_url"' in response.text
     assert 'name="scan_mode"' in response.text
     assert 'value="low-priv-authenticated"' in response.text
+    assert "Client Scopes" in response.text
+    assert "Scan Jobs" in response.text
+    assert "Audit Log" in response.text
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_client_scope_admin_records_audit_with_bearer_auth(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "runs.sqlite"
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(db_path))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    client = TestClient(create_app())
+    headers = {"Authorization": "Bearer operator-test-token"}
+
+    dashboard = client.get("/", headers=headers)
+    created = client.post(
+        "/clients",
+        data={"name": "Acme Health"},
+        headers=headers,
+        follow_redirects=False,
+    )
+
+    assert dashboard.status_code == 200
+    assert created.status_code == 303
+    store = RunStore(db_path)
+    assert any(row["name"] == "Acme Health" for row in store.clients())
+    assert store.audit_events()[0]["action"] == "create_client"
+
+
+def test_client_report_export_includes_scope_findings(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "runs.sqlite"
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(db_path))
+    store = RunStore(db_path)
+    store.initialize()
+    scope = AuthorizedScope(
+        scope_id="scope_report",
+        client_id="client_report",
+        project_id="project_report",
+        name="Report Scope",
+        allowed_hosts=["owned.example"],
+        allowed_scan_modes=[SiteScanMode.PASSIVE_HTTP],
+        authorization_note="Written authorization.",
+    )
+    scan = SiteScanRun(
+        scan_id="sitescan_report",
+        target_url="https://owned.example",
+        client_id=scope.client_id,
+        project_id=scope.project_id,
+        scope_id=scope.scope_id,
+    )
+    finding = SiteScanFinding(
+        finding_id="sitefind_report",
+        scan_id=scan.scan_id,
+        check_id="header.csp.missing",
+        title="CSP missing",
+        severity=Severity.MEDIUM,
+        description="Missing CSP.",
+        evidence="Missing header.",
+        remediation="Add CSP.",
+    )
+    store.save_authorized_scope(scope)
+    store.save_site_scan_run(scan)
+    store.save_site_scan_findings([finding])
+    client = TestClient(create_app())
+
+    markdown = client.get("/client-reports/scope_report.md")
+    payload = client.get("/client-reports/scope_report.json").json()
+
+    assert markdown.status_code == 200
+    assert "Client Security Summary: Report Scope" in markdown.text
+    assert payload["scope"]["scope_id"] == "scope_report"
+    assert payload["findings"][0]["finding_id"] == "sitefind_report"
 
 
 def test_operator_auth_blocks_dashboard_when_configured(monkeypatch, tmp_path: Path) -> None:

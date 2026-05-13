@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     operator_session_secret: SecretStr | None = None
     operator_session_ttl_seconds: int = Field(default=28_800, ge=300, le=86_400)
     operator_cookie_secure: bool = True
+    operator_rate_limit_window_seconds: int = Field(default=60, ge=10, le=3600)
+    operator_rate_limit_max_requests: int = Field(default=120, ge=10, le=5000)
+    evidence_retention_days: int = Field(default=180, ge=1, le=3650)
     synthetic_clinician_token: str | None = None
     synthetic_clinician_token_url: str | None = None
     synthetic_clinician_client_id: str | None = None

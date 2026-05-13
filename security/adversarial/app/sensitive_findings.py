@@ -12,9 +12,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
-from .models import SiteScanFinding, VulnerabilityReport
+from .models import FindingStatus, ReportStatus, SiteScanFinding, VulnerabilityReport
 
-PRIVATE_SCHEMA_VERSION = "2"
+PRIVATE_SCHEMA_VERSION = "3"
 
 PRIVATE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -109,6 +109,79 @@ class SensitiveFindingStore:
                 "SELECT payload_json FROM sensitive_site_scan_findings"
             ).fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
+
+    def update_report_status(
+        self,
+        vulnerability_id: str,
+        status: ReportStatus,
+        status_note: str = "",
+    ) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json
+                FROM sensitive_vulnerability_reports
+                WHERE vulnerability_id = ?
+                """,
+                (vulnerability_id,),
+            ).fetchone()
+            if row is None:
+                return
+            report = VulnerabilityReport.model_validate(_from_json(row["payload_json"]))
+            updated = report.model_copy(
+                update={
+                    "status": status,
+                    "status_note": status_note,
+                }
+            )
+            conn.execute(
+                """
+                UPDATE sensitive_vulnerability_reports
+                SET status = ?, payload_json = ?
+                WHERE vulnerability_id = ?
+                """,
+                (updated.status, updated.model_dump_json(), vulnerability_id),
+            )
+
+    def update_site_scan_finding_status(
+        self,
+        finding_id: str,
+        status: FindingStatus,
+        status_note: str = "",
+        retest_scan_id: str | None = None,
+    ) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json
+                FROM sensitive_site_scan_findings
+                WHERE finding_id = ?
+                """,
+                (finding_id,),
+            ).fetchone()
+            if row is None:
+                return
+            finding = SiteScanFinding.model_validate(_from_json(row["payload_json"]))
+            retest_scan_ids = list(finding.retest_scan_ids)
+            if retest_scan_id and retest_scan_id not in retest_scan_ids:
+                retest_scan_ids.append(retest_scan_id)
+            updated = finding.model_copy(
+                update={
+                    "status": status,
+                    "status_note": status_note,
+                    "retest_scan_ids": retest_scan_ids,
+                }
+            )
+            conn.execute(
+                """
+                UPDATE sensitive_site_scan_findings
+                SET payload_json = ?
+                WHERE finding_id = ?
+                """,
+                (updated.model_dump_json(), finding_id),
+            )
 
 
 def public_report_view(report: VulnerabilityReport) -> VulnerabilityReport:

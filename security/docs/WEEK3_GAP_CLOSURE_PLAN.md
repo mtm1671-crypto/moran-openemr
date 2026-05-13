@@ -207,11 +207,11 @@ Verification:
 
 Remaining final-product work:
 
-- Add richer charting and rate limiting.
+- Add richer charting.
 
 ## 11. Authorized Client/Project Scope Registry
 
-Status: implemented for MVP.
+Status: implemented for MVP and extended for B2B foundations.
 
 What changed:
 
@@ -221,6 +221,8 @@ What changed:
 - Required site scans from the UI and CLI to resolve an authorized scope before running.
 - Stored `client_id`, `project_id`, and `scope_id` on each site scan run.
 - Kept site-scan evidence in the adversarial security database path rather than the OpenEMR/Co-Pilot app runtime.
+- Added dashboard workflows for creating clients, projects, and authorized scopes.
+- Added audit log entries, scan job lifecycle records, finding workflow statuses, per-scope client reports, CSRF protection, rate limiting, and security headers.
 
 Verification:
 
@@ -229,7 +231,7 @@ Verification:
 
 Remaining final-product work:
 
-- Add an operator workflow for creating and retiring client scopes without editing environment configuration.
+- Replace the shared operator token with named-user SSO/OIDC before larger client teams use the service.
 
 ## Verification Commands
 
@@ -244,7 +246,7 @@ Run from `security/adversarial/`:
 
 Current result:
 
-- `pytest`: 47 passed.
+- `pytest`: 50 passed.
 - `ruff`: all checks passed.
 - `mypy`: success, no issues in 24 source files.
 - `run_judge_eval --enforce`: passes with no critical/high false negatives.
@@ -255,6 +257,6 @@ Current result:
 2. Run the expanded deployed suite and capture new screenshots/video if the UI state changes materially.
 3. Add target fixture setup for uploaded-document and seeded-note cases.
 4. Add CI regression execution.
-5. Add rate limiting.
+5. Add named-user SSO/OIDC.
 6. Add richer historical charts once multiple suite snapshots exist.
 7. Package confirmed vulnerability reports only if deterministic failures are observed or approved by human review.

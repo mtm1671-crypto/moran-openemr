@@ -21,7 +21,11 @@ def run_passive_site_scan(
     mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP,
     scope_id: str | None = None,
 ) -> dict[str, Any]:
-    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
+    store = RunStore(
+        settings.sqlite_path,
+        private_path=settings.private_sqlite_path,
+        evidence_retention_days=settings.evidence_retention_days,
+    )
     store.initialize()
     scope = resolve_scope_for_scan(
         store=store,

@@ -54,6 +54,9 @@ Required variables:
 - `ADVERSARIAL_PRIVATE_SQLITE_PATH=/data/private_findings.sqlite`
 - `ADVERSARIAL_OPERATOR_TOKEN=<Railway secret used to access the operator UI/API>`
 - `ADVERSARIAL_OPERATOR_SESSION_SECRET=<Railway secret for signed login cookies>`
+- `ADVERSARIAL_OPERATOR_RATE_LIMIT_WINDOW_SECONDS=60`
+- `ADVERSARIAL_OPERATOR_RATE_LIMIT_MAX_REQUESTS=120`
+- `ADVERSARIAL_EVIDENCE_RETENTION_DAYS=180`
 - `ADVERSARIAL_CASE_ROOT=/app/evals/week3/cases`
 - `ADVERSARIAL_TARGET_MODE=deployed`
 - `ADVERSARIAL_DEPLOYED_TARGET_URL=https://copilot-api-production-9f84.up.railway.app`
@@ -75,6 +78,7 @@ Mount `/data` as a persistent volume so run history survives restarts.
 
 - Non-allowlisted targets are rejected.
 - The operator dashboard and exports require `ADVERSARIAL_OPERATOR_TOKEN` when deployed for client work; `/readyz` remains public for health checks.
+- Browser form actions use signed-session CSRF tokens, operator requests are rate-limited, and mutating operator actions are recorded in the audit log.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
 - Site scans are bound to an authorized client/project/scope record. The default scope is seeded from `ADVERSARIAL_ALLOWED_HOSTS`, scan-mode limits, excluded paths, and request caps.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
@@ -98,6 +102,8 @@ By default, the app seeds:
 
 The seeded scope inherits allowlisted hosts from `ADVERSARIAL_ALLOWED_HOSTS`, permits passive and low-privileged scanning, and caps same-origin low-privileged checks with `ADVERSARIAL_SITE_SCAN_MAX_URLS`.
 
+Operators can create additional clients, projects, and scopes from the dashboard. New scope hosts must also be present in `ADVERSARIAL_ALLOWED_HOSTS`, preserving a global deployment guardrail even when multiple client scopes exist.
+
 ## Generalized Site Scanning
 
 The operator can run bounded passive checks against non-Co-Pilot sites when they are explicitly allowlisted and selected through an authorized scope. This is intended for owned apps, staging environments, and authorized demos.
@@ -114,3 +120,15 @@ Current checks include:
 Low-privileged mode is still bounded reconnaissance, not exploitation. It does not brute force, submit mutating forms, fuzz parameters, or attempt credential bypasses. It is intended for synthetic accounts on owned or explicitly authorized targets.
 
 Future active or semi-active scanning should use an explicit scan profile and human approval. OWASP ZAP baseline mode is the right next integration point because it is designed around passive scanning rather than active exploitation.
+
+## B2B Operations
+
+Current client-grade controls:
+
+- Scope-admin UI for clients, projects, hosts, modes, excluded paths, authorization notes, contacts, expiry dates, and rules-of-engagement references.
+- Scan job lifecycle records for queued, running, completed, failed, and cancelled jobs.
+- Finding workflow statuses for open, needs review, fixed, risk accepted, and false positive.
+- Per-scope JSON/Markdown client reports.
+- Private findings vault plus public redaction and evidence-retention metadata.
+- Operator audit log for login, scope changes, scan jobs, suite runs, and finding/report status changes.
+- Authenticated trust-package exports at `/trust/security-summary.md` and `/trust/rules-of-engagement.md`.

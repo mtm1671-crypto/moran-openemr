@@ -7,6 +7,8 @@ import hmac
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from enum import StrEnum
 from html import escape
 from urllib.parse import parse_qs
 
@@ -15,7 +17,20 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from .config import Settings
 from .export_run import build_run_export, render_run_markdown
-from .models import RunMode, SiteScanMode
+from .models import (
+    AuditAction,
+    AuditEvent,
+    AuthorizedScope,
+    Client,
+    FindingStatus,
+    Project,
+    ReportStatus,
+    RunMode,
+    ScanJob,
+    ScanJobStatus,
+    SiteScanMode,
+    utc_now,
+)
 from .reporting import dashboard_summary
 from .run_store import RunStore
 from .run_week3_eval import run_suite
@@ -27,8 +42,35 @@ OPERATOR_SESSION_COOKIE = "agentforge_operator_session"
 
 def create_app() -> FastAPI:
     settings = Settings()
-    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
+    store = RunStore(
+        settings.sqlite_path,
+        private_path=settings.private_sqlite_path,
+        evidence_retention_days=settings.evidence_retention_days,
+    )
     app = FastAPI(title="AgentForge Adversarial Platform", version="0.1.0")
+    rate_buckets: dict[str, list[float]] = {}
+
+    @app.middleware("http")
+    async def apply_operator_rate_limit(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if _is_rate_limited(request, settings, rate_buckets):
+            return JSONResponse({"detail": "operator rate limit exceeded"}, status_code=429)
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def add_security_headers(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        return response
 
     @app.middleware("http")
     async def require_operator_auth(
@@ -92,6 +134,14 @@ def create_app() -> FastAPI:
         params = parse_qs(body)
         submitted = params.get("operator_token", [""])[0]
         if not _token_matches(submitted, settings):
+            _record_audit(
+                store,
+                request,
+                AuditAction.LOGIN,
+                "operator_session",
+                "login",
+                success=False,
+            )
             return HTMLResponse(
                 _page(
                     "Login failed",
@@ -116,16 +166,22 @@ def create_app() -> FastAPI:
             secure=settings.operator_cookie_secure,
             samesite="strict",
         )
+        _record_audit(store, request, AuditAction.LOGIN, "operator_session", "login")
         return response
 
     @app.post("/logout")
-    def logout() -> Response:
+    async def logout(request: Request) -> Response:
+        body = (await request.body()).decode()
+        csrf_response = _csrf_failure_response(request, settings, parse_qs(body))
+        if csrf_response:
+            return csrf_response
+        _record_audit(store, request, AuditAction.LOGOUT, "operator_session", "logout")
         response = RedirectResponse("/login", status_code=303)
         response.delete_cookie(OPERATOR_SESSION_COOKIE)
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def dashboard() -> str:
+    def dashboard(request: Request) -> str:
         store.initialize()
         ensure_default_scope(store, settings)
         runs = store.latest_runs(limit=20)
@@ -136,6 +192,11 @@ def create_app() -> FastAPI:
         snapshots = store.snapshots()
         site_scans = store.site_scan_runs(limit=10)
         scopes = store.authorized_scopes()
+        clients = store.clients()
+        projects = store.projects()
+        scan_jobs = store.scan_jobs(limit=10)
+        audit_events = store.audit_events(limit=12)
+        csrf = _csrf_token_for_request(request, settings)
         summary = dashboard_summary(
             cases=cases,
             runs=runs,
@@ -196,12 +257,14 @@ def create_app() -> FastAPI:
                 <strong>Campaign control</strong>
               </div>
               <form method="post" action="/runs/smoke" data-run-suite="smoke">
+                {_csrf_input(csrf)}
                 <button type="submit" data-loading-label="Running Smoke">
                   <span class="button-label">Run Smoke</span>
                   <span class="button-spinner" aria-hidden="true"></span>
                 </button>
               </form>
               <form method="post" action="/runs/seed" data-run-suite="seed">
+                {_csrf_input(csrf)}
                 <button class="button-primary" type="submit" data-loading-label="Running Seed Suite">
                   <span class="button-label">Run Seed Suite</span>
                   <span class="button-spinner" aria-hidden="true"></span>
@@ -220,6 +283,7 @@ def create_app() -> FastAPI:
                 <strong>Authorized site scan</strong>
               </div>
               <form class="site-scan-form" method="post" action="/site-scans/passive" data-run-suite="site-scan">
+                {_csrf_input(csrf)}
                 <label for="site-scope-id">Scope</label>
                 <select id="site-scope-id" name="scope_id" required>
                   {_scope_options(scopes)}
@@ -243,6 +307,13 @@ def create_app() -> FastAPI:
                 <h2>Risk Posture</h2>
               </div>
               {_posture_panel(summary)}
+            </section>
+            <section class="panel">
+              <div class="section-heading">
+                <span class="section-code">CLIENT-01</span>
+                <h2>Client Scopes</h2>
+              </div>
+              {_scope_admin_panel(clients, projects, scopes, csrf, settings)}
             </section>
             <section class="panel">
               <div class="section-heading">
@@ -272,16 +343,34 @@ def create_app() -> FastAPI:
             </section>
             <section class="panel">
               <div class="section-heading">
+                <span class="section-code">QUEUE-07</span>
+                <h2>Scan Jobs</h2>
+              </div>
+              {_scan_jobs_table(scan_jobs, csrf)}
+            </section>
+            <section class="panel">
+              <div class="section-heading">
                 <span class="section-code">REPORT-04</span>
                 <h2>Findings</h2>
               </div>
-              {_reports_table(current_reports)}
+              {_reports_table(current_reports, csrf)}
+            </section>
+            <section class="panel">
+              <div class="section-heading">
+                <span class="section-code">AUDIT-08</span>
+                <h2>Audit Log</h2>
+              </div>
+              {_audit_table(audit_events)}
             </section>
             """,
         )
 
     @app.post("/runs/{suite}")
-    def start_run(suite: str) -> Response:
+    async def start_run(suite: str, request: Request) -> Response:
+        body = (await request.body()).decode()
+        csrf_response = _csrf_failure_response(request, settings, parse_qs(body))
+        if csrf_response:
+            return csrf_response
         if suite not in {"smoke", "seed", "regression"}:
             return HTMLResponse(_page("Invalid suite", "<h1>Invalid suite</h1>"), status_code=400)
         try:
@@ -291,7 +380,24 @@ def create_app() -> FastAPI:
                 suite=suite,
                 run_mode=RunMode.REPORT_ONLY,
             )
+            _record_audit(
+                store,
+                request,
+                AuditAction.RUN_SUITE,
+                "suite",
+                suite,
+                metadata={"run_ids": run_ids},
+            )
         except Exception as exc:
+            _record_audit(
+                store,
+                request,
+                AuditAction.RUN_SUITE,
+                "suite",
+                suite,
+                success=False,
+                metadata={"error": f"{type(exc).__name__}: {exc}"},
+            )
             return HTMLResponse(
                 _page(
                     "Run failed",
@@ -311,11 +417,15 @@ def create_app() -> FastAPI:
     async def start_passive_site_scan(request: Request) -> Response:
         body = (await request.body()).decode()
         params = parse_qs(body)
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
         scope_id = params.get("scope_id", [""])[0].strip()
         target_url = params.get("target_url", [""])[0].strip()
         scan_mode_value = params.get("scan_mode", [SiteScanMode.PASSIVE_HTTP.value])[0].strip()
         if not target_url:
             return HTMLResponse(_page("Invalid target", "<h1>Invalid target</h1>"), status_code=400)
+        job: ScanJob | None = None
         try:
             scan_mode = SiteScanMode(scan_mode_value)
             store.initialize()
@@ -326,6 +436,26 @@ def create_app() -> FastAPI:
                 target_url=target_url,
                 mode=scan_mode,
             )
+            job = ScanJob(
+                scope_id=scope.scope_id,
+                client_id=scope.client_id,
+                project_id=scope.project_id,
+                target_url=target_url,
+                scan_mode=scan_mode,
+                status=ScanJobStatus.QUEUED,
+                metadata={"authorization_note": scope.authorization_note},
+            )
+            store.save_scan_job(job)
+            _record_audit(
+                store,
+                request,
+                AuditAction.QUEUE_SITE_SCAN,
+                "scan_job",
+                job.job_id,
+                metadata={"scope_id": scope.scope_id, "target_url": target_url},
+            )
+            job = job.model_copy(update={"status": ScanJobStatus.RUNNING, "started_at": utc_now()})
+            store.save_scan_job(job)
             scan, findings = PassiveSiteScanner(settings).scan(
                 target_url,
                 mode=scan_mode,
@@ -333,7 +463,41 @@ def create_app() -> FastAPI:
             )
             store.save_site_scan_run(scan)
             store.save_site_scan_findings(findings)
+            job = job.model_copy(
+                update={
+                    "status": ScanJobStatus.COMPLETED,
+                    "completed_at": utc_now(),
+                    "scan_id": scan.scan_id,
+                }
+            )
+            store.save_scan_job(job)
+            _record_audit(
+                store,
+                request,
+                AuditAction.COMPLETE_SITE_SCAN,
+                "site_scan",
+                scan.scan_id,
+                metadata={"job_id": job.job_id, "finding_count": scan.finding_count},
+            )
         except Exception as exc:
+            if job is not None:
+                failed_job = job.model_copy(
+                    update={
+                        "status": ScanJobStatus.FAILED,
+                        "completed_at": utc_now(),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                store.save_scan_job(failed_job)
+            _record_audit(
+                store,
+                request,
+                AuditAction.QUEUE_SITE_SCAN,
+                "site_scan",
+                target_url or "unknown",
+                success=False,
+                metadata={"error": f"{type(exc).__name__}: {exc}"},
+            )
             return HTMLResponse(
                 _page(
                     "Site scan failed",
@@ -348,7 +512,7 @@ def create_app() -> FastAPI:
         return RedirectResponse(f"/site-scans/{scan.scan_id}", status_code=303)
 
     @app.get("/site-scans/{scan_id}", response_class=HTMLResponse)
-    def site_scan_detail(scan_id: str) -> Response:
+    def site_scan_detail(scan_id: str, request: Request) -> Response:
         store.initialize()
         scans = [scan for scan in store.site_scan_runs(limit=500) if scan["scan_id"] == scan_id]
         if not scans:
@@ -360,6 +524,7 @@ def create_app() -> FastAPI:
                 status_code=404,
             )
         findings = store.site_scan_findings(scan_id)
+        csrf = _csrf_token_for_request(request, settings)
         return HTMLResponse(
             _page(
                 f"Site Scan {scan_id}",
@@ -386,7 +551,7 @@ def create_app() -> FastAPI:
             </section>
             <section class="panel">
               <div class="section-heading"><span class="section-code">FINDINGS</span><h2>Findings</h2></div>
-              {_site_findings_table(findings)}
+              {_site_findings_table(findings, csrf)}
             </section>
             """,
             )
@@ -474,11 +639,239 @@ def create_app() -> FastAPI:
             )
         )
 
+    @app.post("/clients")
+    async def create_client(request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        name = params.get("name", [""])[0].strip()
+        if not name:
+            return HTMLResponse(_page("Invalid client", "<h1>Client name required</h1>"), status_code=400)
+        client = Client(name=name)
+        store.initialize()
+        ensure_default_scope(store, settings)
+        store.save_client(client)
+        _record_audit(store, request, AuditAction.CREATE_CLIENT, "client", client.client_id)
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/projects")
+    async def create_project(request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        client_id = params.get("client_id", [""])[0].strip()
+        name = params.get("name", [""])[0].strip()
+        if not client_id or not name:
+            return HTMLResponse(
+                _page("Invalid project", "<h1>Client and project name required</h1>"),
+                status_code=400,
+            )
+        store.initialize()
+        ensure_default_scope(store, settings)
+        if client_id not in {str(client.get("client_id")) for client in store.clients()}:
+            return HTMLResponse(_page("Invalid project", "<h1>Client not found</h1>"), status_code=400)
+        project = Project(client_id=client_id, name=name)
+        store.save_project(project)
+        _record_audit(
+            store,
+            request,
+            AuditAction.CREATE_PROJECT,
+            "project",
+            project.project_id,
+            metadata={"client_id": client_id},
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/scopes")
+    async def create_scope(request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        project_id = params.get("project_id", [""])[0].strip()
+        store.initialize()
+        ensure_default_scope(store, settings)
+        projects = store.projects()
+        project = next((item for item in projects if item.get("project_id") == project_id), None)
+        if project is None:
+            return HTMLResponse(_page("Invalid scope", "<h1>Project required</h1>"), status_code=400)
+        allowed_hosts = _split_form_list(params.get("allowed_hosts", [""])[0])
+        unknown_hosts = [host for host in allowed_hosts if host not in set(settings.allowed_hosts)]
+        if unknown_hosts:
+            message = f"<h1>Host must be in ADVERSARIAL_ALLOWED_HOSTS</h1><p>{escape(', '.join(unknown_hosts))}</p>"
+            return HTMLResponse(_page("Invalid scope", message), status_code=400)
+        try:
+            allowed_modes = [
+                SiteScanMode(value)
+                for value in params.get("allowed_scan_modes", [SiteScanMode.PASSIVE_HTTP.value])
+            ]
+            expires_at = _parse_optional_datetime(params.get("authorization_expires_at", [""])[0])
+            scope = AuthorizedScope(
+                client_id=str(project["client_id"]),
+                project_id=project_id,
+                name=params.get("name", [""])[0].strip() or "Authorized client scope",
+                allowed_hosts=allowed_hosts,
+                allowed_scan_modes=allowed_modes,
+                excluded_paths=_split_form_list(params.get("excluded_paths", [""])[0]),
+                max_urls=int(params.get("max_urls", ["12"])[0] or "12"),
+                authorization_note=params.get("authorization_note", [""])[0].strip()
+                or "Operator attests this scope is explicitly authorized.",
+                authorization_expires_at=expires_at,
+                operator_contact=params.get("operator_contact", [""])[0].strip() or None,
+                rules_of_engagement_ref=params.get("rules_of_engagement_ref", [""])[0].strip() or None,
+            )
+        except ValueError as exc:
+            return HTMLResponse(
+                _page("Invalid scope", f"<h1>Invalid scope</h1><p>{escape(str(exc))}</p>"),
+                status_code=400,
+            )
+        store.save_authorized_scope(scope)
+        _record_audit(
+            store,
+            request,
+            AuditAction.CREATE_SCOPE,
+            "authorized_scope",
+            scope.scope_id,
+            metadata={"allowed_hosts": allowed_hosts, "project_id": project_id},
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/scopes/{scope_id}/deactivate")
+    async def deactivate_scope(scope_id: str, request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        store.initialize()
+        try:
+            store.deactivate_scope(scope_id)
+        except ValueError:
+            return HTMLResponse(_page("Scope not found", "<h1>Scope not found</h1>"), status_code=404)
+        _record_audit(store, request, AuditAction.DEACTIVATE_SCOPE, "authorized_scope", scope_id)
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/reports/{vulnerability_id}/status")
+    async def update_report_status(vulnerability_id: str, request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        try:
+            store.initialize()
+            status = ReportStatus(params.get("status", [ReportStatus.NEEDS_HUMAN_REVIEW.value])[0])
+            updated = store.update_report_status(
+                vulnerability_id,
+                status,
+                params.get("status_note", [""])[0].strip(),
+            )
+        except ValueError as exc:
+            return HTMLResponse(_page("Report update failed", f"<h1>{escape(str(exc))}</h1>"), status_code=400)
+        _record_audit(
+            store,
+            request,
+            AuditAction.UPDATE_REPORT_STATUS,
+            "vulnerability_report",
+            vulnerability_id,
+            metadata={"status": updated.status},
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/site-findings/{finding_id}/status")
+    async def update_finding_status(finding_id: str, request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        try:
+            store.initialize()
+            status = FindingStatus(params.get("status", [FindingStatus.NEEDS_REVIEW.value])[0])
+            updated = store.update_site_scan_finding_status(
+                finding_id,
+                status,
+                params.get("status_note", [""])[0].strip(),
+                params.get("retest_scan_id", [""])[0].strip() or None,
+            )
+        except ValueError as exc:
+            return HTMLResponse(_page("Finding update failed", f"<h1>{escape(str(exc))}</h1>"), status_code=400)
+        _record_audit(
+            store,
+            request,
+            AuditAction.UPDATE_FINDING_STATUS,
+            "site_scan_finding",
+            finding_id,
+            metadata={"status": updated.status},
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/scan-jobs/{job_id}/cancel")
+    async def cancel_scan_job(job_id: str, request: Request) -> Response:
+        params = parse_qs((await request.body()).decode())
+        csrf_response = _csrf_failure_response(request, settings, params)
+        if csrf_response:
+            return csrf_response
+        try:
+            store.initialize()
+            updated = store.cancel_scan_job(job_id)
+        except ValueError:
+            return HTMLResponse(_page("Scan job not found", "<h1>Scan job not found</h1>"), status_code=404)
+        _record_audit(
+            store,
+            request,
+            AuditAction.CANCEL_SCAN_JOB,
+            "scan_job",
+            job_id,
+            metadata={"status": updated.status},
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.get("/client-reports/{scope_id}.json")
+    def client_report_json(scope_id: str) -> Response:
+        store.initialize()
+        try:
+            return JSONResponse(_client_report_payload(scope_id, store))
+        except ValueError:
+            return JSONResponse({"detail": "scope not found"}, status_code=404)
+
+    @app.get("/client-reports/{scope_id}.md")
+    def client_report_markdown(scope_id: str) -> Response:
+        store.initialize()
+        try:
+            payload = _client_report_payload(scope_id, store)
+        except ValueError:
+            return HTMLResponse(_page("Scope not found", "<h1>Scope not found</h1>"), status_code=404)
+        return Response(_render_client_report_markdown(payload), media_type="text/markdown; charset=utf-8")
+
+    @app.get("/trust/rules-of-engagement.md")
+    def rules_of_engagement() -> Response:
+        return Response(_rules_of_engagement_template(), media_type="text/markdown; charset=utf-8")
+
+    @app.get("/trust/security-summary.md")
+    def security_summary() -> Response:
+        return Response(_security_summary(settings), media_type="text/markdown; charset=utf-8")
+
     return app
 
 
 def _is_public_path(path: str) -> bool:
     return path in {"/readyz", "/login"} or path.startswith("/login?")
+
+
+def _is_rate_limited(
+    request: Request,
+    settings: Settings,
+    rate_buckets: dict[str, list[float]],
+) -> bool:
+    if request.url.path == "/readyz":
+        return False
+    now = time.time()
+    window = settings.operator_rate_limit_window_seconds
+    key = f"{request.client.host if request.client else 'unknown'}:{request.url.path}"
+    bucket = [timestamp for timestamp in rate_buckets.get(key, []) if now - timestamp < window]
+    bucket.append(now)
+    rate_buckets[key] = bucket
+    return len(bucket) > settings.operator_rate_limit_max_requests
 
 
 def _operator_auth_enabled(settings: Settings) -> bool:
@@ -501,6 +894,12 @@ def _is_operator_authenticated(request: Request, settings: Settings) -> bool:
         return True
     session = request.cookies.get(OPERATOR_SESSION_COOKIE)
     return bool(session and _valid_session_cookie(session, settings))
+
+
+def _is_bearer_authenticated(request: Request, settings: Settings) -> bool:
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    return scheme.lower() == "bearer" and _token_matches(token, settings)
 
 
 def _session_secret(settings: Settings) -> str:
@@ -538,6 +937,83 @@ def _session_signature(issued_at: str, settings: Settings) -> str:
         hashlib.sha256,
     ).hexdigest()
     return digest
+
+
+def _csrf_token_for_request(request: Request, settings: Settings) -> str:
+    session = request.cookies.get(OPERATOR_SESSION_COOKIE)
+    if not _operator_auth_enabled(settings) or not session:
+        return ""
+    return hmac.new(
+        _session_secret(settings).encode("utf-8"),
+        f"csrf:{session}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _csrf_input(token: str) -> str:
+    if not token:
+        return ""
+    return f'<input type="hidden" name="_csrf_token" value="{escape(token)}">'
+
+
+def _csrf_failure_response(
+    request: Request,
+    settings: Settings,
+    params: dict[str, list[str]],
+) -> HTMLResponse | None:
+    if not _operator_auth_enabled(settings) or _is_bearer_authenticated(request, settings):
+        return None
+    expected = _csrf_token_for_request(request, settings)
+    submitted = params.get("_csrf_token", [""])[0]
+    if expected and secrets.compare_digest(submitted, expected):
+        return None
+    return HTMLResponse(_page("Invalid request", "<h1>Invalid request token</h1>"), status_code=403)
+
+
+def _record_audit(
+    store: RunStore,
+    request: Request,
+    action: AuditAction,
+    target_type: str,
+    target_id: str,
+    success: bool = True,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    try:
+        store.save_audit_event(
+            AuditEvent(
+                action=action,
+                target_type=target_type,
+                target_id=target_id,
+                success=success,
+                ip_address_hash=_hash_ip(request.client.host if request.client else None),
+                user_agent=request.headers.get("user-agent"),
+                metadata=metadata or {},
+            )
+        )
+    except Exception:
+        return
+
+
+def _hash_ip(ip_address: str | None) -> str | None:
+    if not ip_address:
+        return None
+    return hashlib.sha256(ip_address.encode("utf-8")).hexdigest()[:16]
+
+
+def _split_form_list(value: str) -> list[str]:
+    parts = value.replace("\n", ",").split(",")
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _parse_optional_datetime(value: str) -> datetime | None:
+    value = value.strip()
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def _posture_panel(summary: dict[str, object]) -> str:
@@ -752,7 +1228,7 @@ def _current_reports(
     return [report for report in reports if str(report.get("source_run_id", "")) in failing_run_ids]
 
 
-def _reports_table(reports: list[dict[str, object]]) -> str:
+def _reports_table(reports: list[dict[str, object]], csrf: str = "") -> str:
     if not reports:
         return (
             "<div class=\"empty-state\">"
@@ -766,14 +1242,143 @@ def _reports_table(reports: list[dict[str, object]]) -> str:
         f"{escape(str(report['vulnerability_id']))}</a></td>"
         f"<td>{escape(str(report['severity']))} / {escape(str(report['impact_domain']))}</td>"
         f"<td>{_status_badge(report['status'])}</td>"
+        f"<td>{_report_status_form(report, csrf)}</td>"
         "</tr>"
         for report in reports
     )
     return (
         "<table><caption class=\"sr-only\">Current vulnerability report drafts</caption>"
         "<thead><tr><th scope=\"col\">Report</th><th scope=\"col\">Severity / Impact</th>"
-        f"<th scope=\"col\">Status</th></tr></thead><tbody>{rows}</tbody></table>"
+        "<th scope=\"col\">Status</th><th scope=\"col\">Workflow</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
     )
+
+
+def _report_status_form(report: dict[str, object], csrf: str) -> str:
+    report_id = escape(str(report["vulnerability_id"]))
+    options = _enum_options(ReportStatus, str(report.get("status", "")))
+    return (
+        f"<form class=\"inline-form\" method=\"post\" action=\"/reports/{report_id}/status\">"
+        f"{_csrf_input(csrf)}"
+        "<label class=\"sr-only\" for=\"report-status\">Status</label>"
+        f"<select id=\"report-status-{report_id}\" name=\"status\">{options}</select>"
+        "<input name=\"status_note\" type=\"text\" placeholder=\"note\">"
+        "<button type=\"submit\">Update</button>"
+        "</form>"
+    )
+
+
+def _scope_admin_panel(
+    clients: list[dict[str, object]],
+    projects: list[dict[str, object]],
+    scopes: list[dict[str, object]],
+    csrf: str,
+    settings: Settings,
+) -> str:
+    return (
+        "<div class=\"admin-grid\">"
+        "<div class=\"admin-card\"><h3>Client</h3>"
+        f"<form class=\"stack-form\" method=\"post\" action=\"/clients\">{_csrf_input(csrf)}"
+        "<label for=\"client-name\">Name</label><input id=\"client-name\" name=\"name\" required>"
+        "<button type=\"submit\">Create Client</button></form></div>"
+        "<div class=\"admin-card\"><h3>Project</h3>"
+        f"<form class=\"stack-form\" method=\"post\" action=\"/projects\">{_csrf_input(csrf)}"
+        "<label for=\"project-client\">Client</label>"
+        f"<select id=\"project-client\" name=\"client_id\" required>{_client_options(clients)}</select>"
+        "<label for=\"project-name\">Name</label><input id=\"project-name\" name=\"name\" required>"
+        "<button type=\"submit\">Create Project</button></form></div>"
+        "<div class=\"admin-card wide\"><h3>Authorized Scope</h3>"
+        f"<form class=\"stack-form\" method=\"post\" action=\"/scopes\">{_csrf_input(csrf)}"
+        "<label for=\"scope-project\">Project</label>"
+        f"<select id=\"scope-project\" name=\"project_id\" required>{_project_options(projects)}</select>"
+        "<label for=\"scope-name\">Scope name</label><input id=\"scope-name\" name=\"name\" required>"
+        "<label for=\"scope-hosts\">Allowed hosts</label>"
+        f"<textarea id=\"scope-hosts\" name=\"allowed_hosts\" required>{escape(', '.join(settings.allowed_hosts))}</textarea>"
+        "<label for=\"scope-modes\">Scan modes</label>"
+        "<select id=\"scope-modes\" name=\"allowed_scan_modes\" multiple>"
+        "<option value=\"passive-http\" selected>Passive HTTP</option>"
+        "<option value=\"low-priv-authenticated\">Low-Priv Authenticated</option>"
+        "</select>"
+        "<label for=\"scope-excluded\">Excluded paths</label>"
+        "<textarea id=\"scope-excluded\" name=\"excluded_paths\" placeholder=\"/admin/private, /billing\"></textarea>"
+        "<label for=\"scope-max-urls\">Max URLs</label>"
+        "<input id=\"scope-max-urls\" name=\"max_urls\" type=\"number\" min=\"1\" max=\"50\" value=\"12\">"
+        "<label for=\"scope-note\">Authorization note</label>"
+        "<textarea id=\"scope-note\" name=\"authorization_note\" required></textarea>"
+        "<label for=\"scope-contact\">Operator contact</label>"
+        "<input id=\"scope-contact\" name=\"operator_contact\" type=\"email\">"
+        "<label for=\"scope-roe\">Rules of engagement ref</label>"
+        "<input id=\"scope-roe\" name=\"rules_of_engagement_ref\" placeholder=\"ticket, contract, or doc ref\">"
+        "<label for=\"scope-expiry\">Authorization expiry</label>"
+        "<input id=\"scope-expiry\" name=\"authorization_expires_at\" type=\"datetime-local\">"
+        "<button type=\"submit\">Create Scope</button></form></div>"
+        "</div>"
+        f"{_scopes_table(scopes, csrf)}"
+        "<nav class=\"export-nav trust-links\" aria-label=\"Trust package\">"
+        "<a href=\"/trust/security-summary.md\">Security summary</a>"
+        "<a href=\"/trust/rules-of-engagement.md\">Rules of engagement</a>"
+        "</nav>"
+    )
+
+
+def _client_options(clients: list[dict[str, object]]) -> str:
+    if not clients:
+        return '<option value="">No clients</option>'
+    return "\n".join(
+        f"<option value=\"{escape(str(client['client_id']))}\">{escape(str(client['name']))}</option>"
+        for client in clients
+    )
+
+
+def _project_options(projects: list[dict[str, object]]) -> str:
+    if not projects:
+        return '<option value="">No projects</option>'
+    return "\n".join(
+        f"<option value=\"{escape(str(project['project_id']))}\">{escape(str(project['name']))}</option>"
+        for project in projects
+    )
+
+
+def _scopes_table(scopes: list[dict[str, object]], csrf: str) -> str:
+    if not scopes:
+        return "<p>No authorized scopes yet.</p>"
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{escape(str(scope['name']))}<br><span class=\"muted-line\">{escape(str(scope['scope_id']))}</span></td>"
+        f"<td>{escape(', '.join(_object_list(scope.get('allowed_hosts'))))}</td>"
+        f"<td>{escape(', '.join(_object_list(scope.get('allowed_scan_modes'))))}</td>"
+        f"<td>{escape(str(scope.get('authorization_expires_at') or 'no expiry'))}</td>"
+        f"<td class=\"export-cell\"><a href=\"/client-reports/{escape(str(scope['scope_id']))}.json\">JSON</a>"
+        f"<a href=\"/client-reports/{escape(str(scope['scope_id']))}.md\">MD</a></td>"
+        f"<td>{_scope_deactivate_form(scope, csrf)}</td>"
+        "</tr>"
+        for scope in scopes
+    )
+    return (
+        "<table><caption class=\"sr-only\">Authorized client scopes</caption>"
+        "<thead><tr><th scope=\"col\">Scope</th><th scope=\"col\">Hosts</th>"
+        "<th scope=\"col\">Modes</th><th scope=\"col\">Expiry</th>"
+        "<th scope=\"col\">Report</th><th scope=\"col\">Action</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _scope_deactivate_form(scope: dict[str, object], csrf: str) -> str:
+    if not bool(scope.get("active", True)):
+        return _status_badge("inactive")
+    scope_id = escape(str(scope["scope_id"]))
+    return (
+        f"<form class=\"inline-form\" method=\"post\" action=\"/scopes/{scope_id}/deactivate\">"
+        f"{_csrf_input(csrf)}"
+        "<button type=\"submit\">Deactivate</button>"
+        "</form>"
+    )
+
+
+def _object_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
 
 
 def _scope_options(scopes: list[dict[str, object]]) -> str:
@@ -816,7 +1421,47 @@ def _site_scans_table(scans: list[dict[str, object]]) -> str:
     )
 
 
-def _site_findings_table(findings: list[dict[str, object]]) -> str:
+def _scan_jobs_table(jobs: list[dict[str, object]], csrf: str) -> str:
+    if not jobs:
+        return (
+            "<div class=\"empty-state\">"
+            "<strong>No scan jobs queued yet.</strong>"
+            "<span>Site scans will appear here with lifecycle status and cancellation state.</span>"
+            "</div>"
+        )
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{escape(str(job['job_id']))}<br><span class=\"muted-line\">{escape(str(job['scope_id']))}</span></td>"
+        f"<td>{escape(str(job['target_url']))}</td>"
+        f"<td>{escape(str(job['scan_mode']))}</td>"
+        f"<td>{_status_badge(job['status'])}</td>"
+        f"<td>{escape(str(job.get('scan_id') or 'pending'))}</td>"
+        f"<td>{_scan_job_cancel_form(job, csrf)}</td>"
+        "</tr>"
+        for job in jobs
+    )
+    return (
+        "<table><caption class=\"sr-only\">Scan job queue</caption>"
+        "<thead><tr><th scope=\"col\">Job</th><th scope=\"col\">Target</th>"
+        "<th scope=\"col\">Mode</th><th scope=\"col\">Status</th>"
+        "<th scope=\"col\">Scan</th><th scope=\"col\">Action</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _scan_job_cancel_form(job: dict[str, object], csrf: str) -> str:
+    if str(job.get("status")) not in {ScanJobStatus.QUEUED.value, ScanJobStatus.RUNNING.value}:
+        return "<span class=\"muted-line\">closed</span>"
+    job_id = escape(str(job["job_id"]))
+    return (
+        f"<form class=\"inline-form\" method=\"post\" action=\"/scan-jobs/{job_id}/cancel\">"
+        f"{_csrf_input(csrf)}"
+        "<button type=\"submit\">Cancel</button>"
+        "</form>"
+    )
+
+
+def _site_findings_table(findings: list[dict[str, object]], csrf: str = "") -> str:
     if not findings:
         return (
             "<div class=\"empty-state\">"
@@ -830,16 +1475,172 @@ def _site_findings_table(findings: list[dict[str, object]]) -> str:
         f"<td><strong>{escape(str(finding['title']))}</strong><br>"
         f"<span class=\"muted-line\">{escape(str(finding['check_id']))}</span></td>"
         f"<td>{escape(str(finding['evidence']))}</td>"
+        f"<td>{_status_badge(finding.get('status', 'open'))}</td>"
         f"<td>{escape(str(finding['remediation']))}</td>"
+        f"<td>{_finding_status_form(finding, csrf)}</td>"
         "</tr>"
         for finding in findings
     )
     return (
         "<table><caption class=\"sr-only\">Passive site scan findings</caption>"
         "<thead><tr><th scope=\"col\">Severity</th><th scope=\"col\">Finding</th>"
-        "<th scope=\"col\">Evidence</th><th scope=\"col\">Remediation</th></tr></thead>"
+        "<th scope=\"col\">Evidence</th><th scope=\"col\">Status</th>"
+        "<th scope=\"col\">Remediation</th><th scope=\"col\">Workflow</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
     )
+
+
+def _finding_status_form(finding: dict[str, object], csrf: str) -> str:
+    finding_id = escape(str(finding["finding_id"]))
+    options = _enum_options(FindingStatus, str(finding.get("status", "")))
+    return (
+        f"<form class=\"inline-form\" method=\"post\" action=\"/site-findings/{finding_id}/status\">"
+        f"{_csrf_input(csrf)}"
+        "<label class=\"sr-only\" for=\"finding-status\">Finding status</label>"
+        f"<select id=\"finding-status-{finding_id}\" name=\"status\">{options}</select>"
+        "<input name=\"status_note\" type=\"text\" placeholder=\"note\">"
+        "<input name=\"retest_scan_id\" type=\"text\" placeholder=\"retest scan id\">"
+        "<button type=\"submit\">Update</button>"
+        "</form>"
+    )
+
+
+def _audit_table(events: list[dict[str, object]]) -> str:
+    if not events:
+        return "<p>No audit events recorded yet.</p>"
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{escape(str(event['created_at']))}</td>"
+        f"<td>{escape(str(event['action']))}</td>"
+        f"<td>{escape(str(event['target_type']))}<br><span class=\"muted-line\">{escape(str(event['target_id']))}</span></td>"
+        f"<td>{_status_badge('success' if event.get('success', True) else 'failed')}</td>"
+        "</tr>"
+        for event in events
+    )
+    return (
+        "<table><caption class=\"sr-only\">Operator audit log</caption>"
+        "<thead><tr><th scope=\"col\">Time</th><th scope=\"col\">Action</th>"
+        "<th scope=\"col\">Target</th><th scope=\"col\">Result</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _client_report_payload(scope_id: str, store: RunStore) -> dict[str, object]:
+    scope = store.authorized_scope(scope_id)
+    if scope is None:
+        raise ValueError(f"scope not found: {scope_id}")
+    scans = [scan for scan in store.site_scan_runs(limit=500) if scan.get("scope_id") == scope_id]
+    findings = [
+        finding
+        for scan in scans
+        for finding in store.site_scan_findings(str(scan["scan_id"]))
+    ]
+    open_findings = [
+        finding
+        for finding in findings
+        if str(finding.get("status", FindingStatus.OPEN.value))
+        not in {FindingStatus.FIXED.value, FindingStatus.FALSE_POSITIVE.value}
+    ]
+    return {
+        "scope": scope.model_dump(mode="json"),
+        "scans": scans,
+        "findings": findings,
+        "open_findings": open_findings,
+        "generated_at": utc_now().isoformat(),
+        "report_type": "client_security_summary",
+    }
+
+
+def _render_client_report_markdown(payload: dict[str, object]) -> str:
+    scope = payload["scope"]
+    if not isinstance(scope, dict):
+        raise ValueError("scope payload must be an object")
+    scans = payload.get("scans", [])
+    findings = payload.get("findings", [])
+    open_findings = payload.get("open_findings", [])
+    lines = [
+        f"# Client Security Summary: {scope.get('name')}",
+        "",
+        f"- Scope ID: `{scope.get('scope_id')}`",
+        f"- Client ID: `{scope.get('client_id')}`",
+        f"- Project ID: `{scope.get('project_id')}`",
+        f"- Authorized hosts: `{', '.join(str(host) for host in scope.get('allowed_hosts', []))}`",
+        f"- Allowed scan modes: `{', '.join(str(mode) for mode in scope.get('allowed_scan_modes', []))}`",
+        f"- Generated: `{payload.get('generated_at')}`",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Scans completed: `{len(scans) if isinstance(scans, list) else 0}`",
+        f"- Total findings: `{len(findings) if isinstance(findings, list) else 0}`",
+        f"- Open findings: `{len(open_findings) if isinstance(open_findings, list) else 0}`",
+        "- Sensitive reproduction details remain in the private findings vault.",
+        "",
+        "## Findings",
+        "",
+    ]
+    if isinstance(findings, list) and findings:
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            lines.append(
+                f"- `{finding.get('severity')}` `{finding.get('status')}` "
+                f"{finding.get('title')} (`{finding.get('check_id')}`)"
+            )
+    else:
+        lines.append("- No findings recorded for this scope.")
+    lines.extend(
+        [
+            "",
+            "## Authorization",
+            "",
+            f"- Authorization note: {scope.get('authorization_note')}",
+            f"- Authorization expires: `{scope.get('authorization_expires_at') or 'not set'}`",
+            f"- Rules of engagement reference: `{scope.get('rules_of_engagement_ref') or 'not set'}`",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _rules_of_engagement_template() -> str:
+    return """# Rules Of Engagement Template
+
+- Client/project:
+- Authorized hosts:
+- Explicitly excluded paths:
+- Approved scan modes:
+- Approved testing window:
+- Low-privileged test account owner:
+- Emergency stop contact:
+- Evidence retention period:
+- Written authorization reference:
+
+Only run scans against hosts and modes listed in an active authorized scope.
+"""
+
+
+def _security_summary(settings: Settings) -> str:
+    return f"""# AgentForge Adversarial Security Summary
+
+- Operator dashboard and exports are token-gated when `ADVERSARIAL_OPERATOR_TOKEN` is set.
+- Browser form actions use signed-session CSRF tokens.
+- Operator requests are rate limited per path and client.
+- Public SQLite storage keeps redacted summaries; reproduction details are stored in `{settings.private_sqlite_path}`.
+- Site scans require an active client/project/scope record and the target host must also be in `ADVERSARIAL_ALLOWED_HOSTS`.
+- Evidence retention default: `{settings.evidence_retention_days}` days.
+- Active exploitation, brute force, credential attacks, and destructive testing are outside the implemented scan profiles.
+"""
+
+
+def _enum_options(enum_type: type[StrEnum], selected: str) -> str:
+    options: list[str] = []
+    for value in enum_type:
+        selected_attr = " selected" if str(value.value) == selected else ""
+        options.append(
+            f"<option value=\"{escape(str(value.value))}\"{selected_attr}>"
+            f"{escape(str(value.value))}</option>"
+        )
+    return "\n".join(options)
 
 
 def _page(title: str, body: str) -> str:
@@ -1383,7 +2184,12 @@ def _page_css() -> str:
 
     input[type="search"],
     input[type="url"],
+    input[type="text"],
+    input[type="email"],
+    input[type="number"],
+    input[type="datetime-local"],
     input[type="password"],
+    textarea,
     select {
       min-height: 38px;
       min-width: min(360px, 100%);
@@ -1396,7 +2202,59 @@ def _page_css() -> str:
       font-family: var(--font-data);
     }
 
+    textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+
     select { min-width: 190px; }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .admin-card {
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid var(--steel);
+      border-left: 3px solid var(--red);
+      border-radius: 6px;
+      background: rgba(6, 6, 7, .70);
+    }
+
+    .admin-card.wide { grid-column: 1 / -1; }
+    .admin-card h3 { margin: 0 0 10px; text-transform: uppercase; }
+
+    .stack-form,
+    .inline-form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .stack-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+
+    .stack-form label,
+    .inline-form label {
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .stack-form button { justify-self: start; }
+    .inline-form input,
+    .inline-form select { min-width: 150px; }
+    .trust-links { margin-top: 12px; justify-content: flex-start; }
 
     table {
       width: 100%;
@@ -1572,6 +2430,8 @@ def _page_css() -> str:
       .hero.compact { grid-template-columns: 1fr; }
       .target-list { grid-template-columns: 1fr; }
       .posture-grid { grid-template-columns: 1fr; }
+      .admin-grid,
+      .stack-form { grid-template-columns: 1fr; }
       h1 { font-size: 37px; }
       table { display: block; overflow-x: auto; }
       .export-nav { justify-content: flex-start; }

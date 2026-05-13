@@ -133,5 +133,31 @@ CREATE TABLE IF NOT EXISTS site_scan_findings (
     check_id TEXT NOT NULL,
     severity TEXT NOT NULL,
     title TEXT NOT NULL,
+    status TEXT,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scan_jobs (
+    job_id TEXT PRIMARY KEY,
+    scope_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    target_url TEXT NOT NULL,
+    scan_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    scan_id TEXT,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    audit_id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    success INTEGER NOT NULL,
     payload_json TEXT NOT NULL
 );
