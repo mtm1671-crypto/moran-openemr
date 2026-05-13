@@ -18,6 +18,7 @@ cd adversarial
 python -m app.run_week3_eval --target local --suite seed --report-only
 python -m app.run_week3_eval --target deployed --suite seed --report-only
 python -m app.run_week3_eval --target local --suite regression --enforce
+python -m app.run_site_scan --target-url https://owned.example --authorization-note "Owned test target"
 python -m app.export_run --run-id <run_id> --out evals\week3\exports
 python -m uvicorn app.ui:create_app --factory --host 0.0.0.0 --port 8080
 ```
@@ -66,7 +67,23 @@ Mount `/data` as a persistent volume so run history survives restarts.
 ## Safety Defaults
 
 - Non-allowlisted targets are rejected.
+- Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
+- The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
 - Real PHI is out of scope.
 - Blocking Judge verdicts use deterministic black-box evidence.
 - LLM judging is advisory until separately validated.
 - SQLite must be writable or readiness fails.
+
+## Generalized Site Scanning
+
+The operator can run bounded passive checks against non-Co-Pilot sites when they are explicitly allowlisted. This is intended for owned apps, staging environments, and authorized demos.
+
+Current checks include:
+
+- HTTPS transport and response status.
+- Security headers such as HSTS, CSP, frame protection, `X-Content-Type-Options`, and `Referrer-Policy`.
+- Broad CORS wildcard detection.
+- Cookie `Secure`, `HttpOnly`, and `SameSite` attributes.
+- Informational server-header disclosure.
+
+Future active or semi-active scanning should use an explicit scan profile and human approval. OWASP ZAP baseline mode is the right next integration point because it is designed around passive scanning rather than active exploitation.

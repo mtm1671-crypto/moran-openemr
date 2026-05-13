@@ -85,3 +85,24 @@ CREATE TABLE IF NOT EXISTS suite_summaries (
     created_at TEXT NOT NULL,
     payload_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS site_scan_runs (
+    scan_id TEXT PRIMARY KEY,
+    target_url TEXT NOT NULL,
+    scan_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    finding_count INTEGER NOT NULL,
+    highest_severity TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_scan_findings (
+    finding_id TEXT PRIMARY KEY,
+    scan_id TEXT NOT NULL,
+    check_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);

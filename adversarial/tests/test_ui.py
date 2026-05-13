@@ -42,6 +42,8 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert 'data-loading-label="Running Seed Suite"' in response.text
     assert 'data-run-status' in response.text
     assert "Campaign running" in response.text
+    assert "Authorized site scan" in response.text
+    assert 'name="target_url"' in response.text
 
 
 def test_dashboard_and_run_detail_expose_coverage_and_exports(

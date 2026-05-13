@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import parse_qs
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .config import Settings
@@ -13,6 +14,7 @@ from .models import RunMode
 from .reporting import dashboard_summary
 from .run_store import RunStore
 from .run_week3_eval import run_suite
+from .site_scanner import PassiveSiteScanner
 
 
 def create_app() -> FastAPI:
@@ -38,6 +40,7 @@ def create_app() -> FastAPI:
         reports = store.reports()
         observations = store.observations()
         snapshots = store.snapshots()
+        site_scans = store.site_scan_runs(limit=10)
         summary = dashboard_summary(
             cases=cases,
             runs=runs,
@@ -116,6 +119,20 @@ def create_app() -> FastAPI:
                 <span data-run-status-copy>The dashboard will open the newest run when the suite finishes.</span>
               </div>
             </section>
+            <section class="command-strip" aria-label="Authorized site scan controls">
+              <div class="strip-copy">
+                <span class="section-code">SCAN-05</span>
+                <strong>Authorized site scan</strong>
+              </div>
+              <form class="site-scan-form" method="post" action="/site-scans/passive" data-run-suite="site-scan">
+                <label for="site-target-url">Allowlisted URL</label>
+                <input id="site-target-url" name="target_url" type="url" placeholder="https://example.your-domain.com" required>
+                <button type="submit" data-loading-label="Scanning Site">
+                  <span class="button-label">Run Passive Scan</span>
+                  <span class="button-spinner" aria-hidden="true"></span>
+                </button>
+              </form>
+            </section>
             <section class="panel">
               <div class="section-heading">
                 <span class="section-code">POSTURE-00</span>
@@ -141,6 +158,13 @@ def create_app() -> FastAPI:
                 <span data-count-visible="#runs-table"></span>
               </div>
               {_runs_table(runs, _verdict_by_run_id(verdicts))}
+            </section>
+            <section class="panel">
+              <div class="section-heading">
+                <span class="section-code">SITE-06</span>
+                <h2>Site Scans</h2>
+              </div>
+              {_site_scans_table(site_scans)}
             </section>
             <section class="panel">
               <div class="section-heading">
@@ -178,6 +202,78 @@ def create_app() -> FastAPI:
         if not run_ids:
             return RedirectResponse("/", status_code=303)
         return RedirectResponse(f"/runs/{run_ids[-1]}", status_code=303)
+
+    @app.post("/site-scans/passive")
+    async def start_passive_site_scan(request: Request) -> Response:
+        body = (await request.body()).decode()
+        params = parse_qs(body)
+        target_url = params.get("target_url", [""])[0].strip()
+        if not target_url:
+            return HTMLResponse(_page("Invalid target", "<h1>Invalid target</h1>"), status_code=400)
+        try:
+            settings.validate_target_allowed(target_url)
+            store.initialize()
+            scan, findings = PassiveSiteScanner(settings).scan(target_url)
+            store.save_site_scan_run(scan)
+            store.save_site_scan_findings(findings)
+        except Exception as exc:
+            return HTMLResponse(
+                _page(
+                    "Site scan failed",
+                    f"""
+                    <h1>Site scan failed</h1>
+                    <p>{escape(type(exc).__name__)}: {escape(str(exc))}</p>
+                    <p><a href="/">Risk overview</a></p>
+                    """,
+                ),
+                status_code=502,
+            )
+        return RedirectResponse(f"/site-scans/{scan.scan_id}", status_code=303)
+
+    @app.get("/site-scans/{scan_id}", response_class=HTMLResponse)
+    def site_scan_detail(scan_id: str) -> Response:
+        store.initialize()
+        scans = [scan for scan in store.site_scan_runs(limit=500) if scan["scan_id"] == scan_id]
+        if not scans:
+            return HTMLResponse(
+                _page(
+                    "Site scan not found",
+                    f"<h1>Site scan not found</h1><p>{escape(scan_id)}</p><p><a href=\"/\">Risk overview</a></p>",
+                ),
+                status_code=404,
+            )
+        findings = store.site_scan_findings(scan_id)
+        return HTMLResponse(
+            _page(
+                f"Site Scan {scan_id}",
+                f"""
+            <header class="command-header">
+              <a class="brand-lockup" href="/">
+                <span class="brand-sigil" aria-hidden="true"></span>
+                <span>
+                  <strong>AgentForge</strong>
+                  <small>Passive Site Scan</small>
+                </span>
+              </a>
+              <a class="header-link" href="/">Risk overview</a>
+            </header>
+            <section class="hero compact command-slab">
+              <div>
+                <p class="eyebrow">Authorized passive scan // allowlisted target</p>
+                <h1>Site Scan {escape(scan_id)}</h1>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="section-heading"><span class="section-code">SUMMARY</span><h2>Scan Summary</h2></div>
+              <pre>{escape(str(scans[0]))}</pre>
+            </section>
+            <section class="panel">
+              <div class="section-heading"><span class="section-code">FINDINGS</span><h2>Findings</h2></div>
+              {_site_findings_table(findings)}
+            </section>
+            """,
+            )
+        )
 
     @app.get("/runs/{run_id}.json")
     def run_json(run_id: str) -> Response:
@@ -497,6 +593,61 @@ def _reports_table(reports: list[dict[str, object]]) -> str:
         "<table><caption class=\"sr-only\">Current vulnerability report drafts</caption>"
         "<thead><tr><th scope=\"col\">Report</th><th scope=\"col\">Severity / Impact</th>"
         f"<th scope=\"col\">Status</th></tr></thead><tbody>{rows}</tbody></table>"
+    )
+
+
+def _site_scans_table(scans: list[dict[str, object]]) -> str:
+    if not scans:
+        return (
+            "<div class=\"empty-state\">"
+            "<strong>No authorized site scans recorded yet.</strong>"
+            "<span>Add an owned or explicitly authorized host to the allowlist, then run a passive scan.</span>"
+            "</div>"
+        )
+    rows = "\n".join(
+        "<tr>"
+        f"<td><a class=\"run-link\" href=\"/site-scans/{escape(str(scan['scan_id']))}\">"
+        f"{escape(str(scan['scan_id']))}</a></td>"
+        f"<td>{escape(str(scan['target_url']))}</td>"
+        f"<td>{escape(str(scan['scan_mode']))}</td>"
+        f"<td>{_status_badge(scan['status'])}</td>"
+        f"<td>{_status_badge(scan['highest_severity'])}</td>"
+        f"<td>{escape(str(scan['finding_count']))}</td>"
+        "</tr>"
+        for scan in scans
+    )
+    return (
+        "<table><caption class=\"sr-only\">Latest authorized passive site scans</caption>"
+        "<thead><tr><th scope=\"col\">Scan</th><th scope=\"col\">Target</th>"
+        "<th scope=\"col\">Mode</th><th scope=\"col\">Status</th>"
+        "<th scope=\"col\">Highest</th><th scope=\"col\">Findings</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _site_findings_table(findings: list[dict[str, object]]) -> str:
+    if not findings:
+        return (
+            "<div class=\"empty-state\">"
+            "<strong>No passive findings recorded.</strong>"
+            "<span>The entry response passed the currently configured passive checks.</span>"
+            "</div>"
+        )
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{_status_badge(finding['severity'])}</td>"
+        f"<td><strong>{escape(str(finding['title']))}</strong><br>"
+        f"<span class=\"muted-line\">{escape(str(finding['check_id']))}</span></td>"
+        f"<td>{escape(str(finding['evidence']))}</td>"
+        f"<td>{escape(str(finding['remediation']))}</td>"
+        "</tr>"
+        for finding in findings
+    )
+    return (
+        "<table><caption class=\"sr-only\">Passive site scan findings</caption>"
+        "<thead><tr><th scope=\"col\">Severity</th><th scope=\"col\">Finding</th>"
+        "<th scope=\"col\">Evidence</th><th scope=\"col\">Remediation</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
     )
 
 
@@ -850,6 +1001,22 @@ def _page_css() -> str:
       margin-right: auto;
     }
 
+    .site-scan-form {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      min-width: min(100%, 620px);
+    }
+
+    .site-scan-form label {
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
     button {
       position: relative;
       display: inline-flex;
@@ -1023,7 +1190,8 @@ def _page_css() -> str:
       text-transform: uppercase;
     }
 
-    input[type="search"] {
+    input[type="search"],
+    input[type="url"] {
       min-height: 38px;
       min-width: min(360px, 100%);
       padding: 8px 10px;
@@ -1162,6 +1330,7 @@ def _page_css() -> str:
 
     .empty-state strong { color: var(--bone); }
     .empty-state span { color: var(--muted); }
+    .muted-line { color: var(--muted); font-size: 11px; }
 
     .evidence-block {
       display: grid;

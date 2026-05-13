@@ -18,11 +18,13 @@ from .models import (
     ObservedResponse,
     RegressionCase,
     ResilienceSnapshot,
+    SiteScanFinding,
+    SiteScanRun,
     SuiteSummary,
     VulnerabilityReport,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "migrations" / "001_initial.sql"
 
 
@@ -241,6 +243,47 @@ class RunStore:
                 ),
             )
 
+    def save_site_scan_run(self, scan: SiteScanRun) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO site_scan_runs
+                (scan_id, target_url, scan_mode, status, started_at, completed_at,
+                 finding_count, highest_severity, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scan.scan_id,
+                    scan.target_url,
+                    scan.scan_mode,
+                    scan.status,
+                    scan.started_at.isoformat(),
+                    scan.completed_at.isoformat() if scan.completed_at else None,
+                    scan.finding_count,
+                    scan.highest_severity,
+                    _to_json(scan),
+                ),
+            )
+
+    def save_site_scan_findings(self, findings: Iterable[SiteScanFinding]) -> None:
+        with self.connect() as conn:
+            for finding in findings:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO site_scan_findings
+                    (finding_id, scan_id, check_id, severity, title, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        finding.finding_id,
+                        finding.scan_id,
+                        finding.check_id,
+                        finding.severity,
+                        finding.title,
+                        _to_json(finding),
+                    ),
+                )
+
     def latest_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -304,6 +347,30 @@ class RunStore:
             rows = conn.execute(
                 "SELECT payload_json FROM suite_summaries ORDER BY created_at DESC"
             ).fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def site_scan_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM site_scan_runs ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def site_scan_findings(self, scan_id: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if scan_id:
+                rows = conn.execute(
+                    """
+                    SELECT payload_json
+                    FROM site_scan_findings
+                    WHERE scan_id = ?
+                    ORDER BY severity, check_id
+                    """,
+                    (scan_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT payload_json FROM site_scan_findings").fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
 
     def trace_events(self, run_id: str | None = None) -> list[dict[str, Any]]:

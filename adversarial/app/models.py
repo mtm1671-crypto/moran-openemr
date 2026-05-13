@@ -71,6 +71,16 @@ class RegressionStatus(StrEnum):
     RETIRED = "retired"
 
 
+class SiteScanMode(StrEnum):
+    PASSIVE_HTTP = "passive-http"
+    ZAP_BASELINE = "zap-baseline"
+
+
+class SiteScanStatus(StrEnum):
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class InjectionLayer(StrEnum):
     NONE = "none"
     PROMPT_SIMULATION = "prompt_simulation"
@@ -256,6 +266,32 @@ class SuiteSummary(BaseModel):
     fail_count: int = 0
     partial_count: int = 0
     inconclusive_count: int = 0
+
+
+class SiteScanFinding(BaseModel):
+    finding_id: str = Field(default_factory=lambda: new_id("sitefind"))
+    scan_id: str
+    check_id: str
+    title: str
+    severity: Severity
+    description: str
+    evidence: str
+    remediation: str
+    reference_url: str | None = None
+
+
+class SiteScanRun(BaseModel):
+    scan_id: str = Field(default_factory=lambda: new_id("sitescan"))
+    target_url: str
+    scan_mode: SiteScanMode = SiteScanMode.PASSIVE_HTTP
+    status: SiteScanStatus = SiteScanStatus.COMPLETED
+    started_at: datetime = Field(default_factory=utc_now)
+    completed_at: datetime | None = None
+    request_count: int = 0
+    finding_count: int = 0
+    highest_severity: Severity = Severity.INFO
+    authorization_note: str = "Operator attests this target is owned or explicitly authorized."
+    target_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CampaignPriority(BaseModel):

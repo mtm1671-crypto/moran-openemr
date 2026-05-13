@@ -630,3 +630,13 @@ Verification/tests:
 12. MVP end-to-end proof.
 
 This order keeps the credibility anchor early: data contracts, safe config, black-box evidence, and deterministic judging all land before broader Red Team autonomy.
+
+## Generalizing Beyond Co-Pilot Targets
+
+The adversarial platform can expand into an authorized multi-site scanner by adding scan profiles rather than weakening the target allowlist. The safe default is passive scanning only:
+
+- Every non-Co-Pilot target must be present in `ADVERSARIAL_ALLOWED_HOSTS`.
+- The operator must attest that the site is owned or explicitly authorized.
+- Passive HTTP/header/cookie checks may run from the UI or CLI.
+- OWASP ZAP baseline scanning can be integrated as a future optional profile because it performs a short spider followed by passive analysis, not active exploitation.
+- Active attack profiles require separate approval, rate limits, scope constraints, and written authorization evidence.

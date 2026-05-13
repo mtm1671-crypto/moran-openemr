@@ -82,7 +82,7 @@ Commands run from `adversarial/`:
 
 Results:
 
-- `pytest`: 31 passed.
+- `pytest`: 34 passed.
 - `ruff`: all checks passed.
 - `mypy`: success, no issues in 19 source files.
 - `run_judge_eval --enforce`: 6 fixtures, 0 false positives, 0 false negatives, 0 critical/high false negatives.
