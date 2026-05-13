@@ -236,6 +236,8 @@ class VulnerabilityReport(BaseModel):
     fix_validation_runs: list[str] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
     export_links: list[str] = Field(default_factory=list)
+    sensitive_details_redacted: bool = False
+    private_storage_ref: str | None = None
 
 
 class RegressionCase(BaseModel):
@@ -278,6 +280,8 @@ class SiteScanFinding(BaseModel):
     evidence: str
     remediation: str
     reference_url: str | None = None
+    sensitive_details_redacted: bool = False
+    private_storage_ref: str | None = None
 
 
 class SiteScanRun(BaseModel):

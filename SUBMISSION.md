@@ -33,7 +33,7 @@ Current local working tree includes post-review Week 2 hardening for executable 
 | User doc with target user and use cases | [USER.md](USER.md) |
 | Agent architecture doc with one-page overview, framework choices, verification strategy, and tradeoffs | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Week 2 multimodal/agent architecture | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Week 3 adversarial platform architecture and evidence | [W3_ARCHITECTURE.md](W3_ARCHITECTURE.md), [WEEK3_SUBMISSION_CHECKLIST.md](WEEK3_SUBMISSION_CHECKLIST.md), and [VULNERABILITY_REPORTS.md](VULNERABILITY_REPORTS.md) |
+| Week 3 adversarial platform architecture and evidence | [W3_ARCHITECTURE.md](security/docs/W3_ARCHITECTURE.md), [WEEK3_SUBMISSION_CHECKLIST.md](security/docs/WEEK3_SUBMISSION_CHECKLIST.md), and [VULNERABILITY_REPORTS.md](security/docs/VULNERABILITY_REPORTS.md) |
 | Eval dataset and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
 | AI cost analysis | [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) |
 | Demo plan and deployed proof notes | [DEMO_PLAN.md](DEMO_PLAN.md), [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |

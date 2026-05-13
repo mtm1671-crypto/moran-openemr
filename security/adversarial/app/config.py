@@ -28,6 +28,7 @@ class Settings(BaseSettings):
         ]
     )
     sqlite_path: Path = Path(".data/week3_runs.sqlite")
+    private_sqlite_path: Path = Path(".data/private_findings.sqlite")
     synthetic_clinician_token: str | None = None
     synthetic_clinician_token_url: str | None = None
     synthetic_clinician_client_id: str | None = None

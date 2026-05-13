@@ -6,10 +6,10 @@ This file tracks the adversarial AI security platform submission separately from
 
 - `THREAT_MODEL.md` covers the required healthcare risk families and failure definitions.
 - `WEEK3_PRD.md` records goals, non-goals, acceptance criteria, and deliverables.
-- `W3_SYSTEM_DESIGN.md` and `docs/diagrams/w3-adversarial-platform.png` provide the container-level system design.
+- `W3_SYSTEM_DESIGN.md` and `security/docs/diagrams/w3-adversarial-platform.png` provide the container-level system design.
 - `W3_ARCHITECTURE.md` explains the implementation architecture, framework choices, verification strategy, and tradeoffs.
-- `adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
-- `adversarial/evals/week3/cases/` contains seed cases for the expanded Week 3 hospital-director risk families, including direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, and three indirect-injection layers.
+- `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
+- `security/adversarial/evals/week3/cases/` contains seed cases for the expanded Week 3 hospital-director risk families, including direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, and three indirect-injection layers.
 - Railway service `adversarial` is deployed at `https://adversarial-production.up.railway.app`.
 - Persistent `/data` SQLite storage is mounted and `/readyz` returns `200`.
 - Synthetic clinician OAuth password-grant secrets are configured; deployed Co-Pilot API accepts the minted token at `/api/me`.
@@ -41,10 +41,10 @@ This file tracks the adversarial AI security platform submission separately from
 ## Final Commands
 
 ```powershell
-cd adversarial
-..\copilot\api\.venv\Scripts\python.exe -m pytest
-..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests
-..\copilot\api\.venv\Scripts\python.exe -m mypy app
+cd security\adversarial
+..\..\copilot\api\.venv\Scripts\python.exe -m pytest
+..\..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests
+..\..\copilot\api\.venv\Scripts\python.exe -m mypy app
 python -m app.run_week3_eval --target deployed --suite seed --report-only
 python -m app.export_run --run-id <run_id> --out evals\week3\exports
 ```

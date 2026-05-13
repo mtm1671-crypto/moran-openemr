@@ -22,9 +22,9 @@ __pycache__
 # AgentForge Co-Pilot local artifacts
 .logs
 .tmp
-adversarial/.data
-adversarial/.tmp-wheel
-adversarial/build
+security/adversarial/.data
+security/adversarial/.tmp-wheel
+security/adversarial/build
 copilot/.logs
 copilot/api/.tmp
 visuals/

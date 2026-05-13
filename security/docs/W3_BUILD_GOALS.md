@@ -7,7 +7,7 @@ Source artifacts:
 - `WEEK3_PRD.md`
 - `THREAT_MODEL.md`
 - `W3_SYSTEM_DESIGN.md`
-- `docs/diagrams/w3-adversarial-platform.png`
+- `security/docs/diagrams/w3-adversarial-platform.png`
 
 ## Build Principles
 
@@ -26,7 +26,7 @@ The MVP is complete when a reviewer can open the deployed adversarial operator a
 
 Minimum MVP capabilities:
 
-- Top-level `adversarial/` app scaffold.
+- Top-level `security/adversarial/` app scaffold.
 - Deployed FastAPI operator UI.
 - SQLite run store with migrations/readiness check.
 - Local and deployed target modes.
@@ -43,20 +43,20 @@ Minimum MVP capabilities:
 ### Step 1: Create The Adversarial App Skeleton
 
 Goal:
-Create a top-level outside-in platform under `adversarial/` with its own Python package, app entrypoints, tests, and README.
+Create a top-level outside-in platform under `security/adversarial/` with its own Python package, app entrypoints, tests, and README.
 
 Way to get there:
 
-- Add `adversarial/pyproject.toml`.
-- Add `adversarial/app/` package.
-- Add `adversarial/tests/`.
-- Add `adversarial/README.md` with local setup, env vars, run commands, and deployed-app expectations.
+- Add `security/adversarial/pyproject.toml`.
+- Add `security/adversarial/app/` package.
+- Add `security/adversarial/tests/`.
+- Add `security/adversarial/README.md` with local setup, env vars, run commands, and deployed-app expectations.
 - Keep it separate from `copilot/api` runtime code.
 
 Verification/tests:
 
-- `cd adversarial && python -m pytest`
-- `cd adversarial && python -m app.run_week3_eval --help`
+- `cd security\adversarial && python -m pytest`
+- `cd security\adversarial && python -m app.run_week3_eval --help`
 - Import smoke test proves `app` modules load without importing Co-Pilot internals.
 
 ### Step 2: Define Core Schemas
@@ -92,7 +92,7 @@ Persist all run state in SQLite so the CLI, LangGraph loop, dashboard, and expor
 Way to get there:
 
 - Add `app/run_store.py`.
-- Add simple SQL migrations under `adversarial/migrations/`.
+- Add simple SQL migrations under `security/adversarial/migrations/`.
 - Store:
   - attack cases
   - runs
@@ -169,7 +169,7 @@ Seed the hospital-director suite with reproducible cases that map directly to th
 
 Way to get there:
 
-- Add `adversarial/evals/week3/cases/`.
+- Add `security/adversarial/evals/week3/cases/`.
 - Add initial JSON cases for:
   - cross-patient PHI leakage
   - unauthorized access/session confusion
@@ -360,7 +360,7 @@ Deploy the operator app as a reviewer-accessible service with persistent SQLite 
 
 Way to get there:
 
-- Add `adversarial/Dockerfile`.
+- Add `security/adversarial/Dockerfile`.
 - Add deployment config, likely Railway-compatible.
 - Mount persistent volume for SQLite.
 - Set environment variables through deployment secrets.

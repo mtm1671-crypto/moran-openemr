@@ -60,17 +60,18 @@
 !migrations/
 !migrations/**
 
-!adversarial/
-!adversarial/Dockerfile
-!adversarial/railway.toml
-!adversarial/pyproject.toml
-!adversarial/.dockerignore
-!adversarial/app/
-!adversarial/app/**
-!adversarial/evals/
-!adversarial/evals/**
-!adversarial/migrations/
-!adversarial/migrations/**
+!security/
+!security/adversarial/
+!security/adversarial/Dockerfile
+!security/adversarial/railway.toml
+!security/adversarial/pyproject.toml
+!security/adversarial/.dockerignore
+!security/adversarial/app/
+!security/adversarial/app/**
+!security/adversarial/evals/
+!security/adversarial/evals/**
+!security/adversarial/migrations/
+!security/adversarial/migrations/**
 
 !copilot/
 !copilot/api/

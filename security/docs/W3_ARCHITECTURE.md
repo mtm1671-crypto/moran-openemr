@@ -7,10 +7,10 @@ The Week 3 platform is an outside-in adversarial evaluation system for the Agent
 The MVP architecture has five layers:
 
 1. Design inputs: `THREAT_MODEL.md`, approved JSON attack cases, environment target config, budgets, and synthetic-only credentials.
-2. Run controller: `adversarial/app/run_week3_eval.py` loads settings, validates target allowlists, opens SQLite, and runs a selected suite.
-3. Agent graph: `adversarial/app/graph.py` uses LangGraph to move each case through Orchestrator, Red Team, Target Runner, Judge, Documentation Draft, Regression Store, and Stop Policy nodes.
-4. Evidence and persistence: `adversarial/app/run_store.py` persists cases, runs, black-box observations, trace events, judge verdicts, draft reports, and resilience snapshots in SQLite.
-5. Operator surface: `adversarial/app/ui.py` exposes `/readyz`, a risk overview dashboard, and run detail pages; `adversarial/app/export_run.py` exports JSON and Markdown evidence.
+2. Run controller: `security/adversarial/app/run_week3_eval.py` loads settings, validates target allowlists, opens SQLite, and runs a selected suite.
+3. Agent graph: `security/adversarial/app/graph.py` uses LangGraph to move each case through Orchestrator, Red Team, Target Runner, Judge, Documentation Draft, Regression Store, and Stop Policy nodes.
+4. Evidence and persistence: `security/adversarial/app/run_store.py` persists cases, runs, black-box observations, trace events, judge verdicts, draft reports, and resilience snapshots in SQLite.
+5. Operator surface: `security/adversarial/app/ui.py` exposes `/readyz`, a risk overview dashboard, and run detail pages; `security/adversarial/app/export_run.py` exports JSON and Markdown evidence.
 
 The target under test remains the deployed Clinical Co-Pilot API:
 
@@ -28,7 +28,7 @@ LangGraph powers the MVP agent loop because the PRD requires distinct agent resp
 
 SQLite is the run store because Week 3 needs durable evidence with low operational overhead. A mounted Railway volume is enough for checkpoint and demo history, while JSON/Markdown exports make evidence git-friendly.
 
-Pydantic models in `adversarial/app/models.py` define the contracts for attack cases, runs, observed responses, judge verdicts, reports, budgets, traces, and resilience snapshots. These schemas keep eval cases and dashboard/export code aligned.
+Pydantic models in `security/adversarial/app/models.py` define the contracts for attack cases, runs, observed responses, judge verdicts, reports, budgets, traces, and resilience snapshots. These schemas keep eval cases and dashboard/export code aligned.
 
 ## Trust Boundaries
 
@@ -44,10 +44,10 @@ Pydantic models in `adversarial/app/models.py` define the contracts for attack c
 Local verification:
 
 ```powershell
-cd adversarial
-..\copilot\api\.venv\Scripts\python.exe -m pytest
-..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests
-..\copilot\api\.venv\Scripts\python.exe -m mypy app
+cd security\adversarial
+..\..\copilot\api\.venv\Scripts\python.exe -m pytest
+..\..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests
+..\..\copilot\api\.venv\Scripts\python.exe -m mypy app
 ```
 
 Campaign verification:

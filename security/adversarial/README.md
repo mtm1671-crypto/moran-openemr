@@ -7,9 +7,9 @@ The platform is intentionally separate from the Co-Pilot API runtime. It attacks
 ## Local Setup
 
 ```powershell
-cd adversarial
-..\copilot\api\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-..\copilot\api\.venv\Scripts\python.exe -m pytest
+cd security\adversarial
+..\..\copilot\api\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+..\..\copilot\api\.venv\Scripts\python.exe -m pytest
 ```
 
 ## Common Commands
@@ -45,12 +45,13 @@ https://adversarial-production.up.railway.app/runs/<run_id>.md
 Create a separate Railway service for the adversarial operator app and deploy this folder as the service root:
 
 ```powershell
-railway up --service adversarial .\adversarial --path-as-root
+railway up --service adversarial .\security\adversarial --path-as-root
 ```
 
 Required variables:
 
 - `ADVERSARIAL_SQLITE_PATH=/data/week3_runs.sqlite`
+- `ADVERSARIAL_PRIVATE_SQLITE_PATH=/data/private_findings.sqlite`
 - `ADVERSARIAL_CASE_ROOT=/app/evals/week3/cases`
 - `ADVERSARIAL_TARGET_MODE=deployed`
 - `ADVERSARIAL_DEPLOYED_TARGET_URL=https://copilot-api-production-9f84.up.railway.app`
@@ -69,6 +70,8 @@ Mount `/data` as a persistent volume so run history survives restarts.
 - Non-allowlisted targets are rejected.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
+- Public run exports redact vulnerability reproduction steps, passive scan evidence, and remediation specifics.
+- Sensitive report and site-scan finding details are stored separately in `ADVERSARIAL_PRIVATE_SQLITE_PATH`.
 - Real PHI is out of scope.
 - Blocking Judge verdicts use deterministic black-box evidence.
 - LLM judging is advisory until separately validated.

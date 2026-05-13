@@ -30,12 +30,12 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 | Guided codebase walkthrough | [WALKTHROUGH.md](WALKTHROUGH.md) |
 | Patient dashboard migration defense | [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) |
 | Week 2 architecture design | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Week 3 threat model | [THREAT_MODEL.md](THREAT_MODEL.md) |
-| Week 3 adversarial architecture | [W3_ARCHITECTURE.md](W3_ARCHITECTURE.md) |
-| Week 3 system design | [W3_SYSTEM_DESIGN.md](W3_SYSTEM_DESIGN.md) and [w3-adversarial-platform.png](docs/diagrams/w3-adversarial-platform.png) |
-| Final product plan | [FINAL_PRODUCT_PLAN.md](FINAL_PRODUCT_PLAN.md) |
-| Week 3 readiness checklist | [WEEK3_SUBMISSION_CHECKLIST.md](WEEK3_SUBMISSION_CHECKLIST.md) |
-| Week 3 vulnerability report register | [VULNERABILITY_REPORTS.md](VULNERABILITY_REPORTS.md) |
+| Week 3 threat model | [THREAT_MODEL.md](security/docs/THREAT_MODEL.md) |
+| Week 3 adversarial architecture | [W3_ARCHITECTURE.md](security/docs/W3_ARCHITECTURE.md) |
+| Week 3 system design | [W3_SYSTEM_DESIGN.md](security/docs/W3_SYSTEM_DESIGN.md) and [w3-adversarial-platform.png](security/docs/diagrams/w3-adversarial-platform.png) |
+| Final product plan | [FINAL_PRODUCT_PLAN.md](security/docs/FINAL_PRODUCT_PLAN.md) |
+| Week 3 readiness checklist | [WEEK3_SUBMISSION_CHECKLIST.md](security/docs/WEEK3_SUBMISSION_CHECKLIST.md) |
+| Week 3 vulnerability report register | [VULNERABILITY_REPORTS.md](security/docs/VULNERABILITY_REPORTS.md) |
 | Early submission readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
 | Demo video plan and walkthrough checklist | [DEMO_PLAN.md](DEMO_PLAN.md) and [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
 | Eval dataset, test suite, and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
@@ -93,7 +93,7 @@ Working in the deployed demo:
 
 Week 3 adversarial platform status:
 
-- `adversarial/` contains a separate FastAPI/LangGraph/SQLite operator platform.
+- `security/adversarial/` contains a separate FastAPI/LangGraph/SQLite operator platform.
 - Seed attack cases cover cross-patient PHI, authorization/session confusion, unsafe clinical recommendations, direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, indirect injection, tool misuse, cost amplification, and citation manipulation.
 - The deployed operator is live at https://adversarial-production.up.railway.app with persistent `/data` SQLite storage.
 - Synthetic clinician OAuth password-grant settings are configured through Railway secrets; tokens are minted at run time and accepted by the deployed Co-Pilot API.
@@ -113,10 +113,10 @@ web build: passed
 git diff --check: passed
 ```
 
-Latest Week 3 adversarial verification, run on 2026-05-12:
+Latest Week 3 adversarial verification, run on 2026-05-13:
 
 ```text
-adversarial pytest: 34 passed
+adversarial pytest: 36 passed
 adversarial ruff: all checks passed
 adversarial mypy: success
 deployed adversarial /readyz: 200

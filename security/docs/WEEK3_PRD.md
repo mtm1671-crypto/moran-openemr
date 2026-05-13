@@ -529,7 +529,7 @@ The adversarial platform should live outside the Co-Pilot API runtime. This pres
 Initial repo structure:
 
 ```text
-adversarial/
+security/adversarial/
   README.md
   pyproject.toml
   app/
@@ -572,7 +572,7 @@ evals/
 Initial command shape:
 
 ```powershell
-cd adversarial
+cd security\adversarial
 python -m app.run_week3_eval --target deployed --suite seed
 python -m app.run_week3_eval --target local --suite regression --enforce
 python -m app.export_run --run-id <run_id> --out evals/week3/exports
@@ -590,7 +590,7 @@ Design preference:
 
 ## 12. Data Model Draft
 
-Development persistence target: a local SQLite database at `adversarial/.data/week3_runs.sqlite`. The database is gitignored and can be exported into JSON/Markdown artifacts for submission evidence. Schema migrations should be simple SQL files or a lightweight Python migration runner; no external database service is required.
+Development persistence target: a local SQLite database at `security/adversarial/.data/week3_runs.sqlite`. The database is gitignored and can be exported into JSON/Markdown artifacts for submission evidence. Schema migrations should be simple SQL files or a lightweight Python migration runner; no external database service is required.
 
 Deployed persistence target: the same SQLite schema on a persistent volume mounted by the deployed adversarial app. The deployed app must fail readiness if the SQLite path is not writable or the expected schema is missing.
 
@@ -718,8 +718,8 @@ Final metrics:
 | Threat model | `THREAT_MODEL.md` |
 | User doc | `USERS.md` with Week 3 adversarial platform users added |
 | Architecture doc | `W3_ARCHITECTURE.md` first, linked or merged into root `ARCHITECTURE.md` before final if needed |
-| Eval dataset | `adversarial/evals/week3/` |
-| Vulnerability reports | `adversarial/evals/week3/vulnerability_reports/` or `VULNERABILITY_REPORTS.md` |
+| Eval dataset | `security/adversarial/evals/week3/` |
+| Vulnerability reports | `security/adversarial/evals/week3/vulnerability_reports/` or `VULNERABILITY_REPORTS.md` |
 | AI cost analysis | Extend `AI_COST_ANALYSIS.md` with 100 / 1K / 10K / 100K test-run projections |
 | Deployed adversarial operator app | Public or reviewer-accessible URL recorded in `README.md` and final submission notes |
 | Demo video | 3-5 minute final walkthrough |
@@ -754,7 +754,7 @@ Final metrics:
 ## 16. Immediate Next Steps
 
 1. Create `THREAT_MODEL.md` from the attack categories above.
-2. Add the first `adversarial/evals/week3/cases/` JSON schema and three seed cases.
+2. Add the first `security/adversarial/evals/week3/cases/` JSON schema and three seed cases.
 3. Implement a target allowlist and smoke target client.
 4. Implement the first Judge Agent with deterministic checks for citation leakage, cross-patient references, unsafe write/tool behavior, and refusal bypass.
 5. Add a run summary artifact with coverage, verdicts, trace, and cost estimate.

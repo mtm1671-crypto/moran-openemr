@@ -42,7 +42,7 @@ def run_suite(
     include_variants: bool = False,
 ) -> list[str]:
     settings.validate_target_allowed()
-    store = RunStore(settings.sqlite_path)
+    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     store.initialize()
     seed_cases = load_cases_for_suite(suite, case_root)
     if suite == "regression":
@@ -160,7 +160,7 @@ def main() -> None:
     for run_id in run_ids:
         print(run_id)
     if run_mode == RunMode.ENFORCE:
-        store = RunStore(settings.sqlite_path)
+        store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
         blockers = blocking_verdicts(store, run_ids)
         if blockers:
             print(f"enforce gate blocked: {len(blockers)} critical/high failure(s)")

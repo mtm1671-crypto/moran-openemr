@@ -19,7 +19,7 @@ from .site_scanner import PassiveSiteScanner
 
 def create_app() -> FastAPI:
     settings = Settings()
-    store = RunStore(settings.sqlite_path)
+    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     app = FastAPI(title="AgentForge Adversarial Platform", version="0.1.0")
 
     @app.get("/readyz")

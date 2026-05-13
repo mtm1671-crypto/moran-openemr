@@ -80,7 +80,7 @@ def main() -> None:
     settings = Settings()
     if args.db:
         settings.sqlite_path = args.db
-    store = RunStore(settings.sqlite_path)
+    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     if args.command == "promote":
         regression = promote_confirmed_report(store, args.report_id)
         print(regression.model_dump_json(indent=2))

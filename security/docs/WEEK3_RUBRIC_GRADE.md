@@ -21,11 +21,11 @@ Source requirements:
 
 | Component | Weight | Current Score | Status | Current-code evidence | Remaining gap |
 |---|---:|---:|---|---|---|
-| 1. Live target harness | 12 | 11 | Met for MVP | `adversarial/app/config.py` supports local/deployed targets, allowlist, synthetic clinician auth, and budgets. `run_week3_eval.py` records `synthetic_principal`, target metadata, and target version hints when exposed. | Service-account auth path is configured but not exercised by the runner. |
+| 1. Live target harness | 12 | 11 | Met for MVP | `security/adversarial/app/config.py` supports local/deployed targets, allowlist, synthetic clinician auth, and budgets. `run_week3_eval.py` records `synthetic_principal`, target metadata, and target version hints when exposed. | Service-account auth path is configured but not exercised by the runner. |
 | 2. Threat model artifact | 8 | 8 | Met | `THREAT_MODEL.md` covers required attack categories, failure definitions, trust boundaries, existing defenses, and evidence policy. | No implementation gap for this document requirement. |
-| 3. Adversarial eval dataset | 10 | 9 | Met for MVP | `adversarial/evals/week3/cases/` now covers PHI, auth/session, clinical recommendation, indirect injection, direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, tool misuse, cost amplification, and citation manipulation. Tests verify category and injection-layer coverage. | Uploaded-document and seeded-note cases are marked setup-aware until target fixture setup exists. |
-| 4. Multi-agent architecture and LangGraph loop | 12 | 9 | Mostly met | `adversarial/app/graph.py` records Orchestrator, Red Team, Target Runner, Judge, Documentation, Regression Store, and Stop Policy trace events. It persists runs, observations, verdicts, reports, and regression candidates. | Execution is still a bounded single-pass workflow per case rather than a fully adaptive multi-round loop. |
-| 5. Red Team Agent | 8 | 7 | Mostly met | `adversarial/app/red_team_agent.py` generates bounded variants with parent provenance, mutation rationale, and approval checks. `run_week3_eval.py` can include generated variants. | Mutations are deterministic templates, not LLM-generated adversarial strategies. |
+| 3. Adversarial eval dataset | 10 | 9 | Met for MVP | `security/adversarial/evals/week3/cases/` now covers PHI, auth/session, clinical recommendation, indirect injection, direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, tool misuse, cost amplification, and citation manipulation. Tests verify category and injection-layer coverage. | Uploaded-document and seeded-note cases are marked setup-aware until target fixture setup exists. |
+| 4. Multi-agent architecture and LangGraph loop | 12 | 9 | Mostly met | `security/adversarial/app/graph.py` records Orchestrator, Red Team, Target Runner, Judge, Documentation, Regression Store, and Stop Policy trace events. It persists runs, observations, verdicts, reports, and regression candidates. | Execution is still a bounded single-pass workflow per case rather than a fully adaptive multi-round loop. |
+| 5. Red Team Agent | 8 | 7 | Mostly met | `security/adversarial/app/red_team_agent.py` generates bounded variants with parent provenance, mutation rationale, and approval checks. `run_week3_eval.py` can include generated variants. | Mutations are deterministic templates, not LLM-generated adversarial strategies. |
 | 6. Judge Agent | 10 | 9 | Met for MVP | `judge_agent.py` covers patient scope leaks, clinical recommendation failures, tool misuse, citation support, indirect injection, target instability, auth denial, direct prompt injection, identity hijacking, and budgets. `run_judge_eval.py --enforce` passes with zero false positives and zero false negatives on the fixture set. | Semantic citation validation is still heuristic. No LLM advisory path is enabled. |
 | 7. Documentation Agent and vulnerability reports | 8 | 6 | Mostly met | `documentation_agent.py` drafts reports for non-pass verdicts with evidence and export links. Reports are stored and surfaced through the dashboard and exports. | There are no confirmed findings to package into three final vulnerability reports; the project should not invent them. |
 | 8. Regression and validation harness | 8 | 7 | Mostly met | `regression_harness.py` promotes confirmed reports into replayable `RegressionCase` records. The graph persists regression candidates on failures, and the regression suite replays promoted cases. | CI integration is not wired yet. |
@@ -40,7 +40,7 @@ Total full-PRD score: 84 / 100.
 
 | MVP capability from `W3_BUILD_GOALS.md` | Current status | Evidence |
 |---|---|---|
-| Top-level `adversarial/` app scaffold | Met | `adversarial/pyproject.toml`, `adversarial/app/`, `adversarial/tests/`, `adversarial/README.md`. |
+| Top-level `security/adversarial/` app scaffold | Met | `security/adversarial/pyproject.toml`, `security/adversarial/app/`, `security/adversarial/tests/`, `security/adversarial/README.md`. |
 | Deployed FastAPI operator UI | Met | Live operator path remains `https://adversarial-production.up.railway.app`; `/readyz` is part of the deployment verification. |
 | SQLite run store with migrations/readiness | Met | `run_store.py` schema version 3 plus `migrations/001_initial.sql`. |
 | Local and deployed target modes | Met | `TargetMode`, `Settings.target_url`, `run_week3_eval --target`. |
@@ -50,7 +50,7 @@ Total full-PRD score: 84 / 100.
 | Deterministic Judge Agent | Met | Judge rules plus `run_judge_eval --enforce` and fixture coverage. |
 | LangGraph loop wiring required MVP nodes | Met for MVP | All node names exist, trace events are recorded, and failure paths produce reports/regression candidates. |
 | JSON/Markdown exports | Met | `export_run.py` includes observations, traces, reports, and resilience snapshots. |
-| Basic deployment docs and final demo path | Met | `adversarial/README.md`, root README/submission docs, Railway service path. |
+| Basic deployment docs and final demo path | Met | `security/adversarial/README.md`, root README/submission docs, Railway service path. |
 | End-to-end proof | Met locally; deploy verification pending after this pass | Local tests, lint, typecheck, and judge eval are clean. |
 
 MVP grade: 94 / 100.
@@ -71,18 +71,18 @@ MVP grade: 94 / 100.
 
 ## Verification Run
 
-Commands run from `adversarial/`:
+Commands run from `security/adversarial/`:
 
 ```powershell
-..\copilot\api\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
-..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests --no-cache
-..\copilot\api\.venv\Scripts\python.exe -m mypy app --cache-dir <temp>
-..\copilot\api\.venv\Scripts\python.exe -m app.run_judge_eval --enforce
+..\..\copilot\api\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
+..\..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+..\..\copilot\api\.venv\Scripts\python.exe -m mypy app --cache-dir <temp>
+..\..\copilot\api\.venv\Scripts\python.exe -m app.run_judge_eval --enforce
 ```
 
 Results:
 
-- `pytest`: 34 passed.
+- `pytest`: 36 passed.
 - `ruff`: all checks passed.
 - `mypy`: success, no issues in 19 source files.
 - `run_judge_eval --enforce`: 6 fixtures, 0 false positives, 0 false negatives, 0 critical/high false negatives.

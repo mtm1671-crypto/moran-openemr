@@ -23,8 +23,13 @@ from .models import (
     SuiteSummary,
     VulnerabilityReport,
 )
+from .sensitive_findings import (
+    SensitiveFindingStore,
+    public_report_view,
+    public_site_scan_finding_view,
+)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "migrations" / "001_initial.sql"
 
 
@@ -46,8 +51,9 @@ def _from_json(value: str) -> dict[str, Any]:
 
 
 class RunStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, private_path: Path | None = None) -> None:
         self.path = path
+        self.private_store = SensitiveFindingStore(private_path) if private_path else None
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,9 +64,49 @@ class RunStore:
     def initialize(self) -> None:
         with self.connect() as conn:
             conn.executescript(_schema_sql())
+            self._redact_existing_public_reports(conn)
+            self._redact_existing_site_scan_findings(conn)
             conn.execute(
                 "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
+            )
+
+    def _redact_existing_public_reports(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT vulnerability_id, payload_json FROM vulnerability_reports"
+        ).fetchall()
+        for row in rows:
+            report = VulnerabilityReport.model_validate(_from_json(row["payload_json"]))
+            if report.sensitive_details_redacted:
+                continue
+            if self.private_store is not None:
+                self.private_store.save_report(report)
+            public_report = public_report_view(report)
+            conn.execute(
+                """
+                UPDATE vulnerability_reports
+                SET payload_json = ?
+                WHERE vulnerability_id = ?
+                """,
+                (_to_json(public_report), row["vulnerability_id"]),
+            )
+
+    def _redact_existing_site_scan_findings(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("SELECT finding_id, payload_json FROM site_scan_findings").fetchall()
+        for row in rows:
+            finding = SiteScanFinding.model_validate(_from_json(row["payload_json"]))
+            if finding.sensitive_details_redacted:
+                continue
+            if self.private_store is not None:
+                self.private_store.save_site_scan_finding(finding)
+            public_finding = public_site_scan_finding_view(finding)
+            conn.execute(
+                """
+                UPDATE site_scan_findings
+                SET payload_json = ?
+                WHERE finding_id = ?
+                """,
+                (_to_json(public_finding), row["finding_id"]),
             )
 
     def readiness(self) -> tuple[bool, str]:
@@ -170,6 +216,9 @@ class RunStore:
             )
 
     def save_report(self, report: VulnerabilityReport) -> None:
+        if self.private_store is not None:
+            self.private_store.save_report(report)
+        public_report = public_report_view(report)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -184,7 +233,7 @@ class RunStore:
                     report.severity,
                     report.impact_domain,
                     report.status,
-                    _to_json(report),
+                    _to_json(public_report),
                 ),
             )
 
@@ -268,6 +317,9 @@ class RunStore:
     def save_site_scan_findings(self, findings: Iterable[SiteScanFinding]) -> None:
         with self.connect() as conn:
             for finding in findings:
+                if self.private_store is not None:
+                    self.private_store.save_site_scan_finding(finding)
+                public_finding = public_site_scan_finding_view(finding)
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO site_scan_findings
@@ -280,7 +332,7 @@ class RunStore:
                         finding.check_id,
                         finding.severity,
                         finding.title,
-                        _to_json(finding),
+                        _to_json(public_finding),
                     ),
                 )
 

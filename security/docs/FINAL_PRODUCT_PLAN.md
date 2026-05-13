@@ -107,7 +107,7 @@ Goal:
 Create final security reports only from real evidence.
 
 Way:
-Use `VULNERABILITY_REPORTS.md` or `adversarial/evals/week3/vulnerability_reports/` for confirmed findings, false positives, and safe-behavior evidence.
+Use `VULNERABILITY_REPORTS.md` or `security/adversarial/evals/week3/vulnerability_reports/` for confirmed findings, false positives, and safe-behavior evidence.
 
 Verification:
 Every report references a deployed run id, observed response, expected behavior, Judge reason code, and remediation or closure status.

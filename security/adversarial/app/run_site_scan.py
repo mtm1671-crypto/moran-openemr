@@ -18,7 +18,7 @@ def run_passive_site_scan(
     target_url: str,
     authorization_note: str,
 ) -> dict[str, Any]:
-    store = RunStore(settings.sqlite_path)
+    store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     store.initialize()
     scan, findings = PassiveSiteScanner(settings).scan(
         target_url=target_url,

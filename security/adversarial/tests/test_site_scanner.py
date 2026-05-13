@@ -8,6 +8,7 @@ from app.config import Settings
 from app.models import Severity, SiteScanFinding, SiteScanRun
 from app.run_site_scan import run_passive_site_scan
 from app.run_store import RunStore
+from app.sensitive_findings import SensitiveFindingStore
 from app.site_scanner import PassiveSiteScanner
 
 
@@ -76,6 +77,7 @@ def test_run_site_scan_persists_scan_and_findings(
     settings = Settings(
         allowed_hosts=["owned.example"],
         sqlite_path=tmp_path / "runs.sqlite",
+        private_sqlite_path=tmp_path / "private.sqlite",
     )
     result = run_passive_site_scan(
         settings=settings,
@@ -85,4 +87,7 @@ def test_run_site_scan_persists_scan_and_findings(
 
     store = RunStore(settings.sqlite_path)
     assert store.site_scan_runs()[0]["scan_id"] == result["scan"]["scan_id"]
-    assert store.site_scan_findings(result["scan"]["scan_id"])
+    public_finding = store.site_scan_findings(result["scan"]["scan_id"])[0]
+    assert public_finding["evidence"] == "Redacted from public operator storage."
+    private_finding = SensitiveFindingStore(settings.private_sqlite_path).site_scan_findings()[0]
+    assert private_finding["evidence"] == "missing"

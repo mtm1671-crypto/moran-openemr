@@ -10,7 +10,7 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added `adversarial/app/red_team_agent.py`.
+- Added `security/adversarial/app/red_team_agent.py`.
 - Extended `AttackCase` with `parent_case_id`, `mutation_rationale`, and `approval_status`.
 - Added deterministic mutation templates for persona pressure, multi-turn pressure, and citation pressure.
 - Added validation so generated variants keep protected case fields unchanged.
@@ -32,7 +32,7 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added `adversarial/app/regression_harness.py`.
+- Added `security/adversarial/app/regression_harness.py`.
 - Added `RegressionCase` and `RegressionStatus`.
 - Added SQLite persistence for `regression_cases`.
 - Added `RunStore.save_regression_case()` and `RunStore.regression_cases()`.
@@ -55,7 +55,7 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added `adversarial/app/resilience.py`.
+- Added `security/adversarial/app/resilience.py`.
 - Added risk-weighted scoring using severity, impact domain, category coverage, inconclusive rate, open reports, and regression status.
 - Added `RunStore.snapshots()`.
 - Updated `run_week3_eval.py` to create one resilience snapshot after each suite run.
@@ -77,9 +77,9 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added `adversarial/app/reporting.py`.
+- Added `security/adversarial/app/reporting.py`.
 - Added category rollups, latest-verdict selection, current-report filtering, and dashboard summary.
-- Added `adversarial/app/costing.py`.
+- Added `security/adversarial/app/costing.py`.
 - Added `SuiteSummary` plus SQLite persistence for suite cost/run summaries.
 - Split run detail presentation into black-box observations and trace/detail sections.
 - Export output now includes trace and resilience context.
@@ -99,7 +99,7 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added `adversarial/evals/week3/judge_cases/`.
+- Added `security/adversarial/evals/week3/judge_cases/`.
 - Added safe refusal, PHI leak, unsafe clinical, safe no-evidence, missing-citation, and target-unstable fixtures.
 - Added and verified `python -m app.run_judge_eval --enforce`.
 - Expanded Judge checks for direct prompt injection and identity hijacking.
@@ -177,7 +177,7 @@ Status: implemented for MVP.
 
 What changed:
 
-- Added suite-level cost summaries in `adversarial/app/costing.py`.
+- Added suite-level cost summaries in `security/adversarial/app/costing.py`.
 - Added `SuiteSummary` model and SQLite table.
 - Added run and suite cost rollups to dashboard/export paths.
 - Kept per-case Judge budget enforcement intact.
@@ -211,18 +211,18 @@ Remaining final-product work:
 
 ## Verification Commands
 
-Run from `adversarial/`:
+Run from `security/adversarial/`:
 
 ```powershell
-..\copilot\api\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
-..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests --no-cache
-..\copilot\api\.venv\Scripts\python.exe -m mypy app --cache-dir <temp>
-..\copilot\api\.venv\Scripts\python.exe -m app.run_judge_eval --enforce
+..\..\copilot\api\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
+..\..\copilot\api\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+..\..\copilot\api\.venv\Scripts\python.exe -m mypy app --cache-dir <temp>
+..\..\copilot\api\.venv\Scripts\python.exe -m app.run_judge_eval --enforce
 ```
 
 Current result:
 
-- `pytest`: 34 passed.
+- `pytest`: 36 passed.
 - `ruff`: all checks passed.
 - `mypy`: success, no issues in 19 source files.
 - `run_judge_eval --enforce`: passes with no critical/high false negatives.
