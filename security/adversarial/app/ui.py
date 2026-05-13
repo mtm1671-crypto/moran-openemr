@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
+import time
+from collections.abc import Awaitable, Callable
 from html import escape
 from urllib.parse import parse_qs
 
@@ -16,11 +21,24 @@ from .run_store import RunStore
 from .run_week3_eval import run_suite
 from .site_scanner import PassiveSiteScanner
 
+OPERATOR_SESSION_COOKIE = "agentforge_operator_session"
+
 
 def create_app() -> FastAPI:
     settings = Settings()
     store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     app = FastAPI(title="AgentForge Adversarial Platform", version="0.1.0")
+
+    @app.middleware("http")
+    async def require_operator_auth(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if _is_public_path(request.url.path) or _is_operator_authenticated(request, settings):
+            return await call_next(request)
+        if request.method == "GET" and not request.url.path.endswith((".json", ".md")):
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"detail": "operator authentication required"}, status_code=401)
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:
@@ -30,6 +48,80 @@ def create_app() -> FastAPI:
             {"ready": ready, "message": message, "sqlite_path": str(settings.sqlite_path)},
             status_code=status_code,
         )
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_form() -> str:
+        if not _operator_auth_enabled(settings):
+            return _page(
+                "Operator Auth Disabled",
+                """
+                <section class="hero compact command-slab">
+                  <div>
+                    <p class="eyebrow">Operator access</p>
+                    <h1>Auth disabled</h1>
+                    <p class="hero-copy">Set ADVERSARIAL_OPERATOR_TOKEN before exposing this service to clients.</p>
+                  </div>
+                </section>
+                """,
+            )
+        return _page(
+            "Operator Login",
+            """
+            <section class="hero compact command-slab">
+              <div>
+                <p class="eyebrow">Operator access // protected control plane</p>
+                <h1>Operator Login</h1>
+              </div>
+            </section>
+            <section class="command-strip" aria-label="Operator login">
+              <form class="site-scan-form" method="post" action="/login">
+                <label for="operator-token">Token</label>
+                <input id="operator-token" name="operator_token" type="password" autocomplete="current-password" required>
+                <button class="button-primary" type="submit">
+                  <span class="button-label">Enter</span>
+                </button>
+              </form>
+            </section>
+            """,
+        )
+
+    @app.post("/login")
+    async def login(request: Request) -> Response:
+        body = (await request.body()).decode()
+        params = parse_qs(body)
+        submitted = params.get("operator_token", [""])[0]
+        if not _token_matches(submitted, settings):
+            return HTMLResponse(
+                _page(
+                    "Login failed",
+                    """
+                    <section class="hero compact command-slab">
+                      <div>
+                        <p class="eyebrow">Operator access</p>
+                        <h1>Login failed</h1>
+                        <p class="hero-copy">The supplied operator token was not accepted.</p>
+                      </div>
+                    </section>
+                    """,
+                ),
+                status_code=401,
+            )
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(
+            OPERATOR_SESSION_COOKIE,
+            _new_session_cookie(settings),
+            max_age=settings.operator_session_ttl_seconds,
+            httponly=True,
+            secure=settings.operator_cookie_secure,
+            samesite="strict",
+        )
+        return response
+
+    @app.post("/logout")
+    def logout() -> Response:
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie(OPERATOR_SESSION_COOKIE)
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> str:
@@ -365,6 +457,69 @@ def create_app() -> FastAPI:
         )
 
     return app
+
+
+def _is_public_path(path: str) -> bool:
+    return path in {"/readyz", "/login"} or path.startswith("/login?")
+
+
+def _operator_auth_enabled(settings: Settings) -> bool:
+    return settings.operator_token is not None
+
+
+def _token_matches(submitted: str, settings: Settings) -> bool:
+    if settings.operator_token is None:
+        return True
+    expected = settings.operator_token.get_secret_value()
+    return secrets.compare_digest(submitted, expected)
+
+
+def _is_operator_authenticated(request: Request, settings: Settings) -> bool:
+    if not _operator_auth_enabled(settings):
+        return True
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() == "bearer" and _token_matches(token, settings):
+        return True
+    session = request.cookies.get(OPERATOR_SESSION_COOKIE)
+    return bool(session and _valid_session_cookie(session, settings))
+
+
+def _session_secret(settings: Settings) -> str:
+    if settings.operator_session_secret is not None:
+        return settings.operator_session_secret.get_secret_value()
+    if settings.operator_token is not None:
+        return settings.operator_token.get_secret_value()
+    return "local-dev-operator-session"
+
+
+def _new_session_cookie(settings: Settings) -> str:
+    issued_at = str(int(time.time()))
+    signature = _session_signature(issued_at, settings)
+    return f"v1:{issued_at}:{signature}"
+
+
+def _valid_session_cookie(cookie: str, settings: Settings) -> bool:
+    version, separator, rest = cookie.partition(":")
+    if version != "v1" or not separator:
+        return False
+    issued_at, separator, signature = rest.partition(":")
+    if not separator or not issued_at.isdigit():
+        return False
+    age = int(time.time()) - int(issued_at)
+    if age < 0 or age > settings.operator_session_ttl_seconds:
+        return False
+    expected = _session_signature(issued_at, settings)
+    return secrets.compare_digest(signature, expected)
+
+
+def _session_signature(issued_at: str, settings: Settings) -> str:
+    digest = hmac.new(
+        _session_secret(settings).encode("utf-8"),
+        issued_at.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest
 
 
 def _posture_panel(summary: dict[str, object]) -> str:
@@ -1199,6 +1354,7 @@ def _page_css() -> str:
 
     input[type="search"],
     input[type="url"],
+    input[type="password"],
     select {
       min-height: 38px;
       min-width: min(360px, 100%);

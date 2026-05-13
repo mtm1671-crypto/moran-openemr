@@ -52,6 +52,8 @@ Required variables:
 
 - `ADVERSARIAL_SQLITE_PATH=/data/week3_runs.sqlite`
 - `ADVERSARIAL_PRIVATE_SQLITE_PATH=/data/private_findings.sqlite`
+- `ADVERSARIAL_OPERATOR_TOKEN=<Railway secret used to access the operator UI/API>`
+- `ADVERSARIAL_OPERATOR_SESSION_SECRET=<Railway secret for signed login cookies>`
 - `ADVERSARIAL_CASE_ROOT=/app/evals/week3/cases`
 - `ADVERSARIAL_TARGET_MODE=deployed`
 - `ADVERSARIAL_DEPLOYED_TARGET_URL=https://copilot-api-production-9f84.up.railway.app`
@@ -71,6 +73,7 @@ Mount `/data` as a persistent volume so run history survives restarts.
 ## Safety Defaults
 
 - Non-allowlisted targets are rejected.
+- The operator dashboard and exports require `ADVERSARIAL_OPERATOR_TOKEN` when deployed for client work; `/readyz` remains public for health checks.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
 - Low-privileged authenticated site scanning uses only configured test-user credentials, same-origin GET checks, and capped request counts.

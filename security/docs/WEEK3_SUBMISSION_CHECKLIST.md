@@ -12,6 +12,7 @@ This file tracks the adversarial AI security platform submission separately from
 - `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
 - `security/adversarial/evals/week3/cases/` contains seed cases for the expanded Week 3 hospital-director risk families, including direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, and three indirect-injection layers.
 - Railway service `adversarial` is deployed at `https://adversarial-production.up.railway.app`.
+- The adversarial operator supports token-gated dashboard/export access while keeping `/readyz` public for deployment health checks.
 - Persistent `/data` SQLite storage is mounted and `/readyz` returns `200`.
 - Synthetic clinician OAuth password-grant secrets are configured; deployed Co-Pilot API accepts the minted token at `/api/me`.
 - The deployed seed suite has run against `https://copilot-api-production-9f84.up.railway.app`.

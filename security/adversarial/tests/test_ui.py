@@ -48,6 +48,48 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert 'value="low-priv-authenticated"' in response.text
 
 
+def test_operator_auth_blocks_dashboard_when_configured(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    client = TestClient(create_app())
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+    assert client.get("/readyz").status_code == 200
+
+
+def test_operator_auth_accepts_bearer_token(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    client = TestClient(create_app())
+
+    response = client.get("/", headers={"Authorization": "Bearer operator-test-token"})
+
+    assert response.status_code == 200
+    assert "AgentForge" in response.text
+
+
+def test_operator_login_sets_session_cookie(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_COOKIE_SECURE", "false")
+    client = TestClient(create_app())
+
+    login = client.post(
+        "/login",
+        data={"operator_token": "operator-test-token"},
+        follow_redirects=False,
+    )
+    dashboard = client.get("/")
+
+    assert login.status_code == 303
+    assert "agentforge_operator_session" in login.headers["set-cookie"]
+    assert dashboard.status_code == 200
+    assert "Risk Posture" in dashboard.text
+
+
 def test_dashboard_and_run_detail_expose_coverage_and_exports(
     monkeypatch,
     tmp_path: Path,
