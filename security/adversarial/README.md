@@ -19,6 +19,8 @@ python -m app.run_week3_eval --target local --suite seed --report-only
 python -m app.run_week3_eval --target deployed --suite seed --report-only
 python -m app.run_week3_eval --target local --suite regression --enforce
 python -m app.run_site_scan --target-url https://owned.example --scope-id scope_agentforge_demo --authorization-note "Owned test target"
+python -m app.run_site_scan --target-url https://owned.example --mode b2b-baseline --scope-id scope_agentforge_demo --authorization-note "Owned pre-launch target"
+python -m app.run_site_scan --target-url https://owned.example --mode low-priv-authenticated --expected-denied-path /api/tenant-b/invoices/inv_123 --scope-id scope_agentforge_demo --authorization-note "Owned tenant-isolation probe"
 python -m app.export_run --run-id <run_id> --out evals\week3\exports
 python -m uvicorn app.ui:create_app --factory --host 0.0.0.0 --port 8080
 ```
@@ -69,6 +71,7 @@ Required variables:
 - `ADVERSARIAL_SITE_SCAN_BEARER_TOKEN=<optional low-privileged test-user bearer token>`
 - `ADVERSARIAL_SITE_SCAN_COOKIE=<optional low-privileged test-user cookie>`
 - `ADVERSARIAL_SITE_SCAN_MAX_URLS=12`
+- `ADVERSARIAL_SITE_SCAN_EXPECTED_DENIED_PATHS=/api/tenant-b/object-from-other-tenant`
 
 For a short-lived manual run, `ADVERSARIAL_SYNTHETIC_CLINICIAN_TOKEN` can be supplied instead of the password-grant settings.
 
@@ -77,14 +80,14 @@ Mount `/data` as a persistent volume so run history survives restarts.
 ## Safety Defaults
 
 - Non-allowlisted targets are rejected.
-- The operator dashboard and exports require `ADVERSARIAL_OPERATOR_TOKEN` when deployed for client work; `/readyz` remains public for health checks.
+- The operator dashboard and exports require `ADVERSARIAL_OPERATOR_TOKEN` when deployed for client work; deployed/Railway startup fails closed without it, while `/readyz` remains public for health checks.
 - Browser form actions use signed-session CSRF tokens, operator requests are rate-limited, and mutating operator actions are recorded in the audit log.
 - Generic site scanning is authorized-only: add only hosts you own or have written permission to test to `ADVERSARIAL_ALLOWED_HOSTS`.
 - Site scans are bound to an authorized client/project/scope record. The default scope is seeded from `ADVERSARIAL_ALLOWED_HOSTS`, scan-mode limits, excluded paths, and request caps.
 - The first generalized scanner mode is passive HTTP/header/cookie review. It does not fuzz, brute force, exploit, or crawl broadly.
 - Low-privileged authenticated site scanning uses only configured test-user credentials, same-origin GET checks, and capped request counts.
-- Public run exports redact vulnerability reproduction steps, passive scan evidence, and remediation specifics.
-- Sensitive report and site-scan finding details are stored separately in `ADVERSARIAL_PRIVATE_SQLITE_PATH`.
+- Public run exports redact raw target observations, vulnerability reproduction steps, passive scan evidence, and remediation specifics.
+- Sensitive observations, reports, and site-scan finding details are stored separately in `ADVERSARIAL_PRIVATE_SQLITE_PATH`.
 - Real PHI is out of scope.
 - Blocking Judge verdicts use deterministic black-box evidence.
 - LLM judging is advisory until separately validated.
@@ -115,7 +118,10 @@ Current checks include:
 - Broad CORS wildcard detection.
 - Cookie `Secure`, `HttpOnly`, and `SameSite` attributes.
 - Informational server-header disclosure.
+- B2B baseline checks for public admin, settings, billing, user-management, API key, debug, schema, backup, and source-map exposure through bounded same-origin GET requests.
 - Low-privileged authenticated checks for same-origin exposed `.env`, `.git`, debug/runtime endpoints, API schemas, backup artifacts, source maps, and privileged route responses.
+- Low-privileged cookie-authenticated form review for mutating same-origin forms missing a visible CSRF token.
+- Low-privileged expected-deny probes for configured other-tenant, admin-only, or object-level routes that should return login, 401, 403, or 404.
 
 Low-privileged mode is still bounded reconnaissance, not exploitation. It does not brute force, submit mutating forms, fuzz parameters, or attempt credential bypasses. It is intended for synthetic accounts on owned or explicitly authorized targets.
 

@@ -177,8 +177,10 @@ Possible later users, not MVP targets:
 
 Week 3 adds security and governance users for the separate adversarial operator app:
 
-- Security engineer: runs adversarial campaigns, reviews Judge evidence, and triages vulnerability reports.
-- AI platform engineer: uses regression runs to decide whether Co-Pilot changes are safe to release.
-- Clinical product owner: reviews patient-safety and clinical-workflow impact for confirmed findings.
-- Compliance or privacy reviewer: checks PHI boundaries, synthetic-only evidence, and auditability.
-- Engineering manager: reviews coverage, trend, cost, and release recommendation before submission or deployment.
+- Security engineer: runs allowlisted adversarial campaigns, reviews Judge evidence, opens JSON/Markdown exports, and triages draft vulnerability reports without exposing raw target output in the public dashboard.
+- AI platform engineer: uses smoke, seed, and regression runs to decide whether Co-Pilot changes are safe to release; open failures and coverage gaps are prioritized before new campaign execution.
+- Clinical product owner: reviews patient-safety and clinical-workflow impact for confirmed findings, especially unsafe clinical recommendation and citation-integrity failures.
+- Compliance or privacy reviewer: checks PHI boundaries, synthetic-only evidence, audit events, public/private evidence separation, and whether raw observations remain in the private findings store.
+- Engineering manager: reviews coverage, resilience, cost, run state, and release recommendation before submission or deployment.
+
+The operator workflow is intentionally security-operations shaped: authenticate with the operator token, confirm target/scope, run a smoke or seed suite in report-only mode, inspect run state and trace events, export evidence, promote confirmed failures into regression coverage, and avoid publishing any finding until deterministic replay or human review supports it.

@@ -17,12 +17,12 @@ Use this file as the source of truth while filling out the AgentForge submission
 Latest submitted code:
 
 ```text
-Current HEAD: Map example profiles to writable OpenEMR patients
-81a85a6ae Record Week 2 redeploy status
-6e7a3ef5f Implement Week 2 document evidence workflow
+Branch: master
+Final code/docs summary: Prepare final adversarial submission
+Use the repository HEAD after the final push as the submitted commit.
 ```
 
-Current local working tree includes post-review Week 2 hardening for executable evals, durable document workflow persistence with source-key reuse, supervisor/guideline routing, stricter verification, a readable evidence viewer instead of raw JSON source pages, and an idempotent `Observation.create` write adapter that follows OpenEMR FHIR capability metadata.
+Current final-submission working tree includes Week 2 hardening, consolidated Week 3 reviewer docs, adversarial operator fail-closed auth, redacted public evidence/private raw evidence storage, suite prioritization and timeout handling, expanded B2B web-surface scanning, and OpenEMR Railway image remediations for HTTPS metadata, cookie attributes, HTTPS redirects, and public dependency metadata.
 
 ## Required Artifacts
 
@@ -30,13 +30,15 @@ Current local working tree includes post-review Week 2 hardening for executable 
 |---|---|
 | GitHub repository forked from OpenEMR with setup guide, architecture overview, and deployed link | [README.md](README.md) |
 | Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
-| User doc with target user and use cases | [USER.md](USER.md) |
+| Week 3 threat model with attack surface map | [THREAT_MODEL.md](THREAT_MODEL.md), [WEEK3_PRODUCT_SPEC.md](security/docs/WEEK3_PRODUCT_SPEC.md), and [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
+| User doc with target user and use cases | [USERS.md](USERS.md) |
 | Agent architecture doc with one-page overview, framework choices, verification strategy, and tradeoffs | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Week 2 multimodal/agent architecture | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Week 3 adversarial platform architecture and evidence | [W3_ARCHITECTURE.md](security/docs/W3_ARCHITECTURE.md), [WEEK3_SUBMISSION_CHECKLIST.md](security/docs/WEEK3_SUBMISSION_CHECKLIST.md), [WEB_VULNERABILITY_KNOWLEDGE_BASE.md](security/docs/WEB_VULNERABILITY_KNOWLEDGE_BASE.md), and [VULNERABILITY_REPORTS.md](security/docs/VULNERABILITY_REPORTS.md) |
+| Week 3 adversarial platform architecture and evidence | [WEEK3_PRODUCT_SPEC.md](security/docs/WEEK3_PRODUCT_SPEC.md), [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md), and raw eval index [security/adversarial/evals/week3/README.md](security/adversarial/evals/week3/README.md) |
 | Eval dataset and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
 | AI cost analysis | [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) |
-| Demo plan and deployed proof notes | [DEMO_PLAN.md](DEMO_PLAN.md), [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
+| Demo plan and deployed proof notes | [DEMO_PLAN.md](DEMO_PLAN.md), [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md), and final Week 3 demo notes in [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
+| Final social post draft | [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
 | Final readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
 
 Demo video:
@@ -62,10 +64,13 @@ Captured; paste the uploaded video link into the submission form.
 Local checks:
 
 ```text
-API tests: 192 passed, 6 skipped
+API tests: 204 passed
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
+Week 3 adversarial tests: 68 passed
+Week 3 adversarial Ruff: all checks passed
+Week 3 adversarial mypy: success
 Web lint: passed
 Web build: passed
 git diff --check: passed
@@ -86,6 +91,9 @@ Co-Pilot API profile roster returns OpenEMR UUIDs for Margaret, James, Sofia, Ro
 Co-Pilot API document bbox/citation/source roundtrip: passed
 Co-Pilot API demo-bearer write reaches OpenEMR and returns 401 re-authorization instead of demo-profile block
 OpenEMR /: 302 to login page
+OpenEMR B2B baseline scan sitescan_555803f0b9b8: 50 requests, 11 findings, highest High
+OpenEMR low-priv synthetic clinician scan sitescan_f8170e67d875: 40 requests, 8 findings, highest High
+Confirmed OpenEMR reports: OAuth plaintext discovery URLs, insecure session-cookie attributes, HTTPS-to-HTTP redirects, public Composer dependency metadata
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
 ```
@@ -110,6 +118,9 @@ Record or verify these in the final video with audible narration:
 14. Ask `What social barriers are documented?` and show approved document evidence in the answer.
 15. Upload a synthetic lab text file.
 16. Click `Extract`, `Approve all`, and `Write labs`; show the write result. If SMART write scope is missing, show the explicit re-authorization/write-scope failure.
+17. Open the adversarial operator or `security/docs/WEEK3_EVIDENCE_PACKET.md`.
+18. Show the four confirmed OpenEMR web-surface vulnerability reports and the two scan ids.
+19. Close with the multi-agent architecture: Red Team, Judge, Orchestrator, Documentation Agent, regression harness, and observability.
 
 Suggested synthetic intake file:
 

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.models import (
@@ -9,9 +10,11 @@ from app.models import (
     AuditAction,
     AuditEvent,
     AuthorizedScope,
+    Citation,
     Client,
     FindingStatus,
     ImpactDomain,
+    ObservedResponse,
     Project,
     ReportStatus,
     ScanJob,
@@ -20,6 +23,7 @@ from app.models import (
     SiteScanFinding,
     SiteScanMode,
     SiteScanRun,
+    TargetMode,
     VulnerabilityReport,
 )
 from app.run_store import RunStore
@@ -33,22 +37,43 @@ def test_allowlist_rejects_unknown_host() -> None:
         settings.validate_target_allowed()
 
 
+def test_expected_denied_paths_parse_from_env_string() -> None:
+    settings = Settings.model_validate(
+        {"site_scan_expected_denied_paths": "/api/a,/billing/private"}
+    )
+    assert settings.site_scan_expected_denied_paths == ["/api/a", "/billing/private"]
+
+
 def test_deployed_requires_synthetic_clinician_token() -> None:
-    settings = Settings(target_mode="deployed", synthetic_clinician_token=None)
+    settings = Settings(target_mode=TargetMode.DEPLOYED, synthetic_clinician_token=None)
     with pytest.raises(ValueError, match="deployed runs require"):
         settings.validate_ready_for_run()
 
 
 def test_deployed_accepts_synthetic_password_grant_settings() -> None:
     settings = Settings(
-        target_mode="deployed",
+        target_mode=TargetMode.DEPLOYED,
         synthetic_clinician_token_url="https://openemr-production-f5ed.up.railway.app/oauth2/default/token",
         synthetic_clinician_client_id="client-id",
         synthetic_clinician_username="admin",
-        synthetic_clinician_password="secret",
+        synthetic_clinician_password=SecretStr("secret"),
     )
     settings.validate_ready_for_run()
     assert settings.has_synthetic_clinician_auth is True
+
+
+def test_deployed_operator_service_requires_operator_token() -> None:
+    settings = Settings(target_mode=TargetMode.DEPLOYED, operator_token=None)
+    with pytest.raises(ValueError, match="ADVERSARIAL_OPERATOR_TOKEN"):
+        settings.validate_operator_auth_ready()
+
+
+def test_deployed_operator_service_accepts_operator_token() -> None:
+    settings = Settings(
+        target_mode=TargetMode.DEPLOYED,
+        operator_token=SecretStr("operator-test-token"),
+    )
+    settings.validate_operator_auth_ready()
 
 
 def test_run_store_initializes_and_saves_case(tmp_path: Path) -> None:
@@ -196,6 +221,33 @@ def test_site_scan_findings_are_redacted_and_private_store_keeps_details(
     private_finding = SensitiveFindingStore(private_db).site_scan_findings()[0]
     assert private_finding["evidence"] == "Server: Example/1.2.3"
     assert private_finding["remediation"] == "Reduce version/detail disclosure."
+
+
+def test_observations_are_redacted_and_private_store_keeps_raw_details(
+    tmp_path: Path,
+) -> None:
+    public_db = tmp_path / "runs.sqlite"
+    private_db = tmp_path / "private.sqlite"
+    store = RunStore(public_db, private_path=private_db)
+    store.initialize()
+    observed = ObservedResponse(
+        text="Sensitive wrong-patient response for Margaret Chen.",
+        citations=[Citation(source_id="note-1", patient_id="AF-002", quote="Sensitive quote")],
+        tool_outcome="Tool returned private detail.",
+        black_box_metadata={"raw_body": "Sensitive raw body."},
+    )
+
+    store.save_observation("run_private_obs", "case_private_obs", observed)
+
+    public_observation = store.observations()[0]
+    assert public_observation["text"] == "Redacted from public operator storage."
+    assert public_observation["citations"] == []
+    assert public_observation["black_box_metadata"]["sensitive_details_redacted"] is True
+    assert "Margaret Chen" not in str(public_observation)
+
+    private_observation = SensitiveFindingStore(private_db).observations()[0]
+    assert private_observation["text"] == "Sensitive wrong-patient response for Margaret Chen."
+    assert private_observation["citations"][0]["quote"] == "Sensitive quote"
 
 
 def test_b2b_workflow_records_jobs_audit_and_status_updates(tmp_path: Path) -> None:

@@ -64,7 +64,6 @@ The user experience is a side-by-side review screen: PDF preview on one side, ex
 - `PRESEARCH.md`
 - `ARCHITECTURE.md`
 - `README.md`
-- `USER.md`
 - `USERS.md`
 - `EVAL_DATASET.md`
 - `AI_COST_ANALYSIS.md`

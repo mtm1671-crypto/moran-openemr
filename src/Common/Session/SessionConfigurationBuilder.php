@@ -23,7 +23,7 @@ class SessionConfigurationBuilder
             'use_cookies' => true,
             'use_only_cookies' => true,
             'cookie_samesite' => 'Strict',
-            'cookie_secure' => false,
+            'cookie_secure' => self::forceSecureCookieAttributes(),
             'cookie_httponly' => true
         ];
 
@@ -78,16 +78,24 @@ class SessionConfigurationBuilder
         return $this->config;
     }
 
+    public static function forceSecureCookieAttributes(): bool
+    {
+        $value = getenv('AGENTFORGE_SECURE_COOKIES');
+        return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes', 'on'], true);
+    }
+
     // Preset configurations for different session types
     /** @return array<string, mixed> */
     public static function forCore(string $webRoot = '', bool $readOnly = true): array
     {
-        return (new self())
+        $builder = (new self())
             ->setName(SessionUtil::CORE_SESSION_ID)
             ->setCookiePath((!empty($webRoot)) ? $webRoot . '/' : '/')
-            ->setCookieHttpOnly(false)
-            ->setReadOnly($readOnly)
-            ->build();
+            ->setReadOnly($readOnly);
+        if (!self::forceSecureCookieAttributes()) {
+            $builder->setCookieHttpOnly(false);
+        }
+        return $builder->build();
     }
 
     /** @return array<string, mixed> */

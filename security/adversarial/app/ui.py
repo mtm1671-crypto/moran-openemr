@@ -29,19 +29,21 @@ from .models import (
     ScanJob,
     ScanJobStatus,
     SiteScanMode,
+    SiteScanRun,
     utc_now,
 )
 from .reporting import dashboard_summary
 from .run_store import RunStore
 from .run_week3_eval import run_suite
-from .scope_registry import ensure_default_scope, resolve_scope_for_scan
-from .site_scanner import PassiveSiteScanner
+from .scope_registry import ensure_default_scope
+from .site_scan_workflow import SiteScanWorkflow, SiteScanWorkflowError
 
 OPERATOR_SESSION_COOKIE = "agentforge_operator_session"
 
 
 def create_app() -> FastAPI:
     settings = Settings()
+    settings.validate_operator_auth_ready()
     store = RunStore(
         settings.sqlite_path,
         private_path=settings.private_sqlite_path,
@@ -70,6 +72,8 @@ def create_app() -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cache-Control", "no-store")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("Content-Security-Policy", _content_security_policy())
         return response
 
     @app.middleware("http")
@@ -293,6 +297,7 @@ def create_app() -> FastAPI:
                 <label for="site-scan-mode">Mode</label>
                 <select id="site-scan-mode" name="scan_mode">
                   <option value="passive-http">Passive</option>
+                  <option value="b2b-baseline">B2B Baseline</option>
                   <option value="low-priv-authenticated">Low-Priv Auth</option>
                 </select>
                 <button type="submit" data-loading-label="Scanning Site">
@@ -425,70 +430,37 @@ def create_app() -> FastAPI:
         scan_mode_value = params.get("scan_mode", [SiteScanMode.PASSIVE_HTTP.value])[0].strip()
         if not target_url:
             return HTMLResponse(_page("Invalid target", "<h1>Invalid target</h1>"), status_code=400)
-        job: ScanJob | None = None
         try:
             scan_mode = SiteScanMode(scan_mode_value)
-            store.initialize()
-            scope = resolve_scope_for_scan(
-                store=store,
-                settings=settings,
-                scope_id=scope_id,
-                target_url=target_url,
-                mode=scan_mode,
-            )
-            job = ScanJob(
-                scope_id=scope.scope_id,
-                client_id=scope.client_id,
-                project_id=scope.project_id,
-                target_url=target_url,
-                scan_mode=scan_mode,
-                status=ScanJobStatus.QUEUED,
-                metadata={"authorization_note": scope.authorization_note},
-            )
-            store.save_scan_job(job)
-            _record_audit(
-                store,
-                request,
-                AuditAction.QUEUE_SITE_SCAN,
-                "scan_job",
-                job.job_id,
-                metadata={"scope_id": scope.scope_id, "target_url": target_url},
-            )
-            job = job.model_copy(update={"status": ScanJobStatus.RUNNING, "started_at": utc_now()})
-            store.save_scan_job(job)
-            scan, findings = PassiveSiteScanner(settings).scan(
-                target_url,
-                mode=scan_mode,
-                scope=scope,
-            )
-            store.save_site_scan_run(scan)
-            store.save_site_scan_findings(findings)
-            job = job.model_copy(
-                update={
-                    "status": ScanJobStatus.COMPLETED,
-                    "completed_at": utc_now(),
-                    "scan_id": scan.scan_id,
-                }
-            )
-            store.save_scan_job(job)
-            _record_audit(
-                store,
-                request,
-                AuditAction.COMPLETE_SITE_SCAN,
-                "site_scan",
-                scan.scan_id,
-                metadata={"job_id": job.job_id, "finding_count": scan.finding_count},
-            )
-        except Exception as exc:
-            if job is not None:
-                failed_job = job.model_copy(
-                    update={
-                        "status": ScanJobStatus.FAILED,
-                        "completed_at": utc_now(),
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
+
+            def record_job_queued(job: ScanJob) -> None:
+                _record_audit(
+                    store,
+                    request,
+                    AuditAction.QUEUE_SITE_SCAN,
+                    "scan_job",
+                    job.job_id,
+                    metadata={"scope_id": job.scope_id, "target_url": target_url},
                 )
-                store.save_scan_job(failed_job)
+
+            def record_scan_completed(job: ScanJob, scan: SiteScanRun) -> None:
+                _record_audit(
+                    store,
+                    request,
+                    AuditAction.COMPLETE_SITE_SCAN,
+                    "site_scan",
+                    scan.scan_id,
+                    metadata={"job_id": job.job_id, "finding_count": scan.finding_count},
+                )
+
+            result = SiteScanWorkflow(settings=settings, store=store).run(
+                target_url=target_url,
+                mode=scan_mode,
+                scope_id=scope_id,
+                on_job_queued=record_job_queued,
+                on_scan_completed=record_scan_completed,
+            )
+        except (SiteScanWorkflowError, ValueError) as exc:
             _record_audit(
                 store,
                 request,
@@ -496,20 +468,20 @@ def create_app() -> FastAPI:
                 "site_scan",
                 target_url or "unknown",
                 success=False,
-                metadata={"error": f"{type(exc).__name__}: {exc}"},
+                metadata={"error": str(exc)},
             )
             return HTMLResponse(
                 _page(
                     "Site scan failed",
                     f"""
                     <h1>Site scan failed</h1>
-                    <p>{escape(type(exc).__name__)}: {escape(str(exc))}</p>
+                    <p>{escape(str(exc))}</p>
                     <p><a href="/">Risk overview</a></p>
                     """,
                 ),
                 status_code=502,
             )
-        return RedirectResponse(f"/site-scans/{scan.scan_id}", status_code=303)
+        return RedirectResponse(f"/site-scans/{result.scan.scan_id}", status_code=303)
 
     @app.get("/site-scans/{scan_id}", response_class=HTMLResponse)
     def site_scan_detail(scan_id: str, request: Request) -> Response:
@@ -858,6 +830,22 @@ def _is_public_path(path: str) -> bool:
     return path in {"/readyz", "/login"} or path.startswith("/login?")
 
 
+def _content_security_policy() -> str:
+    return "; ".join(
+        [
+            "default-src 'self'",
+            "base-uri 'none'",
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "form-action 'self'",
+            "img-src 'self' data:",
+            "font-src 'self' https://fonts.gstatic.com",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "script-src 'self' 'unsafe-inline'",
+        ]
+    )
+
+
 def _is_rate_limited(
     request: Request,
     settings: Settings,
@@ -875,12 +863,12 @@ def _is_rate_limited(
 
 
 def _operator_auth_enabled(settings: Settings) -> bool:
-    return settings.operator_token is not None
+    return settings.requires_operator_auth or settings.operator_token is not None
 
 
 def _token_matches(submitted: str, settings: Settings) -> bool:
     if settings.operator_token is None:
-        return True
+        return False
     expected = settings.operator_token.get_secret_value()
     return secrets.compare_digest(submitted, expected)
 
@@ -1297,6 +1285,7 @@ def _scope_admin_panel(
         "<label for=\"scope-modes\">Scan modes</label>"
         "<select id=\"scope-modes\" name=\"allowed_scan_modes\" multiple>"
         "<option value=\"passive-http\" selected>Passive HTTP</option>"
+        "<option value=\"b2b-baseline\" selected>B2B Baseline</option>"
         "<option value=\"low-priv-authenticated\">Low-Priv Authenticated</option>"
         "</select>"
         "<label for=\"scope-excluded\">Excluded paths</label>"

@@ -186,7 +186,23 @@ if (preg_match("/^[^\/]/", $web_root)) {
 //   $web_root =  "/openemr";
 
 $ResolveServerHost = static function () {
-    $scheme = ($_SERVER['REQUEST_SCHEME'] ?? 'https') . "://";
+    $explicitPublicBaseUrl = getenv('AGENTFORGE_OPENEMR_PUBLIC_BASE_URL') ?: getenv('OPENEMR_PUBLIC_BASE_URL');
+    if (!empty($explicitPublicBaseUrl)) {
+        return rtrim(trim($explicitPublicBaseUrl), "/");
+    }
+
+    $forwardedProto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
+    if (!empty($forwardedProto)) {
+        $protoElements = explode(',', $forwardedProto);
+        $scheme = strtolower(trim($protoElements[0])) . "://";
+    } elseif (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
+        $scheme = 'https://';
+    } else {
+        $scheme = ($_SERVER['REQUEST_SCHEME'] ?? 'https') . "://";
+    }
+    if (!empty(getenv('RAILWAY_ENVIRONMENT')) && $scheme === 'http://') {
+        $scheme = 'https://';
+    }
     $possibleHostSources = ['HTTP_X_FORWARDED_HOST', 'HTTP_HOST', 'SERVER_NAME', 'SERVER_ADDR'];
     $sourceTransformations = [
         "HTTP_X_FORWARDED_HOST" => function ($value) {

@@ -20,9 +20,20 @@
 
 FROM openemr/openemr:flex@sha256:e4562b0c7d3f222ec8f72122ce00d10ffa93f559c38c00ab12c1355394c35d1c
 
+ENV AGENTFORGE_OPENEMR_PUBLIC_BASE_URL=https://openemr-production-f5ed.up.railway.app
+ENV AGENTFORGE_SECURE_COOKIES=true
+
 # Mark the deployed image as the AgentForge fork build.
 RUN mkdir -p /var/www/localhost/htdocs/openemr/interface/agentforge
 
+RUN rm -f \
+    /var/www/localhost/htdocs/openemr/composer.lock \
+    /var/www/localhost/htdocs/openemr/package-lock.json \
+    /var/www/localhost/htdocs/openemr/yarn.lock \
+    /var/www/localhost/htdocs/openemr/vendor/composer/installed.json
+
+COPY interface/globals.php \
+     /var/www/localhost/htdocs/openemr/interface/globals.php
 COPY interface/agentforge/copilot.php \
      /var/www/localhost/htdocs/openemr/interface/agentforge/copilot.php
 COPY interface/main/tabs/menu/menus/standard.json \
@@ -45,6 +56,10 @@ COPY src/RestControllers/FHIR/FhirGenericRestController.php \
      /var/www/localhost/htdocs/openemr/src/RestControllers/FHIR/FhirGenericRestController.php
 COPY src/RestControllers/RestControllerHelper.php \
      /var/www/localhost/htdocs/openemr/src/RestControllers/RestControllerHelper.php
+COPY src/Common/Session/SessionConfigurationBuilder.php \
+     /var/www/localhost/htdocs/openemr/src/Common/Session/SessionConfigurationBuilder.php
+COPY src/Common/Session/SessionUtil.php \
+     /var/www/localhost/htdocs/openemr/src/Common/Session/SessionUtil.php
 COPY src/Services/FHIR/FhirObservationService.php \
      /var/www/localhost/htdocs/openemr/src/Services/FHIR/FhirObservationService.php
 COPY src/Services/FHIR/Observation/FhirObservationLaboratoryService.php \
@@ -54,7 +69,7 @@ COPY src/Services/ProcedureService.php \
 COPY src/Services/Globals/GlobalConnectorsEnum.php \
      /var/www/localhost/htdocs/openemr/src/Services/Globals/GlobalConnectorsEnum.php
 
-COPY AUDIT.md ARCHITECTURE.md USERS.md USER.md PRESEARCH.md \
+COPY AUDIT.md ARCHITECTURE.md USERS.md THREAT_MODEL.md PRESEARCH.md \
      DEPLOYMENT_RUNBOOK.md DEMO_PLAN.md EVAL_PLAN.md \
      MVP_AUTH_SCOPE.md MVP_STATUS.md OPENEMR_VERSION_PIN.md \
      /var/www/localhost/htdocs/openemr/agentforge/

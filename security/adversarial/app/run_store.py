@@ -35,6 +35,7 @@ from .models import (
 )
 from .sensitive_findings import (
     SensitiveFindingStore,
+    public_observation_view,
     public_report_view,
     public_site_scan_finding_view,
 )
@@ -82,6 +83,7 @@ class RunStore:
             conn.executescript(_schema_sql())
             self._ensure_site_scan_scope_columns(conn)
             self._ensure_site_scan_finding_columns(conn)
+            self._redact_existing_observations(conn)
             self._redact_existing_public_reports(conn)
             self._redact_existing_site_scan_findings(conn)
             conn.execute(
@@ -167,6 +169,24 @@ class RunStore:
                 (_to_json(public_finding), row["finding_id"]),
             )
 
+    def _redact_existing_observations(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("SELECT run_id, case_id, payload_json FROM observed_responses").fetchall()
+        for row in rows:
+            observed = ObservedResponse.model_validate(_from_json(row["payload_json"]))
+            if observed.black_box_metadata.get("sensitive_details_redacted") is True:
+                continue
+            if self.private_store is not None:
+                self.private_store.save_observation(row["run_id"], row["case_id"], observed)
+            public_observed = public_observation_view(observed)
+            conn.execute(
+                """
+                UPDATE observed_responses
+                SET payload_json = ?
+                WHERE run_id = ?
+                """,
+                (_to_json(public_observed), row["run_id"]),
+            )
+
     def readiness(self) -> tuple[bool, str]:
         try:
             self.initialize()
@@ -239,6 +259,9 @@ class RunStore:
             )
 
     def save_observation(self, run_id: str, case_id: str, observed: ObservedResponse) -> None:
+        if self.private_store is not None:
+            self.private_store.save_observation(run_id, case_id, observed)
+        public_observed = public_observation_view(observed)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -250,7 +273,7 @@ class RunStore:
                     run_id,
                     case_id,
                     observed.status_code,
-                    _to_json(observed),
+                    _to_json(public_observed),
                 ),
             )
 

@@ -23,9 +23,9 @@ from .models import (
     Verdict,
     VulnerabilityReport,
 )
+from .ports import JudgeEvaluator, ReportDrafter, TargetCaseExecutor
 from .regression_harness import candidate_from_failure
 from .run_store import RunStore
-from .target_client import TargetClient
 
 warning_category: type[Warning]
 try:
@@ -44,7 +44,7 @@ class AdversarialState(TypedDict, total=False):
     case: AttackCase
     run: AttackRun
     budget: RunBudget
-    target_client: TargetClient
+    target_client: TargetCaseExecutor
     store: RunStore
     observed: ObservedResponse
     verdict: JudgeVerdict
@@ -58,16 +58,21 @@ def run_case_with_graph(
     target_url: str,
     run_mode: RunMode,
     budget: RunBudget,
-    target_client: TargetClient,
+    target_client: TargetCaseExecutor,
     store: RunStore,
     synthetic_principal: str | None = None,
     target_metadata: dict[str, Any] | None = None,
+    judge_agent: JudgeEvaluator | None = None,
+    documentation_agent: ReportDrafter | None = None,
 ) -> AttackRun:
     """Run one case through the LangGraph node sequence and persist evidence."""
     try:
         from langgraph.graph import END, StateGraph
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised only in missing envs
         raise RuntimeError("langgraph is required for adversarial graph execution") from exc
+
+    judge_evaluator = judge_agent or JudgeAgent()
+    report_drafter = documentation_agent or DocumentationAgent()
 
     def trace(state: AdversarialState, agent_name: str, event_type: str, message: str) -> None:
         event = AgentTraceEvent(
@@ -79,7 +84,11 @@ def run_case_with_graph(
         state["store"].save_trace(event)
 
     def orchestrator(state: AdversarialState) -> AdversarialState:
-        trace(state, "orchestrator", "campaign_selected", f"Selected case {state['case'].case_id}")
+        case = state["case"]
+        message = f"Selected case {case.case_id} from {case.category}"
+        if case.parent_case_id:
+            message = f"{message}; variant of {case.parent_case_id}"
+        trace(state, "orchestrator", "campaign_selected", message)
         return state
 
     def red_team(state: AdversarialState) -> AdversarialState:
@@ -94,6 +103,10 @@ def run_case_with_graph(
     def target_runner(state: AdversarialState) -> AdversarialState:
         observed = asyncio.run(state["target_client"].execute_case(state["case"], state["budget"]))
         state["observed"] = observed
+        if state["store"].private_store is not None:
+            state["run"].raw_observations_ref = (
+                f"private://observed_responses/{state['run'].run_id}"
+            )
         state["store"].save_observation(state["run"].run_id, state["case"].case_id, observed)
         trace(
             state,
@@ -104,7 +117,7 @@ def run_case_with_graph(
         return state
 
     def judge(state: AdversarialState) -> AdversarialState:
-        verdict = JudgeAgent().evaluate(
+        verdict = judge_evaluator.evaluate(
             run_id=state["run"].run_id,
             case=state["case"],
             observed=state["observed"],
@@ -116,7 +129,7 @@ def run_case_with_graph(
         return state
 
     def documentation(state: AdversarialState) -> AdversarialState:
-        report = DocumentationAgent().draft_report(state["case"], state["verdict"])
+        report = report_drafter.draft_report(state["case"], state["verdict"])
         state["report"] = report
         if report:
             state["store"].save_report(report)

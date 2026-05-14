@@ -39,7 +39,7 @@ The MVP is not the agent build. The Tuesday MVP gate is the foundation for the a
 1. Run OpenEMR locally with sample/demo patient data.
 2. Deploy the standalone Co-Pilot services publicly on Railway, connected to OpenEMR for auth and chart data.
 3. Produce `AUDIT.md` with security, performance, architecture, data quality, and compliance findings.
-4. Produce `USERS.md` or `USER.md` with a narrow target user, workflow, and use cases.
+4. Produce `USERS.md` with a narrow target user, workflow, and use cases.
 5. Produce `ARCHITECTURE.md` with a codebase-informed plan for the Clinical Co-Pilot.
 
 The strongest MVP story is: "I audited OpenEMR, chose a narrow clinical workflow, and designed an agent that never bypasses OpenEMR's permission boundary, only answers from retrieved patient records, and exposes source-backed uncertainty instead of unsupported conclusions."
@@ -328,7 +328,7 @@ Reasoning transparency decision: do not expose hidden chain-of-thought. Instead,
 MVP docs:
 
 - `AUDIT.md`: document findings, risks, and mitigations.
-- `USERS.md` or `USER.md`: narrow user and use cases.
+- `USERS.md`: narrow user and use cases.
 - `ARCHITECTURE.md`: planned integration, verification, observability, eval, and deployment.
 
 Early implementation:
@@ -405,7 +405,7 @@ Feature priority:
 
 ## Open Questions To Close Next
 
-- Do we want the MVP user doc to be named `USERS.md` from the stage gate or `USER.md` from the submission table? Safest answer: create both, with one redirecting to the other.
+- The consolidated MVP user doc is `USERS.md`.
 - Which Anthropic/OpenRouter model should be used for the early/final agent build?
 - How much UI polish is required for the schedule entry point versus simply using it to launch the patient-scoped Co-Pilot?
 

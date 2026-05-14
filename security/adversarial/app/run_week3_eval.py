@@ -5,13 +5,26 @@ from __future__ import annotations
 import argparse
 import asyncio
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from .case_loader import load_cases_for_suite
 from .config import Settings
 from .costing import build_suite_summary
 from .graph import run_case_with_graph
-from .models import AttackCase, RunBudget, RunMode, Severity, TargetMode, Verdict
+from .models import (
+    AgentTraceEvent,
+    AttackCase,
+    AttackRun,
+    RunBudget,
+    RunMode,
+    Severity,
+    StopReason,
+    TargetMode,
+    Verdict,
+    utc_now,
+)
+from .orchestrator import prioritize_cases
 from .red_team_agent import RedTeamAgent
 from .reporting import latest_verdict_by_case
 from .resilience import build_resilience_snapshot
@@ -41,7 +54,7 @@ def run_suite(
     case_root: Path | None = None,
     include_variants: bool = False,
 ) -> list[str]:
-    settings.validate_target_allowed()
+    settings.validate_ready_for_run()
     store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
     store.initialize()
     seed_cases = load_cases_for_suite(suite, case_root)
@@ -59,11 +72,38 @@ def run_suite(
         red_team = RedTeamAgent()
         for seed_case in seed_cases:
             cases.extend(red_team.generate_variants(seed_case, budget))
+    cases = prioritize_cases(
+        cases,
+        persisted_cases=store.cases(),
+        latest_runs=store.latest_runs(limit=500),
+        verdicts=store.verdicts(),
+        reports=store.reports(),
+    )
     store.save_cases(cases)
+    suite_started = monotonic()
     target_metadata = asyncio.run(client.metadata())
     synthetic_principal = _synthetic_principal_label(settings)
     run_ids: list[str] = []
     for case in cases:
+        if monotonic() - suite_started >= budget.max_wall_clock_seconds:
+            run = _timeout_run(
+                case=case,
+                settings=settings,
+                run_mode=run_mode,
+                synthetic_principal=synthetic_principal,
+                target_metadata=target_metadata,
+            )
+            store.save_run(run)
+            store.save_trace(
+                AgentTraceEvent(
+                    run_id=run.run_id,
+                    agent_name="stop_policy",
+                    event_type="suite_timeout",
+                    message="Suite wall-clock budget exceeded before case execution",
+                )
+            )
+            run_ids.append(run.run_id)
+            break
         run = run_case_with_graph(
             case=case,
             target_mode=settings.target_mode,
@@ -108,6 +148,35 @@ def run_suite(
             )
         )
     return run_ids
+
+
+def _timeout_run(
+    *,
+    case: AttackCase,
+    settings: Settings,
+    run_mode: RunMode,
+    synthetic_principal: str | None,
+    target_metadata: dict[str, Any],
+) -> AttackRun:
+    return AttackRun(
+        case_id=case.case_id,
+        target_mode=settings.target_mode,
+        target_url=settings.target_url,
+        target_version=_target_version(target_metadata),
+        run_mode=run_mode,
+        completed_at=utc_now(),
+        stop_reason=StopReason.TIMEOUT,
+        synthetic_principal=synthetic_principal,
+        target_metadata=target_metadata,
+    )
+
+
+def _target_version(target_metadata: dict[str, Any]) -> str | None:
+    api_status = target_metadata.get("api_status")
+    if not isinstance(api_status, dict):
+        return None
+    version = api_status.get("version") or api_status.get("commit")
+    return str(version) if version else None
 
 
 def _synthetic_principal_label(settings: Settings) -> str | None:

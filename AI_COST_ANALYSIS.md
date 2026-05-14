@@ -151,12 +151,15 @@ Using the routed production mix above gives a more realistic target:
 
 The adversarial platform is designed to keep release-blocking checks mostly deterministic. Seed and regression runs use HTTP target execution plus deterministic Judge rules by default, so the expected metered AI cost is `$0.00` unless optional Red Team generation or advisory LLM judging is explicitly enabled.
 
+The current local adversarial verification is 67 deterministic pytest tests plus a 6-fixture Judge eval gate. These do not make provider calls. At scale, the relevant cost driver is optional model-assisted mutation/judging, not the default scanner path.
+
 The Week 3 runtime budget caps one adversarial case at:
 
 ```text
 max_provider_cost_usd_per_case = $0.25
 max_requests_per_case = 8
 max_variants_per_case = 3
+max_wall_clock_seconds = 300
 ```
 
 Worst-case optional LLM spend if every case hit the full `$0.25` cap:

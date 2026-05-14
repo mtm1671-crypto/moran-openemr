@@ -46,7 +46,7 @@ def test_case_schema_rejects_empty_input_sequence() -> None:
 
 
 def test_enums_lock_expected_values() -> None:
-    assert Severity.CRITICAL == "Critical"
-    assert ImpactDomain.AUTHORIZATION == "Authorization"
-    assert InjectionLayer.PROMPT_SIMULATION == "prompt_simulation"
-    assert Verdict.INCONCLUSIVE == "inconclusive"
+    assert Severity.CRITICAL.value == "Critical"
+    assert ImpactDomain.AUTHORIZATION.value == "Authorization"
+    assert InjectionLayer.PROMPT_SIMULATION.value == "prompt_simulation"
+    assert Verdict.INCONCLUSIVE.value == "inconclusive"

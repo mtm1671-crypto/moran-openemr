@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     sqlite_path: Path = Path(".data/week3_runs.sqlite")
     private_sqlite_path: Path = Path(".data/private_findings.sqlite")
     operator_token: SecretStr | None = None
+    operator_auth_required: bool = False
     operator_session_secret: SecretStr | None = None
     operator_session_ttl_seconds: int = Field(default=28_800, ge=300, le=86_400)
     operator_cookie_secure: bool = True
@@ -67,6 +69,7 @@ class Settings(BaseSettings):
             "/sitemap.xml",
         ]
     )
+    site_scan_expected_denied_paths: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     @field_validator("allowed_hosts", mode="before")
     @classmethod
@@ -78,6 +81,13 @@ class Settings(BaseSettings):
     @field_validator("site_scan_extra_paths", mode="before")
     @classmethod
     def parse_site_scan_extra_paths(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("site_scan_expected_denied_paths", mode="before")
+    @classmethod
+    def parse_site_scan_expected_denied_paths(cls, value: object) -> object:
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
@@ -107,6 +117,21 @@ class Settings(BaseSettings):
                 "synthetic clinician OAuth password-grant settings"
             )
 
+    def validate_operator_auth_ready(self) -> None:
+        if self.requires_operator_auth and self.operator_token is None:
+            raise ValueError(
+                "operator authentication is required for deployed operator service startup; "
+                "set ADVERSARIAL_OPERATOR_TOKEN"
+            )
+
+    @property
+    def requires_operator_auth(self) -> bool:
+        return (
+            self.operator_auth_required
+            or self.target_mode == TargetMode.DEPLOYED
+            or bool(os.getenv("RAILWAY_ENVIRONMENT"))
+        )
+
     @property
     def has_synthetic_clinician_auth(self) -> bool:
         if self.synthetic_clinician_token:
@@ -128,4 +153,5 @@ class Settings(BaseSettings):
 def load_settings() -> Settings:
     settings = Settings()
     settings.validate_ready_for_run()
+    settings.validate_operator_auth_ready()
     return settings

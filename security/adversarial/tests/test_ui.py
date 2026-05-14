@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
 from app.models import (
     AttackCase,
@@ -24,7 +25,7 @@ from app.run_store import RunStore
 from app.ui import _current_reports, _latest_verdict_by_case, create_app
 
 
-def test_ui_readyz_uses_sqlite(monkeypatch, tmp_path: Path) -> None:
+def test_ui_readyz_uses_sqlite(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     db_path = tmp_path / "runs.sqlite"
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(db_path))
     store = RunStore(db_path)
@@ -35,7 +36,7 @@ def test_ui_readyz_uses_sqlite(monkeypatch, tmp_path: Path) -> None:
     assert response.json()["ready"] is True
 
 
-def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_renders_no_runs(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     client = TestClient(create_app())
     response = client.get("/")
@@ -51,6 +52,7 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert "Default allowlisted demo scope" in response.text
     assert 'name="target_url"' in response.text
     assert 'name="scan_mode"' in response.text
+    assert 'value="b2b-baseline"' in response.text
     assert 'value="low-priv-authenticated"' in response.text
     assert "Client Scopes" in response.text
     assert "Scan Jobs" in response.text
@@ -58,7 +60,10 @@ def test_dashboard_renders_no_runs(monkeypatch, tmp_path: Path) -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
-def test_client_scope_admin_records_audit_with_bearer_auth(monkeypatch, tmp_path: Path) -> None:
+def test_client_scope_admin_records_audit_with_bearer_auth(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "runs.sqlite"
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(db_path))
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
@@ -80,7 +85,10 @@ def test_client_scope_admin_records_audit_with_bearer_auth(monkeypatch, tmp_path
     assert store.audit_events()[0]["action"] == "create_client"
 
 
-def test_client_report_export_includes_scope_findings(monkeypatch, tmp_path: Path) -> None:
+def test_client_report_export_includes_scope_findings(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "runs.sqlite"
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(db_path))
     store = RunStore(db_path)
@@ -125,7 +133,10 @@ def test_client_report_export_includes_scope_findings(monkeypatch, tmp_path: Pat
     assert payload["findings"][0]["finding_id"] == "sitefind_report"
 
 
-def test_operator_auth_blocks_dashboard_when_configured(monkeypatch, tmp_path: Path) -> None:
+def test_operator_auth_blocks_dashboard_when_configured(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
     client = TestClient(create_app())
@@ -137,7 +148,7 @@ def test_operator_auth_blocks_dashboard_when_configured(monkeypatch, tmp_path: P
     assert client.get("/readyz").status_code == 200
 
 
-def test_operator_auth_accepts_bearer_token(monkeypatch, tmp_path: Path) -> None:
+def test_operator_auth_accepts_bearer_token(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
     client = TestClient(create_app())
@@ -148,7 +159,7 @@ def test_operator_auth_accepts_bearer_token(monkeypatch, tmp_path: Path) -> None
     assert "AgentForge" in response.text
 
 
-def test_operator_login_sets_session_cookie(monkeypatch, tmp_path: Path) -> None:
+def test_operator_login_sets_session_cookie(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_COOKIE_SECURE", "false")
@@ -167,8 +178,20 @@ def test_operator_login_sets_session_cookie(monkeypatch, tmp_path: Path) -> None
     assert "Risk Posture" in dashboard.text
 
 
+def test_public_login_has_security_headers(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    client = TestClient(create_app())
+
+    response = client.get("/login")
+
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert "default-src 'self'" in response.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
 def test_dashboard_and_run_detail_expose_coverage_and_exports(
-    monkeypatch,
+    monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "runs.sqlite"
@@ -230,7 +253,7 @@ def test_dashboard_and_run_detail_expose_coverage_and_exports(
     assert "Week 3 Adversarial Run run_ui_1" in markdown_export.text
 
 
-def test_site_scan_rejects_out_of_scope_target(monkeypatch, tmp_path: Path) -> None:
+def test_site_scan_rejects_out_of_scope_target(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     monkeypatch.setenv("ADVERSARIAL_ALLOWED_HOSTS", "owned.example")
     client = TestClient(create_app())
@@ -284,7 +307,7 @@ def test_current_reports_ignores_superseded_failures() -> None:
     assert current == []
 
 
-def test_run_detail_missing_run_returns_404(monkeypatch, tmp_path: Path) -> None:
+def test_run_detail_missing_run_returns_404(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     client = TestClient(create_app())
     response = client.get("/runs/not-a-run")

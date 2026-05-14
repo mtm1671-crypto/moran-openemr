@@ -12,9 +12,15 @@ import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
-from .models import FindingStatus, ReportStatus, SiteScanFinding, VulnerabilityReport
+from .models import (
+    FindingStatus,
+    ObservedResponse,
+    ReportStatus,
+    SiteScanFinding,
+    VulnerabilityReport,
+)
 
-PRIVATE_SCHEMA_VERSION = "3"
+PRIVATE_SCHEMA_VERSION = "4"
 
 PRIVATE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -35,6 +41,13 @@ CREATE TABLE IF NOT EXISTS sensitive_site_scan_findings (
     scan_id TEXT NOT NULL,
     check_id TEXT NOT NULL,
     severity TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sensitive_observed_responses (
+    run_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
     payload_json TEXT NOT NULL
 );
 """
@@ -94,6 +107,28 @@ class SensitiveFindingStore:
                 ),
             )
 
+    def save_observation(
+        self,
+        run_id: str,
+        case_id: str,
+        observed: ObservedResponse,
+    ) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO sensitive_observed_responses
+                (run_id, case_id, status_code, payload_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    case_id,
+                    observed.status_code,
+                    observed.model_dump_json(),
+                ),
+            )
+
     def reports(self) -> list[dict[str, Any]]:
         self.initialize()
         with self.connect() as conn:
@@ -108,6 +143,24 @@ class SensitiveFindingStore:
             rows = conn.execute(
                 "SELECT payload_json FROM sensitive_site_scan_findings"
             ).fetchall()
+        return [_from_json(row["payload_json"]) for row in rows]
+
+    def observations(self, run_id: str | None = None) -> list[dict[str, Any]]:
+        self.initialize()
+        with self.connect() as conn:
+            if run_id:
+                rows = conn.execute(
+                    """
+                    SELECT payload_json
+                    FROM sensitive_observed_responses
+                    WHERE run_id = ?
+                    """,
+                    (run_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT payload_json FROM sensitive_observed_responses"
+                ).fetchall()
         return [_from_json(row["payload_json"]) for row in rows]
 
     def update_report_status(
@@ -217,6 +270,26 @@ def public_site_scan_finding_view(finding: SiteScanFinding) -> SiteScanFinding:
             "remediation": "Stored in private findings vault.",
             "sensitive_details_redacted": True,
             "private_storage_ref": f"private://site_scan_findings/{finding.finding_id}",
+        }
+    )
+
+
+def public_observation_view(observed: ObservedResponse) -> ObservedResponse:
+    """Return a dashboard/export-safe copy of raw target output."""
+
+    return observed.model_copy(
+        update={
+            "text": "Redacted from public operator storage.",
+            "citations": [],
+            "tool_outcome": (
+                "Redacted from public operator storage."
+                if observed.tool_outcome is not None
+                else None
+            ),
+            "black_box_metadata": {
+                "sensitive_details_redacted": True,
+                "private_storage_ref": "private://observed_responses/by-run",
+            },
         }
     )
 

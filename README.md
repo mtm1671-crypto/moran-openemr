@@ -25,18 +25,15 @@ Use the deployed OpenEMR demo clinician credentials from Railway variables. Do n
 | Final submission packet | [SUBMISSION.md](SUBMISSION.md) |
 | Forked OpenEMR repo with setup guide, architecture overview, and deployed link | This [README.md](README.md) |
 | Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
-| User document and use cases | [USER.md](USER.md) |
+| User document and use cases | [USERS.md](USERS.md) |
 | Agent architecture document with one-page summary | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Guided codebase walkthrough | [WALKTHROUGH.md](WALKTHROUGH.md) |
 | Patient dashboard migration defense | [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) |
 | Week 2 architecture design | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Week 3 threat model | [THREAT_MODEL.md](security/docs/THREAT_MODEL.md) |
-| Week 3 adversarial architecture | [W3_ARCHITECTURE.md](security/docs/W3_ARCHITECTURE.md) |
-| Week 3 system design | [W3_SYSTEM_DESIGN.md](security/docs/W3_SYSTEM_DESIGN.md) and [w3-adversarial-platform.png](security/docs/diagrams/w3-adversarial-platform.png) |
-| Web vulnerability scanner knowledge base | [WEB_VULNERABILITY_KNOWLEDGE_BASE.md](security/docs/WEB_VULNERABILITY_KNOWLEDGE_BASE.md) and [site_vulnerability_knowledge_base.json](security/adversarial/knowledge/site_vulnerability_knowledge_base.json) |
-| Final product plan | [FINAL_PRODUCT_PLAN.md](security/docs/FINAL_PRODUCT_PLAN.md) |
-| Week 3 readiness checklist | [WEEK3_SUBMISSION_CHECKLIST.md](security/docs/WEEK3_SUBMISSION_CHECKLIST.md) |
-| Week 3 vulnerability report register | [VULNERABILITY_REPORTS.md](security/docs/VULNERABILITY_REPORTS.md) |
+| Week 3 threat model | [THREAT_MODEL.md](THREAT_MODEL.md) |
+| Week 3 product spec | [WEEK3_PRODUCT_SPEC.md](security/docs/WEEK3_PRODUCT_SPEC.md) |
+| Week 3 evidence packet | [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
+| Web vulnerability scanner knowledge base | [site_vulnerability_knowledge_base.json](security/adversarial/knowledge/site_vulnerability_knowledge_base.json), summarized in [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
 | Early submission readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
 | Demo video plan and walkthrough checklist | [DEMO_PLAN.md](DEMO_PLAN.md) and [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
 | Eval dataset, test suite, and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
@@ -99,13 +96,13 @@ Week 3 adversarial platform status:
 - The deployed operator is live at https://adversarial-production.up.railway.app with persistent `/data` SQLite storage.
 - Synthetic clinician OAuth password-grant settings are configured through Railway secrets; tokens are minted at run time and accepted by the deployed Co-Pilot API.
 - The target harness runs authenticated black-box attacks against the Co-Pilot API and records observations, verdicts, traces, and reports in SQLite.
-- The latest deployed seed campaign covers 13 latest verdicts across the expanded Week 3 corpus. It currently shows 1 draft report for a seeded-note missing-citation finding; no official confirmed vulnerability report exists until deterministic replay or human review confirms it. JSON and Markdown exports are available from each run row in the operator UI.
+- The latest deployed seed campaign covers 13 latest verdicts across the expanded Week 3 corpus. Human review dismissed the seeded-note missing-citation draft as a target-fixture coverage gap, not a confirmed live vulnerability. JSON and Markdown exports are available from each run row in the operator UI.
 - Confirmed vulnerability reports are intentionally empty until a deterministic deployed failure or explicit human review supports them.
 
-Latest local verification, run on 2026-05-10:
+Latest local verification, run on 2026-05-14:
 
 ```text
-pytest: 192 passed, 6 skipped
+pytest: 204 passed
 ruff: all checks passed
 mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
@@ -114,14 +111,15 @@ web build: passed
 git diff --check: passed
 ```
 
-Latest Week 3 adversarial verification, run on 2026-05-13:
+Latest Week 3 adversarial verification, run on 2026-05-14:
 
 ```text
-adversarial pytest: 43 passed
+adversarial pytest: 68 passed
 adversarial ruff: all checks passed
-adversarial mypy: success
+adversarial mypy: success, no issues in 27 source files
+adversarial judge eval: 6 fixtures, 0 false positives, 0 false negatives
 deployed adversarial /readyz: 200
-deployed seed suite: 13 latest verdicts, 1 draft report, 0 confirmed reports
+deployed seed suite: 13 latest verdicts, seeded-note draft dismissed by human review, 0 confirmed AI-agent reports
 deployed UX smoke: loading state, risk posture, table scopes/captions, reduced-motion CSS, and 404 handling verified
 ```
 
@@ -478,7 +476,7 @@ The root README is the source of truth for final submission. The remaining Markd
 | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |
 | [WALKTHROUGH.md](WALKTHROUGH.md) | Learning guide for Co-Pilot files, request flows, data patterns, and debugging paths |
 | [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) | Surprise challenge defense for the Next.js patient dashboard migration |
-| [USER.md](USER.md) | Primary user, supporting users, use cases, and MVP non-goals |
+| [USERS.md](USERS.md) | Primary user, supporting users, use cases, MVP non-goals, and Week 3 operator workflows |
 | [MVP_STATUS.md](MVP_STATUS.md) | Historical MVP status and roadmap notes |
 | [EVAL_PLAN.md](EVAL_PLAN.md) | Eval and fixture plan |
 | [EVAL_DATASET.md](EVAL_DATASET.md) | Eval dataset, automated test coverage, and latest results |

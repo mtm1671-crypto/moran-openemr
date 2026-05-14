@@ -2,6 +2,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from pytest import MonkeyPatch
 
 from app.config import Settings
@@ -54,6 +55,260 @@ def test_low_priv_site_scanner_requires_configured_test_credential() -> None:
         scanner.scan("https://owned.example", mode=SiteScanMode.LOW_PRIV_AUTHENTICATED)
 
 
+def test_b2b_baseline_checks_common_unauthenticated_exposures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><a href='/admin'>Admin</a></html>",
+            )
+        if request.url.path == "/admin":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html>Admin console</html>",
+            )
+        return httpx.Response(404, request=request)
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_extra_paths=["/admin"],
+        site_scan_max_urls=4,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.B2B_BASELINE,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert scan.request_count >= 2
+    assert scan.target_metadata["bounded_path_probe_enabled"] is True
+    assert "authn.protected_route_public" in check_ids
+
+
+def test_b2b_baseline_flags_oauth_discovery_plaintext_endpoints() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth2/default/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "application/json"},
+                json={
+                    "issuer": "http://owned.example/oauth2/default",
+                    "authorization_endpoint": "http://owned.example/oauth2/default/authorize",
+                    "token_endpoint": "http://owned.example/oauth2/default/token",
+                    "jwks_uri": "https://owned.example/oauth2/default/jwk",
+                },
+            )
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_extra_paths=["/oauth2/default/.well-known/openid-configuration"],
+        site_scan_max_urls=3,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.B2B_BASELINE,
+    )
+
+    oauth_finding = next(finding for finding in findings if finding.check_id == "oauth.discovery_plaintext_urls")
+    assert oauth_finding.severity == Severity.HIGH
+    assert "token_endpoint" in oauth_finding.evidence
+
+
+def test_b2b_baseline_flags_https_to_http_redirects() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.scheme == "https" and request.url.path == "/portal":
+            return httpx.Response(
+                301,
+                request=request,
+                headers={"location": "http://owned.example/portal/"},
+            )
+        if request.url.scheme == "http" and request.url.path == "/portal/":
+            return httpx.Response(
+                301,
+                request=request,
+                headers={"location": "https://owned.example/portal/"},
+            )
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_extra_paths=["/portal"],
+        site_scan_max_urls=3,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.B2B_BASELINE,
+    )
+
+    assert "redirect.https_to_http" in {finding.check_id for finding in findings}
+
+
+def test_b2b_baseline_flags_public_dependency_manifest() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/vendor/composer/installed.json":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "application/json"},
+                json={"packages": [{"name": "example/package", "version": "1.2.3"}]},
+            )
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_extra_paths=["/vendor/composer/installed.json"],
+        site_scan_max_urls=3,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.B2B_BASELINE,
+    )
+
+    assert "exposure.dependency_manifest" in {finding.check_id for finding in findings}
+
+
+def test_low_priv_site_scanner_flags_mutating_forms_without_csrf() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><a href='/settings'>Settings</a></html>",
+            )
+        if request.url.path == "/settings":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<form method='post' action='/settings'><input name='name'></form>",
+            )
+        return httpx.Response(404, request=request)
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_cookie=SecretStr("session=low-priv"),
+        site_scan_extra_paths=["/settings"],
+        site_scan_max_urls=4,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert "csrf.form_1.token_missing" in check_ids
+    assert "authz.low_priv_route_access" in check_ids
+
+
+def test_low_priv_bearer_scan_does_not_require_csrf_tokens() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            headers={"content-type": "text/html"},
+            text="<form method='post' action='/settings'><input name='name'></form>",
+        )
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_bearer_token=SecretStr("low-priv-token"),
+        site_scan_extra_paths=["/settings"],
+        site_scan_max_urls=2,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert "csrf.form_1.token_missing" not in check_ids
+
+
+def test_low_priv_site_scanner_flags_expected_denied_path_access() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tenant-b/invoices/inv_123":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "application/json"},
+                json={"invoice_id": "inv_123", "tenant_id": "tenant-b"},
+            )
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_bearer_token=SecretStr("tenant-a-token"),
+        site_scan_expected_denied_paths=["/api/tenant-b/invoices/inv_123"],
+        site_scan_max_urls=4,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert scan.target_metadata["expected_denied_path_count"] == 1
+    assert "authz.expected_denied_path_accessible" in check_ids
+
+
+def test_low_priv_site_scanner_accepts_expected_denied_path_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tenant-b/invoices/inv_123":
+            return httpx.Response(403, request=request, json={"detail": "forbidden"})
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_bearer_token=SecretStr("tenant-a-token"),
+        site_scan_expected_denied_paths=["/api/tenant-b/invoices/inv_123"],
+        site_scan_max_urls=4,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert "authz.expected_denied_path_accessible" not in check_ids
+
+
+def test_low_priv_site_scanner_accepts_expected_denied_bad_request() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/admin/report":
+            return httpx.Response(400, request=request, text="Bad request")
+        return httpx.Response(200, request=request, headers={"content-type": "text/html"}, text="<html></html>")
+
+    settings = Settings(
+        allowed_hosts=["owned.example"],
+        site_scan_bearer_token=SecretStr("tenant-a-token"),
+        site_scan_expected_denied_paths=["/admin/report"],
+        site_scan_max_urls=4,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _scan, findings = PassiveSiteScanner(settings, client=client).scan(
+        "https://owned.example",
+        mode=SiteScanMode.LOW_PRIV_AUTHENTICATED,
+    )
+
+    check_ids = {finding.check_id for finding in findings}
+    assert "authz.expected_denied_path_accessible" not in check_ids
+
+
 def test_low_priv_site_scanner_checks_exposure_paths_without_leaking_secret_values() -> None:
     seen_auth_headers: list[str | None] = []
 
@@ -100,7 +355,7 @@ def test_low_priv_site_scanner_checks_exposure_paths_without_leaking_secret_valu
     client = httpx.Client(transport=transport)
     settings = Settings(
         allowed_hosts=["owned.example"],
-        site_scan_bearer_token="low-priv-token",
+        site_scan_bearer_token=SecretStr("low-priv-token"),
         site_scan_extra_paths=["/.env", "/admin"],
         site_scan_max_urls=8,
     )
@@ -133,7 +388,7 @@ def test_low_priv_site_scanner_honors_scope_limits_and_excluded_paths() -> None:
 
     settings = Settings(
         allowed_hosts=["owned.example"],
-        site_scan_bearer_token="low-priv-token",
+        site_scan_bearer_token=SecretStr("low-priv-token"),
         site_scan_extra_paths=["/robots.txt", "/admin"],
     )
     scope = AuthorizedScope(

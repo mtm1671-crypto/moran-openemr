@@ -50,8 +50,7 @@ Step 1 of the final-product roadmap has started in OpenEMR itself:
 
 - `PRESEARCH.md`: pre-code planning and constraints.
 - `AUDIT.md`: OpenEMR security, performance, architecture, data quality, and compliance audit.
-- `USERS.md`: target users, workflow, roles, use cases, and demo scenario.
-- `USER.md`: compatibility pointer to `USERS.md`.
+- `USERS.md`: target users, workflow, roles, use cases, demo scenario, and Week 3 operator workflows.
 - `ARCHITECTURE.md`: standalone technical architecture.
 - `MVP_AUTH_SCOPE.md`: tonight's local-demo auth scope and explicit production-auth exclusions.
 - `DEPLOYMENT_RUNBOOK.md`: local and Railway deployment plan.

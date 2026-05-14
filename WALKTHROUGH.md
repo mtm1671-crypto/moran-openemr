@@ -157,7 +157,7 @@ These files are not the main product UI, but they prove the system can be defend
 | `W2_ARCHITECTURE.md` | Week 2 production-shape design: document ingestion, worker graph, RAG, evals, observability, scaling risks. |
 | `AI_COST_ANALYSIS.md` | Dev spend, model-routing economics, cost projections at 100/1k/10k/100k users. |
 | `AUDIT.md` | OpenEMR audit notes and key findings. |
-| `USER.md` | Target user and use cases. |
+| `USERS.md` | Target users, use cases, and Week 3 operator workflows. |
 | `EVAL_DATASET.md` | Eval dataset scope and results. |
 | `DEMO_PLAN.md` | How to record or perform the live walkthrough. |
 | `PRODUCTION_DEMO_EVIDENCE.md` | Evidence checklist for proving the deployed flow works. |

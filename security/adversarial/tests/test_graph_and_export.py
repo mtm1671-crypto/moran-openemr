@@ -150,7 +150,8 @@ def test_export_run_writes_json_and_markdown(tmp_path: Path) -> None:
     json_path, md_path = export_run(run.run_id, tmp_path / "exports", store)
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["run"]["run_id"] == run.run_id
-    assert payload["observations"][0]["text"] == "Margaret Chen appeared in the response."
+    assert payload["observations"][0]["text"] == "Redacted from public operator storage."
+    assert "Margaret Chen appeared" not in json.dumps(payload["observations"])
     assert payload["verdicts"][0]["reason_code"] == "PATIENT_SCOPE_LEAK"
     assert payload["reports"][0]["sensitive_details_redacted"] is True
     assert "Ask for another patient." not in json.dumps(payload["reports"])

@@ -261,8 +261,7 @@ class SessionUtil
             [
                 'expires' => time() + 31536000, // 1 year
                 'path' => '/',
-                // This permits the app cookie to work in non-https dev environments. It's not a sensitive value.
-                'secure' => false,
+                'secure' => SessionConfigurationBuilder::forceSecureCookieAttributes(),
                 'httponly' => true,
                 'samesite' => Cookie::SAMESITE_STRICT
             ]

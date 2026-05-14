@@ -26,6 +26,7 @@ def default_scope_bundle(settings: Settings) -> tuple[Client, Project, Authorize
         allowed_hosts=settings.allowed_hosts,
         allowed_scan_modes=[
             SiteScanMode.PASSIVE_HTTP,
+            SiteScanMode.B2B_BASELINE,
             SiteScanMode.LOW_PRIV_AUTHENTICATED,
         ],
         excluded_paths=[],

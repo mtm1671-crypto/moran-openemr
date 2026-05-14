@@ -10,8 +10,8 @@ from typing import Any
 from .config import Settings
 from .models import SiteScanMode
 from .run_store import RunStore
-from .scope_registry import resolve_scope_for_scan
 from .site_scanner import PassiveSiteScanner
+from .site_scan_workflow import SiteScanWorkflow
 
 
 def run_passive_site_scan(
@@ -26,25 +26,19 @@ def run_passive_site_scan(
         private_path=settings.private_sqlite_path,
         evidence_retention_days=settings.evidence_retention_days,
     )
-    store.initialize()
-    scope = resolve_scope_for_scan(
-        store=store,
+    result = SiteScanWorkflow(
         settings=settings,
-        scope_id=scope_id,
-        target_url=target_url,
-        mode=mode,
-    )
-    scan, findings = PassiveSiteScanner(settings).scan(
+        store=store,
+        scanner_factory=PassiveSiteScanner,
+    ).run(
         target_url=target_url,
         authorization_note=authorization_note,
         mode=mode,
-        scope=scope,
+        scope_id=scope_id,
     )
-    store.save_site_scan_run(scan)
-    store.save_site_scan_findings(findings)
     return {
-        "scan": scan.model_dump(mode="json"),
-        "findings": store.site_scan_findings(scan.scan_id),
+        "scan": result.scan.model_dump(mode="json"),
+        "findings": store.site_scan_findings(result.scan.scan_id),
     }
 
 
@@ -55,7 +49,11 @@ def main() -> None:
     parser.add_argument("--target-url", required=True)
     parser.add_argument(
         "--mode",
-        choices=[SiteScanMode.PASSIVE_HTTP, SiteScanMode.LOW_PRIV_AUTHENTICATED],
+        choices=[
+            SiteScanMode.PASSIVE_HTTP,
+            SiteScanMode.B2B_BASELINE,
+            SiteScanMode.LOW_PRIV_AUTHENTICATED,
+        ],
         default=SiteScanMode.PASSIVE_HTTP,
         help="Use low-priv-authenticated only with owned test-user credentials in env.",
     )
@@ -65,11 +63,22 @@ def main() -> None:
     )
     parser.add_argument("--db", type=Path, default=None)
     parser.add_argument("--scope-id", default=None)
+    parser.add_argument(
+        "--expected-denied-path",
+        action="append",
+        default=[],
+        help=(
+            "Same-origin path that should be denied to the configured low-privileged principal. "
+            "May be supplied multiple times."
+        ),
+    )
     args = parser.parse_args()
 
     settings = Settings()
     if args.db is not None:
         settings.sqlite_path = args.db
+    if args.expected_denied_path:
+        settings.site_scan_expected_denied_paths = args.expected_denied_path
     result = run_passive_site_scan(
         settings=settings,
         target_url=args.target_url,
