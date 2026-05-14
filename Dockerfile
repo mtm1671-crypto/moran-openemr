@@ -26,6 +26,15 @@ ENV AGENTFORGE_SECURE_COOKIES=true
 # Mark the deployed image as the AgentForge fork build.
 RUN mkdir -p /var/www/localhost/htdocs/openemr/interface/agentforge
 
+RUN printf '%s\n' \
+    '<Directory "/var/www/localhost/htdocs/openemr/vendor">' \
+    '    Require all denied' \
+    '</Directory>' \
+    '<FilesMatch "^(composer\.(json|lock)|package(-lock)?\.json|yarn\.lock)$">' \
+    '    Require all denied' \
+    '</FilesMatch>' \
+    > /etc/apache2/conf.d/agentforge-private-files.conf
+
 RUN rm -f \
     /var/www/localhost/htdocs/openemr/composer.lock \
     /var/www/localhost/htdocs/openemr/package-lock.json \
@@ -50,6 +59,8 @@ COPY interface/patient_tracker/patient_tracker.php \
      /var/www/localhost/htdocs/openemr/interface/patient_tracker/patient_tracker.php
 COPY library/globals.inc.php \
      /var/www/localhost/htdocs/openemr/library/globals.inc.php
+COPY src/BC/FallbackRouter.php \
+     /var/www/localhost/htdocs/openemr/src/BC/FallbackRouter.php
 COPY apis/routes/_rest_routes_fhir_r4_us_core_3_1_0.inc.php \
      /var/www/localhost/htdocs/openemr/apis/routes/_rest_routes_fhir_r4_us_core_3_1_0.inc.php
 COPY src/RestControllers/FHIR/FhirGenericRestController.php \

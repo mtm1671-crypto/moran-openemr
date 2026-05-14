@@ -229,6 +229,7 @@ readonly class FallbackRouter
             str_ends_with($rootRelative, '/composer.lock') => false,
             str_ends_with($rootRelative, '/package.json') => false,
             str_ends_with($rootRelative, '/package-lock.json') => false,
+            str_ends_with($rootRelative, '/yarn.lock') => false,
             // Other non-executable content
             str_ends_with($rootRelative, '.inc') => false,
             str_ends_with($rootRelative, '.inc.php') => false,

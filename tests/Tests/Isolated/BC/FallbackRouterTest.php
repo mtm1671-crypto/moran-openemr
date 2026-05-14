@@ -83,6 +83,8 @@ class FallbackRouterTest extends TestCase
             'package.json' => ['/package.json'],
             'package-lock.json' => ['/package-lock.json'],
             'nested package.json' => ['/ccdaservice/package.json'],
+            'yarn.lock' => ['/yarn.lock'],
+            'nested yarn.lock' => ['/public/assets/yarn.lock'],
 
             // sites documents (sites/*/documents/.htaccess: Deny From All)
             'sites documents htaccess' => ['/sites/default/documents/.htaccess'],

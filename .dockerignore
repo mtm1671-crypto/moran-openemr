@@ -29,6 +29,8 @@
 !library/
 !library/globals.inc.php
 !src/
+!src/BC/
+!src/BC/FallbackRouter.php
 !src/Common/
 !src/Common/Session/
 !src/Common/Session/SessionConfigurationBuilder.php
