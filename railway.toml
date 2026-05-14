@@ -14,9 +14,10 @@ restartPolicyMaxRetries = 3
 # OpenEMR's first boot runs `setup.php` against the empty database and
 # compiles frontend assets. On Railway's smaller builders this can take
 # longer than the normal five-minute window, so keep the healthcheck
-# intentionally generous.
+# intentionally generous. Observed Railway cold starts can cross fifteen
+# minutes while the OpenEMR flex image configures the database.
 # Treat the FHIR metadata route as the deploy readiness signal. The generic
 # OpenEMR health route can report setup_required during container bootstrap even
 # after the FHIR API is already serving requests.
 healthcheckPath = "/apis/default/fhir/metadata"
-healthcheckTimeout = 900
+healthcheckTimeout = 1800
