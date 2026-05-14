@@ -33,6 +33,10 @@ RUN printf '%s\n' \
     '<FilesMatch "^(composer\.(json|lock)|package(-lock)?\.json|yarn\.lock)$">' \
     '    Require all denied' \
     '</FilesMatch>' \
+    '<IfModule mod_headers.c>' \
+    '    Header always set X-Content-Type-Options "nosniff"' \
+    '    Header always set Referrer-Policy "strict-origin-when-cross-origin"' \
+    '</IfModule>' \
     > /etc/apache2/conf.d/agentforge-private-files.conf
 
 RUN rm -f \
