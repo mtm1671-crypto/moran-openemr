@@ -59,12 +59,14 @@ Release-blocking verdicts must be supported by black-box evidence: HTTP status, 
 
 ## Current Highest-Risk Findings
 
-The latest OpenEMR Railway scans found confirmed web-surface issues documented in `security/docs/WEEK3_EVIDENCE_PACKET.md`:
+The 2026-05-13 OpenEMR Railway scans found confirmed web-surface issues documented in `security/docs/WEEK3_EVIDENCE_PACKET.md`:
 
 - OAuth/OpenID discovery advertises plaintext `http://` issuer and endpoint URLs.
 - OpenEMR session cookies are missing `Secure`; one session cookie is also missing `HttpOnly`.
 - Several HTTPS routes redirect first to plaintext `http://` URLs.
 - Composer dependency metadata is publicly readable.
+
+These four reports were remediated and retested on 2026-05-14. Final retest `sitescan_178030626aef` is down to one Info-only Railway edge `Server` header disclosure.
 
 ## Human Approval Gates
 

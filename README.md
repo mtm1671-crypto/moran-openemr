@@ -97,7 +97,7 @@ Week 3 adversarial platform status:
 - Synthetic clinician OAuth password-grant settings are configured through Railway secrets; tokens are minted at run time and accepted by the deployed Co-Pilot API.
 - The target harness runs authenticated black-box attacks against the Co-Pilot API and records observations, verdicts, traces, and reports in SQLite.
 - The latest deployed seed campaign covers 13 latest verdicts across the expanded Week 3 corpus. Human review dismissed the seeded-note missing-citation draft as a target-fixture coverage gap, not a confirmed live vulnerability. JSON and Markdown exports are available from each run row in the operator UI.
-- Confirmed vulnerability reports are intentionally empty until a deterministic deployed failure or explicit human review supports them.
+- No AI-agent jailbreak or clinical-safety failure is currently confirmed from the synthetic seed campaign. The platform did confirm four OpenEMR web-surface findings against the owned Railway target, then remediated and retested them; final retest `sitescan_178030626aef` is down to one Info-only Railway edge `Server` header disclosure.
 
 Latest local verification, run on 2026-05-14:
 
@@ -123,13 +123,20 @@ deployed seed suite: 13 latest verdicts, seeded-note draft dismissed by human re
 deployed UX smoke: loading state, risk posture, table scopes/captions, reduced-motion CSS, and 404 handling verified
 ```
 
-Latest deployed smoke checks, recorded after the 2026-05-10 Railway redeploy:
+Latest deployed smoke checks, recorded after the 2026-05-14 Railway redeploy:
 
 ```text
 production /readyz: ok
 openrouter_configured: true
 pgvector_backend: true
-OpenEMR login: 302 to login page
+OpenEMR final deploy 545a54f5-dc23-45bb-8e59-a15c1745f471: SUCCESS
+OpenEMR /: 200 after redirect to login page
+OpenEMR FHIR metadata: 200
+OpenEMR SMART/OIDC discovery URLs: all HTTPS
+OpenEMR dependency manifests: 403 for vendor/composer/installed.json, composer.lock, package-lock.json, yarn.lock
+OpenEMR login cookies: Secure, HttpOnly, SameSite
+OpenEMR security headers: HSTS, CSP frame-ancestors, X-Frame-Options, X-Content-Type-Options nosniff, Referrer-Policy
+OpenEMR final B2B retest sitescan_178030626aef: 20 requests, 1 Info finding for Railway edge Server header
 Co-Pilot web /: 200
 profile roster returns UUID-backed Margaret, James, Sofia, Robert, and Demo Patient
 bearer document upload/review/evidence/chat: passed

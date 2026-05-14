@@ -18,11 +18,12 @@ Latest submitted code:
 
 ```text
 Branch: master
-Final code/docs summary: Prepare final adversarial submission
-Use the repository HEAD after the final push as the submitted commit.
+Submitted repo commit: repository HEAD after final push
+Runtime OpenEMR deploy commit: d9343e3d9
+Final code/docs summary: final adversarial submission plus OpenEMR web-surface remediations
 ```
 
-Current final-submission working tree includes Week 2 hardening, consolidated Week 3 reviewer docs, adversarial operator fail-closed auth, redacted public evidence/private raw evidence storage, suite prioritization and timeout handling, expanded B2B web-surface scanning, and OpenEMR Railway image remediations for HTTPS metadata, cookie attributes, HTTPS redirects, and public dependency metadata.
+Current final-submission working tree includes Week 2 hardening, consolidated Week 3 reviewer docs, adversarial operator fail-closed auth, redacted public evidence/private raw evidence storage, suite prioritization and timeout handling, expanded B2B web-surface scanning, and OpenEMR Railway image remediations for HTTPS metadata, cookie attributes, HTTPS redirects, public dependency metadata, browser hardening headers, and the longer Railway healthcheck window needed by OpenEMR cold starts.
 
 ## Required Artifacts
 
@@ -90,10 +91,15 @@ Co-Pilot API patient/guideline bundle separation in live chat: passed
 Co-Pilot API profile roster returns OpenEMR UUIDs for Margaret, James, Sofia, Robert, and Demo Patient
 Co-Pilot API document bbox/citation/source roundtrip: passed
 Co-Pilot API demo-bearer write reaches OpenEMR and returns 401 re-authorization instead of demo-profile block
-OpenEMR /: 302 to login page
-OpenEMR B2B baseline scan sitescan_555803f0b9b8: 50 requests, 11 findings, highest High
-OpenEMR low-priv synthetic clinician scan sitescan_f8170e67d875: 40 requests, 8 findings, highest High
-Confirmed OpenEMR reports: OAuth plaintext discovery URLs, insecure session-cookie attributes, HTTPS-to-HTTP redirects, public Composer dependency metadata
+OpenEMR final deploy 545a54f5-dc23-45bb-8e59-a15c1745f471: SUCCESS
+OpenEMR /: 200 after redirect to login page
+OpenEMR /apis/default/fhir/metadata: 200
+OpenEMR SMART and OIDC discovery issuer/JWKS/authorization/token/introspection URLs: all HTTPS
+OpenEMR dependency manifests vendor/composer/installed.json, composer.lock, package-lock.json, yarn.lock: 403
+OpenEMR login cookies: Secure, HttpOnly, SameSite
+OpenEMR root security headers: HSTS, CSP frame-ancestors, X-Frame-Options, X-Content-Type-Options nosniff, Referrer-Policy
+OpenEMR final B2B retest sitescan_178030626aef: 20 requests, 1 finding, highest Info
+Resolved OpenEMR reports: OAuth plaintext discovery URLs, insecure session-cookie attributes, HTTPS-to-HTTP redirects, public Composer dependency metadata
 Co-Pilot web /: 200
 Co-Pilot web document panel markup: present
 ```
@@ -119,7 +125,7 @@ Record or verify these in the final video with audible narration:
 15. Upload a synthetic lab text file.
 16. Click `Extract`, `Approve all`, and `Write labs`; show the write result. If SMART write scope is missing, show the explicit re-authorization/write-scope failure.
 17. Open the adversarial operator or `security/docs/WEEK3_EVIDENCE_PACKET.md`.
-18. Show the four confirmed OpenEMR web-surface vulnerability reports and the two scan ids.
+18. Show the four resolved OpenEMR web-surface vulnerability reports, the original scan ids, and final retest `sitescan_178030626aef`.
 19. Close with the multi-agent architecture: Red Team, Judge, Orchestrator, Documentation Agent, regression harness, and observability.
 
 Suggested synthetic intake file:

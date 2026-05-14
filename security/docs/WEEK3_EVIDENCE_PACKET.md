@@ -63,18 +63,26 @@ Latest deployed campaign evidence recorded in the operator:
 
 The latest deployed Co-Pilot adversarial seed campaign has no confirmed AI-agent failure in the synthetic chat/document workflow. Human review on 2026-05-14 dismissed the seeded-note `MISSING_CITATION` draft as a target-fixture coverage gap rather than a confirmed vulnerability: the current target setup does not prove the seeded note was present in the live ingestion path for that run.
 
-## Confirmed OpenEMR Web-Surface Reports
+## OpenEMR Web-Surface Reports
 
 The OpenEMR Railway web-surface scans on 2026-05-13 confirmed four non-destructive, reproducible findings against the owned target:
 
-| ID | Severity / Domain | Status | Summary | Source Scan IDs |
+| ID | Severity / Domain | Status | Summary | Source / Retest Scan IDs |
 |---|---|---|---|---|
-| `AF-W3-OEMR-001` | `High / Authorization` | `confirmed` | OAuth/OpenID discovery advertises plaintext `http://` issuer and endpoint URLs. | `sitescan_555803f0b9b8`, `sitescan_f8170e67d875` |
-| `AF-W3-OEMR-002` | `Medium / Authorization` | `confirmed` | OpenEMR session cookies miss expected `Secure` and/or `HttpOnly` attributes. | `sitescan_555803f0b9b8`, `sitescan_f8170e67d875` |
-| `AF-W3-OEMR-003` | `Medium / Authorization` | `confirmed` | Several HTTPS routes redirect first to plaintext `http://` URLs. | `sitescan_555803f0b9b8` |
-| `AF-W3-OEMR-004` | `Medium / Reputation` | `confirmed` | Public Composer dependency inventory is readable at `vendor/composer/installed.json`. | `sitescan_555803f0b9b8`, `sitescan_f8170e67d875` |
+| `AF-W3-OEMR-001` | `High / Authorization` | `resolved` | OAuth/OpenID discovery advertised plaintext `http://` issuer and endpoint URLs. | Source: `sitescan_555803f0b9b8`, `sitescan_f8170e67d875`; retest: `sitescan_178030626aef` |
+| `AF-W3-OEMR-002` | `Medium / Authorization` | `resolved` | OpenEMR session cookies missed expected `Secure` and/or `HttpOnly` attributes. | Source: `sitescan_555803f0b9b8`, `sitescan_f8170e67d875`; retest: `sitescan_178030626aef` |
+| `AF-W3-OEMR-003` | `Medium / Authorization` | `resolved` | Several HTTPS routes redirected first to plaintext `http://` URLs. | Source: `sitescan_555803f0b9b8`; retest: `sitescan_178030626aef` |
+| `AF-W3-OEMR-004` | `Medium / Reputation` | `resolved` | Public Composer dependency inventory was readable at `vendor/composer/installed.json`. | Source: `sitescan_555803f0b9b8`, `sitescan_f8170e67d875`; retest: `sitescan_178030626aef` |
 
-Remediation has been implemented in the OpenEMR Railway image overlay for public URL/HTTPS normalization, secure cookie attributes, HTTPS redirect consistency, and public package-manifest removal. Fix validation is pending the post-redeploy `b2b-baseline` and low-privileged authenticated scans.
+Remediation was implemented in the OpenEMR Railway image overlay for public URL/HTTPS normalization, secure cookie attributes, HTTPS redirect consistency, public package-manifest access controls, browser hardening headers, and a longer Railway healthcheck window. Final successful OpenEMR deployment: `545a54f5-dc23-45bb-8e59-a15c1745f471`.
+
+Manual retest on 2026-05-14 confirmed:
+
+- SMART configuration and OIDC discovery issuer/JWKS/authorization/token/introspection URLs all use `https://openemr-production-f5ed.up.railway.app`.
+- `vendor/composer/installed.json`, `composer.lock`, `package-lock.json`, and `yarn.lock` return `403`.
+- Login cookies include `Secure`, `HttpOnly`, and `SameSite`.
+- Root login response includes HSTS, `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`.
+- Final bounded B2B baseline retest `sitescan_178030626aef` completed 20 requests with one Info-only residual finding for the Railway edge `Server` header.
 
 ## Scan Evidence
 
@@ -82,6 +90,8 @@ Remediation has been implemented in the OpenEMR Railway image overlay for public
 |---|---|---:|---:|---|
 | `sitescan_555803f0b9b8` | unauthenticated B2B baseline | 50 | 11 | `High` |
 | `sitescan_f8170e67d875` | synthetic clinician low-privileged | 40 | 8 | `High` |
+| `sitescan_eb5d68c2f968` | post-remediation B2B baseline before header hardening | 20 | 3 | `Low` |
+| `sitescan_178030626aef` | final post-remediation B2B baseline | 20 | 1 | `Info` |
 
 The scanner used same-origin, safe request patterns against the owned Railway OpenEMR target. Credentials and session values were not printed in reports.
 
@@ -127,6 +137,7 @@ Ready now:
 - Public/private evidence split.
 - Evidence retention timestamps.
 - Report and finding status workflow.
+- OpenEMR public URL/HTTPS normalization, secure cookie enforcement, dependency-manifest access controls, and final scanner retest evidence.
 
 Still needed before broader client/team use:
 
@@ -147,7 +158,7 @@ Still needed before broader client/team use:
 7. Ask `What medication changes should I make?` and show refusal.
 8. Switch to the adversarial operator dashboard.
 9. Show expanded Week 3 campaign coverage.
-10. Explain the four confirmed OpenEMR web-surface findings and the two scan ids.
+10. Explain the four resolved OpenEMR web-surface findings, the original scan ids, and final retest scan `sitescan_178030626aef`.
 11. Close with the architecture: Orchestrator, Red Team, Target Runner, Judge, Documentation Agent, Regression Store, Stop Policy, and observability.
 
 Mention local verification: `68 passed`, Ruff passed, mypy passed, and Judge eval passed.
@@ -156,7 +167,7 @@ Mention local verification: `68 passed`, Ruff passed, mypy passed, and Judge eva
 
 Built AgentForge into a deployed OpenEMR-connected Clinical Co-Pilot with source-backed chart answers, SMART/OAuth launch, patient-scoped retrieval, document evidence workflow, and a separate adversarial security platform.
 
-The security platform runs bounded synthetic attacks against owned targets, prioritizes open failures and coverage gaps, records verdicts/traces/exports, and produced confirmed OpenEMR web-surface findings from safe Railway scans.
+The security platform runs bounded synthetic attacks against owned targets, prioritizes open failures and coverage gaps, records verdicts/traces/exports, and produced confirmed OpenEMR web-surface findings from safe Railway scans that were remediated and retested.
 
 Synthetic data only. Next step: remediate, replay, and keep the adversarial suite as a regression gate before real-world exposure.
 
@@ -166,4 +177,4 @@ Synthetic data only. Next step: remediate, replay, and keep the adversarial suit
 - Add target fixture setup for uploaded-document and seeded-note cases before treating those as full ingestion-path attacks.
 - Add CI regression execution.
 - Add named-user SSO/OIDC.
-- Retest the four remediated OpenEMR web-surface findings after Railway redeploy.
+- Decide whether to accept or further mask the residual Info-only Railway edge `Server` header disclosure.
