@@ -114,7 +114,7 @@ git diff --check: passed
 Latest Week 3 adversarial verification, run on 2026-05-14:
 
 ```text
-adversarial pytest: 69 passed
+adversarial pytest: 71 passed
 adversarial ruff: all checks passed
 adversarial mypy: success, no issues in 27 source files
 adversarial judge eval: 6 fixtures, 0 false positives, 0 false negatives

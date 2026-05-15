@@ -38,6 +38,7 @@ from .run_store import RunStore
 from .run_week3_eval import run_suite
 from .scope_registry import ensure_default_scope
 from .site_scan_workflow import SiteScanWorkflow, SiteScanWorkflowError
+from .synthetic_auth import SyntheticAuthError
 
 OPERATOR_SESSION_COOKIE = "agentforge_operator_session"
 
@@ -84,9 +85,7 @@ def create_app() -> FastAPI:
     ) -> Response:
         if _is_public_path(request.url.path) or _is_operator_authenticated(request, settings):
             return await call_next(request)
-        if request.method == "GET" and not request.url.path.endswith((".json", ".md")):
-            return RedirectResponse("/login", status_code=303)
-        return JSONResponse({"detail": "operator authentication required"}, status_code=401)
+        return RedirectResponse("/login", status_code=303)
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:
@@ -394,6 +393,28 @@ def create_app() -> FastAPI:
                 "suite",
                 suite,
                 metadata={"run_ids": run_ids},
+            )
+        except SyntheticAuthError as exc:
+            _record_audit(
+                store,
+                request,
+                AuditAction.RUN_SUITE,
+                "suite",
+                suite,
+                success=False,
+                metadata={"error": f"{type(exc).__name__}: target clinician auth failed"},
+            )
+            return HTMLResponse(
+                _page(
+                    "Target authentication failed",
+                    """
+                    <h1>Target authentication failed</h1>
+                    <p>The operator session is valid, but the synthetic clinician credentials for the deployed target were rejected.</p>
+                    <p>Refresh the synthetic OpenEMR test client/token in Railway, then run the suite again.</p>
+                    <p><a href="/">Back to dashboard</a></p>
+                    """,
+                ),
+                status_code=502,
             )
         except Exception as exc:
             _record_audit(

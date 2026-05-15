@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.run_store import RunStore
 from app.ui import _current_reports, _latest_verdict_by_case, create_app
+from app.synthetic_auth import SyntheticAuthError
 
 
 def test_ui_readyz_uses_sqlite(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -176,6 +177,20 @@ def test_operator_auth_blocks_dashboard_when_configured(
     assert client.get("/readyz").status_code == 200
 
 
+def test_operator_auth_redirects_mutating_routes_to_login(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
+    client = TestClient(create_app())
+
+    response = client.post("/runs/smoke", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
 def test_operator_auth_accepts_bearer_token(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
     monkeypatch.setenv("ADVERSARIAL_OPERATOR_TOKEN", "operator-test-token")
@@ -216,6 +231,24 @@ def test_public_login_has_security_headers(monkeypatch: MonkeyPatch, tmp_path: P
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert "default-src 'self'" in response.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_run_suite_synthetic_auth_error_is_operator_safe(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_run_suite(**kwargs: object) -> list[str]:
+        raise SyntheticAuthError("Client authentication failed")
+
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setattr("app.ui.run_suite", fake_run_suite)
+    client = TestClient(create_app())
+
+    response = client.post("/runs/smoke")
+
+    assert response.status_code == 502
+    assert "Target authentication failed" in response.text
+    assert "Client authentication failed" not in response.text
 
 
 def test_dashboard_and_run_detail_expose_coverage_and_exports(
