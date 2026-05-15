@@ -69,7 +69,7 @@ API tests: 204 passed
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
-Week 3 adversarial tests: 68 passed
+Week 3 adversarial tests: 69 passed
 Week 3 adversarial Ruff: all checks passed
 Week 3 adversarial mypy: success
 Web lint: passed

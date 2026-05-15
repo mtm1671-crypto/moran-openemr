@@ -14,6 +14,7 @@ from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .config import Settings
 from .export_run import build_run_export, render_run_markdown
@@ -380,7 +381,8 @@ def create_app() -> FastAPI:
             return HTMLResponse(_page("Invalid suite", "<h1>Invalid suite</h1>"), status_code=400)
         try:
             settings.validate_ready_for_run()
-            run_ids = run_suite(
+            run_ids = await run_in_threadpool(
+                run_suite,
                 settings=settings,
                 suite=suite,
                 run_mode=RunMode.REPORT_ONLY,

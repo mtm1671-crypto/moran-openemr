@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -58,6 +59,33 @@ def test_dashboard_renders_no_runs(monkeypatch: MonkeyPatch, tmp_path: Path) -> 
     assert "Scan Jobs" in response.text
     assert "Audit Log" in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_run_suite_form_executes_runner_outside_event_loop(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    called: dict[str, bool] = {}
+
+    def fake_run_suite(**kwargs: object) -> list[str]:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            called["outside_event_loop"] = True
+        else:  # pragma: no cover - failure path proves the regression returned.
+            raise AssertionError("run_suite executed on the FastAPI event loop")
+        assert kwargs["suite"] == "smoke"
+        return ["run_threaded_smoke"]
+
+    monkeypatch.setenv("ADVERSARIAL_SQLITE_PATH", str(tmp_path / "runs.sqlite"))
+    monkeypatch.setattr("app.ui.run_suite", fake_run_suite)
+    client = TestClient(create_app())
+
+    response = client.post("/runs/smoke", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/runs/run_threaded_smoke"
+    assert called == {"outside_event_loop": True}
 
 
 def test_client_scope_admin_records_audit_with_bearer_auth(

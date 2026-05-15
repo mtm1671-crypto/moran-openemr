@@ -19,7 +19,7 @@ This is the canonical reviewer packet for the Week 3 adversarial platform. It co
 Latest local checks run from `security/adversarial/`:
 
 ```text
-pytest: 68 passed
+pytest: 69 passed
 ruff check app tests: all checks passed
 mypy app: success, no issues in 27 source files
 run_judge_eval --enforce: 6 fixtures, 0 false positives, 0 false negatives, 0 critical/high false negatives
@@ -161,7 +161,7 @@ Still needed before broader client/team use:
 10. Explain the four resolved OpenEMR web-surface findings, the original scan ids, and final retest scan `sitescan_178030626aef`.
 11. Close with the architecture: Orchestrator, Red Team, Target Runner, Judge, Documentation Agent, Regression Store, Stop Policy, and observability.
 
-Mention local verification: `68 passed`, Ruff passed, mypy passed, and Judge eval passed.
+Mention local verification: `69 passed`, Ruff passed, mypy passed, and Judge eval passed.
 
 ## Social Post Draft
 
