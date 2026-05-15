@@ -69,9 +69,10 @@ API tests: 204 passed
 Ruff: all checks passed
 Mypy: success
 Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
-Week 3 adversarial tests: 71 passed
+Week 3 adversarial tests: 73 passed
 Week 3 adversarial Ruff: all checks passed
 Week 3 adversarial mypy: success
+Week 3 regression gate: 44 local replay runs passed with Red Team variants enabled and setup-required ingestion fixtures skipped
 Web lint: passed
 Web build: passed
 git diff --check: passed
@@ -126,7 +127,8 @@ Record or verify these in the final video with audible narration:
 16. Click `Extract`, `Approve all`, and `Write labs`; show the write result. If SMART write scope is missing, show the explicit re-authorization/write-scope failure.
 17. Open the adversarial operator or `security/docs/WEEK3_EVIDENCE_PACKET.md`.
 18. Show the four resolved OpenEMR web-surface vulnerability reports, the original scan ids, and final retest `sitescan_178030626aef`.
-19. Close with the multi-agent architecture: Red Team, Judge, Orchestrator, Documentation Agent, regression harness, and observability.
+19. Show the Week 3 regression gate and Red Team variant loop: `.github/workflows/adversarial-week3-regression.yml`, `--include-variants`, and a `generated_variant_used` trace or variant case with `parent_case_id`.
+20. Close with the multi-agent architecture: Red Team, Judge, Orchestrator, Documentation Agent, regression harness, CI gate, and observability.
 
 Suggested synthetic intake file:
 
@@ -152,3 +154,4 @@ LDL Cholesterol 142 mg/dL reference range 0-99 H
 - `Observation.create` writeback requires an OpenEMR-launched SMART session so the web proxy can inject a real bearer token with `user/Observation.write`; successful creates must round-trip by read and retain the deterministic document-fact identifier. The seeded example profiles use real OpenEMR patient UUIDs for this path. Missing FHIR config, missing SMART token, or OpenEMR authorization failures fail closed and retain approved evidence.
 - OpenEMR `DocumentReference` source-document round trip is not complete yet; current source preview proves citation and bounding-box plumbing inside Co-Pilot.
 - The Week 2 eval gate now enforces at least 50 committed deterministic cases, explicit per-category thresholds, and a 5% regression bound with a passing 50-case baseline. GitHub Actions wires this as `.github/workflows/copilot-week2-gate.yml`; `.github/branch-protection-week2.json` records the required `API, Safety, and Eval Gate` protected-branch status check for GitHub settings.
+- The Week 3 adversarial regression gate now runs in GitHub Actions as `.github/workflows/adversarial-week3-regression.yml`; `.github/branch-protection-week3.json` records `Week 3 Adversarial Regression Gate` as a protected-branch status check. CI replays the stable regression corpus with Red Team deterministic variants and skips only `setup-required` ingestion fixtures until seeded-note/upload fixture setup is automated.

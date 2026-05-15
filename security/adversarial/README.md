@@ -18,6 +18,7 @@ cd security\adversarial
 python -m app.run_week3_eval --target local --suite seed --report-only
 python -m app.run_week3_eval --target deployed --suite seed --report-only
 python -m app.run_week3_eval --target local --suite regression --enforce
+python -m app.run_week3_eval --target local --suite regression --enforce --include-variants --skip-tags setup-required
 python -m app.run_site_scan --target-url https://owned.example --scope-id scope_agentforge_demo --authorization-note "Owned test target"
 python -m app.run_site_scan --target-url https://owned.example --mode b2b-baseline --scope-id scope_agentforge_demo --authorization-note "Owned pre-launch target"
 python -m app.run_site_scan --target-url https://owned.example --mode low-priv-authenticated --expected-denied-path /api/tenant-b/invoices/inv_123 --scope-id scope_agentforge_demo --authorization-note "Owned tenant-isolation probe"
@@ -26,6 +27,14 @@ python -m uvicorn app.ui:create_app --factory --host 0.0.0.0 --port 8080
 ```
 
 `enforce` exits nonzero when a critical or high-severity deterministic failure is recorded. `report-only` always records evidence without failing the process.
+
+## Red Team Variants And CI Gate
+
+The Red Team agent can run bounded deterministic variants with `--include-variants`. For each approved seed or regression case, it emits up to `ADVERSARIAL_MAX_VARIANTS_PER_CASE` child cases with `parent_case_id`, `mutation_rationale`, and `generated-variant` tags, then the LangGraph trace records `generated_variant_used` when the child case is replayed.
+
+LLM mutation remains off by default intentionally. The release-blocking path is deterministic and reproducible; model-assisted mutation can be added later as an exploratory, report-only campaign.
+
+GitHub Actions wires the regression gate in `.github/workflows/adversarial-week3-regression.yml`. CI skips `setup-required` ingestion-path fixtures until target seeding is automated, and still runs the stable regression corpus with Red Team variants enabled. The required branch-protection context is recorded in `.github/branch-protection-week3.json` as `Week 3 Adversarial Regression Gate`.
 
 ## Deployed Operator
 

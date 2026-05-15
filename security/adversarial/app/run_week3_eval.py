@@ -53,6 +53,7 @@ def run_suite(
     run_mode: RunMode,
     case_root: Path | None = None,
     include_variants: bool = False,
+    skip_tags: set[str] | None = None,
 ) -> list[str]:
     settings.validate_ready_for_run()
     store = RunStore(settings.sqlite_path, private_path=settings.private_sqlite_path)
@@ -64,6 +65,7 @@ def run_suite(
             for regression in store.regression_cases()
             if regression.get("status") == "promoted"
         )
+    seed_cases = _filter_skipped_tags(seed_cases, skip_tags or set())
     bearer_token = asyncio.run(resolve_synthetic_clinician_token(settings))
     client = TargetClient(settings.target_url, bearer_token=bearer_token)
     budget = build_budget(settings)
@@ -150,6 +152,12 @@ def run_suite(
     return run_ids
 
 
+def _filter_skipped_tags(cases: list[AttackCase], skip_tags: set[str]) -> list[AttackCase]:
+    if not skip_tags:
+        return cases
+    return [case for case in cases if not skip_tags.intersection(case.tags)]
+
+
 def _timeout_run(
     *,
     case: AttackCase,
@@ -209,6 +217,11 @@ def main() -> None:
     mode.add_argument("--report-only", action="store_true")
     mode.add_argument("--enforce", action="store_true")
     parser.add_argument("--include-variants", action="store_true")
+    parser.add_argument(
+        "--skip-tags",
+        default="",
+        help="Comma-separated case tags to omit from this run, for example setup-required.",
+    )
     parser.add_argument("--db", type=Path, default=None)
     args = parser.parse_args()
 
@@ -224,6 +237,7 @@ def main() -> None:
         suite=args.suite,
         run_mode=run_mode,
         include_variants=args.include_variants,
+        skip_tags=_parse_skip_tags(args.skip_tags),
     )
     print(f"Week 3 adversarial suite complete: {len(run_ids)} run(s)")
     for run_id in run_ids:
@@ -234,6 +248,10 @@ def main() -> None:
         if blockers:
             print(f"enforce gate blocked: {len(blockers)} critical/high failure(s)")
             raise SystemExit(1)
+
+
+def _parse_skip_tags(raw_tags: str) -> set[str]:
+    return {tag.strip() for tag in raw_tags.split(",") if tag.strip()}
 
 
 if __name__ == "__main__":

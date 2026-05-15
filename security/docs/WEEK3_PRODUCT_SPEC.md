@@ -57,7 +57,7 @@ The current seed corpus covers:
 | Agent or Component | Role | Trust Level |
 |---|---|---|
 | Orchestrator | Prioritizes cases before execution using open failure and coverage signals. | Trusted control logic; does not judge target safety. |
-| Red Team | Uses approved seed cases and bounded variants. | Untrusted attack inputs; bounded by categories and budgets. |
+| Red Team | Uses approved seed cases and bounded deterministic variants with parent-case lineage and mutation rationale. | Untrusted attack inputs; bounded by categories and budgets. |
 | Target Runner | Sends black-box HTTP requests to the allowlisted target. | Trusted transport wrapper; target output remains untrusted. |
 | Judge | Applies deterministic safety checks to observed evidence. | Release-blocking only for deterministic rules. |
 | Documentation Agent | Drafts reports for non-pass verdicts. | Draft-only until human or replay confirmation. |
@@ -112,6 +112,8 @@ max_wall_clock_seconds = 300
 
 The current runner also records a suite timeout run with `StopReason.TIMEOUT` when wall-clock budget is exhausted before the next case executes.
 
+Variant replay is enabled with `--include-variants`. This expands each approved seed or promoted regression case by up to `max_variants_per_case` deterministic Red Team child cases. CI also supports `--skip-tags setup-required` so target-fixture-dependent ingestion cases remain visible in the corpus without making local replay flaky. LLM mutation is intentionally disabled in release-blocking runs so CI and local regression evidence remain reproducible.
+
 ## Acceptance Criteria
 
 - Deployed target URL is recorded in the submission packet.
@@ -121,10 +123,11 @@ The current runner also records a suite timeout run with `StopReason.TIMEOUT` wh
 - Operator UI shows run state, verdicts, traces, exports, coverage, findings, scans, and audit log.
 - Confirmed vulnerability reports include severity, healthcare impact domain, reproduction, observed vs expected behavior, remediation, status, and fix validation.
 - Local quality gates pass: pytest, Ruff, mypy, Judge eval, and `git diff --check`.
+- GitHub Actions runs the Week 3 regression replay gate against a local Co-Pilot target with Red Team variants enabled and setup-required ingestion cases excluded until their target fixtures are automated.
 
 ## Current Implementation Boundary
 
-The MVP is a bounded single-pass graph per case with suite-level prioritization. It is not yet a fully autonomous multi-round planner that redirects within a running graph based on low-signal results. Final-product work should add richer looping, target-version pinning for long-lived replay, CI regression execution, named-user SSO/OIDC, managed encrypted storage, and richer trend charts.
+The MVP is a bounded single-pass graph per case with suite-level prioritization and CI-backed regression replay. It is not yet a fully autonomous multi-round planner that redirects within a running graph based on low-signal results. Final-product work should add richer looping, target-version pinning for long-lived replay, named-user SSO/OIDC, managed encrypted storage, and richer trend charts.
 
 ## Current Source Map
 

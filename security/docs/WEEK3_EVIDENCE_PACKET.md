@@ -19,10 +19,11 @@ This is the canonical reviewer packet for the Week 3 adversarial platform. It co
 Latest local checks run from `security/adversarial/`:
 
 ```text
-pytest: 71 passed
+pytest: 73 passed
 ruff check app tests: all checks passed
 mypy app: success, no issues in 27 source files
 run_judge_eval --enforce: 6 fixtures, 0 false positives, 0 false negatives, 0 critical/high false negatives
+run_week3_eval --target local --suite regression --enforce --include-variants --skip-tags setup-required: 44 replay runs, passed
 git diff --check: passed
 ```
 
@@ -37,6 +38,8 @@ Railway variable check on 2026-05-14 confirmed `ADVERSARIAL_OPERATOR_TOKEN` is s
 - `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
 - `security/adversarial/evals/week3/cases/` contains the expanded seed corpus.
 - `security/adversarial/evals/week3/README.md` indexes raw seed cases and Judge fixtures.
+- `.github/workflows/adversarial-week3-regression.yml` runs the PR/push Week 3 regression gate against a local Co-Pilot target with Red Team variants enabled.
+- `.github/branch-protection-week3.json` records `Week 3 Adversarial Regression Gate` as a required protected-branch check alongside the Week 2 gate.
 - Authorized site scanning uses client/project/scope records seeded from `ADVERSARIAL_ALLOWED_HOSTS`.
 - Public exports redact raw target observations, reproduction details, passive scan evidence, and remediation specifics.
 - Private findings storage keeps raw observations, full report details, and scan evidence when configured.
@@ -144,7 +147,6 @@ Still needed before broader client/team use:
 - Named-user SSO/OIDC.
 - Managed encrypted storage and backup/restore checks for private findings.
 - Stronger deployment SLO monitoring and alerting.
-- CI regression execution.
 - Signed rules-of-engagement attachment workflow.
 
 ## Demo Script
@@ -158,10 +160,11 @@ Still needed before broader client/team use:
 7. Ask `What medication changes should I make?` and show refusal.
 8. Switch to the adversarial operator dashboard.
 9. Show expanded Week 3 campaign coverage.
-10. Explain the four resolved OpenEMR web-surface findings, the original scan ids, and final retest scan `sitescan_178030626aef`.
-11. Close with the architecture: Orchestrator, Red Team, Target Runner, Judge, Documentation Agent, Regression Store, Stop Policy, and observability.
+10. Show the Red Team variant trace or explain `--include-variants`: generated child cases retain `parent_case_id`, mutation rationale, and deterministic replay.
+11. Explain the four resolved OpenEMR web-surface findings, the original scan ids, and final retest scan `sitescan_178030626aef`.
+12. Close with the architecture: Orchestrator, Red Team, Target Runner, Judge, Documentation Agent, Regression Store, Stop Policy, CI regression gate, and observability.
 
-Mention local verification: `71 passed`, Ruff passed, mypy passed, and Judge eval passed.
+Mention local verification: `73 passed`, Ruff passed, mypy passed, Judge eval passed, and the local Week 3 regression replay ran 44 stable cases/variants in enforce mode.
 
 ## Social Post Draft
 
@@ -175,6 +178,5 @@ Synthetic data only. Next step: remediate, replay, and keep the adversarial suit
 
 - Paste the final uploaded demo video URL into `SUBMISSION.md`.
 - Add target fixture setup for uploaded-document and seeded-note cases before treating those as full ingestion-path attacks.
-- Add CI regression execution.
 - Add named-user SSO/OIDC.
 - Decide whether to accept or further mask the residual Info-only Railway edge `Server` header disclosure.

@@ -6,6 +6,7 @@ from app import run_week3_eval as eval_runner
 from app.config import Settings
 from app.models import (
     AttackCase,
+    AttackRun,
     AttackCategory,
     ImpactDomain,
     JudgeVerdict,
@@ -124,3 +125,99 @@ def test_run_suite_records_timeout_before_executing_next_case(
     assert len(run_ids) == 1
     run = RunStore(settings.sqlite_path).latest_runs()[0]
     assert run["stop_reason"] == StopReason.TIMEOUT
+
+
+def test_run_suite_executes_generated_variants_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case_root = tmp_path / "cases" / "cross_patient_phi"
+    case_root.mkdir(parents=True)
+    seed_case = _case("case_variant_1")
+    (case_root / "case.json").write_text(seed_case.model_dump_json(), encoding="utf-8")
+    executed_case_ids: list[str] = []
+
+    def fake_run_case_with_graph(**kwargs: object) -> AttackRun:
+        case = kwargs["case"]
+        assert isinstance(case, AttackCase)
+        store = kwargs["store"]
+        assert isinstance(store, RunStore)
+        executed_case_ids.append(case.case_id)
+        run = AttackRun(
+            case_id=case.case_id,
+            target_mode=TargetMode.LOCAL,
+            target_url="http://127.0.0.1:8001",
+            run_mode=RunMode.REPORT_ONLY,
+            stop_reason=StopReason.COMPLETED,
+        )
+        store.save_run(run)
+        return run
+
+    monkeypatch.setattr(eval_runner, "TargetClient", FakeTargetClient)
+    monkeypatch.setattr(eval_runner, "run_case_with_graph", fake_run_case_with_graph)
+    settings = Settings(
+        sqlite_path=tmp_path / "runs.sqlite",
+        max_variants_per_case=2,
+    )
+
+    run_ids = eval_runner.run_suite(
+        settings=settings,
+        suite="seed",
+        run_mode=RunMode.REPORT_ONLY,
+        case_root=tmp_path / "cases",
+        include_variants=True,
+    )
+
+    assert len(run_ids) == 3
+    assert executed_case_ids == [
+        "case_variant_1",
+        "case_variant_1__rt1",
+        "case_variant_1__rt2",
+    ]
+    stored_cases = RunStore(settings.sqlite_path).cases()
+    variant_cases = [case for case in stored_cases if case.get("parent_case_id") == seed_case.case_id]
+    assert {case["case_id"] for case in variant_cases} == {
+        "case_variant_1__rt1",
+        "case_variant_1__rt2",
+    }
+    assert all(case.get("mutation_rationale") for case in variant_cases)
+
+
+def test_run_suite_can_skip_setup_required_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case_root = tmp_path / "cases" / "cross_patient_phi"
+    case_root.mkdir(parents=True)
+    stable_case = _case("case_stable_1")
+    setup_case = _case("case_setup_1").model_copy(update={"tags": ["setup-required"]})
+    (case_root / "stable.json").write_text(stable_case.model_dump_json(), encoding="utf-8")
+    (case_root / "setup.json").write_text(setup_case.model_dump_json(), encoding="utf-8")
+    executed_case_ids: list[str] = []
+
+    def fake_run_case_with_graph(**kwargs: object) -> AttackRun:
+        case = kwargs["case"]
+        assert isinstance(case, AttackCase)
+        executed_case_ids.append(case.case_id)
+        return AttackRun(
+            case_id=case.case_id,
+            target_mode=TargetMode.LOCAL,
+            target_url="http://127.0.0.1:8001",
+            run_mode=RunMode.REPORT_ONLY,
+            stop_reason=StopReason.COMPLETED,
+        )
+
+    monkeypatch.setattr(eval_runner, "TargetClient", FakeTargetClient)
+    monkeypatch.setattr(eval_runner, "run_case_with_graph", fake_run_case_with_graph)
+    settings = Settings(sqlite_path=tmp_path / "runs.sqlite")
+
+    run_ids = eval_runner.run_suite(
+        settings=settings,
+        suite="seed",
+        run_mode=RunMode.REPORT_ONLY,
+        case_root=tmp_path / "cases",
+        skip_tags={"setup-required"},
+    )
+
+    assert len(run_ids) == 1
+    assert executed_case_ids == ["case_stable_1"]
