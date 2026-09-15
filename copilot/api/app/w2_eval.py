@@ -171,7 +171,7 @@ def summary_payload(summary: EvalSummary) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Week 2 deterministic eval gates.")
+    parser = argparse.ArgumentParser(description="Run Phase 2 deterministic eval gates.")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE_PATH)
     parser.add_argument("--output", type=Path, default=API_ROOT / "evals" / "w2_latest_results.jsonl")
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cases = load_golden_cases(args.cases)
     if not cases:
-        raise EvalGateFailed("No Week 2 eval cases were loaded")
+        raise EvalGateFailed("No Phase 2 eval cases were loaded")
     results = run_golden_cases(cases)
     summary = summarize_eval_results(results)
     write_case_results(args.output, results)
@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         enforce_strict_safety(summary)
         if not args.baseline.exists():
             raise EvalGateFailed(
-                f"Week 2 eval baseline is required when --enforce is used: {args.baseline}"
+                f"Phase 2 eval baseline is required when --enforce is used: {args.baseline}"
             )
         baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
         enforce_regression_thresholds(summary, baseline)
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         1 for result in results if all(result.rubric.get(key, False) for key in HARD_GATE_KEYS)
     )
     failed_cases = len(results) - passed_cases
-    print(f"Week 2 eval gate: {passed_cases} passed, {failed_cases} failed")
+    print(f"Phase 2 eval gate: {passed_cases} passed, {failed_cases} failed")
     print(json.dumps(summary_payload(summary), indent=2, sort_keys=True))
     return 0
 
@@ -250,7 +250,7 @@ def enforce_strict_safety(summary: EvalSummary) -> None:
 def enforce_minimum_case_count(summary: EvalSummary) -> None:
     if summary.total_cases < MIN_ENFORCED_CASES:
         raise EvalGateFailed(
-            f"Week 2 eval requires at least {MIN_ENFORCED_CASES} cases; "
+            f"Phase 2 eval requires at least {MIN_ENFORCED_CASES} cases; "
             f"loaded {summary.total_cases}"
         )
 
@@ -423,7 +423,7 @@ def _resolve_case_path(path: str) -> Path:
         return candidate
     resolved = REPO_ROOT / candidate
     if not resolved.is_file():
-        raise FileNotFoundError(f"Week 2 eval fixture was not found: {resolved}")
+        raise FileNotFoundError(f"Phase 2 eval fixture was not found: {resolved}")
     return resolved
 
 

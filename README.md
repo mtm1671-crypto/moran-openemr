@@ -1,10 +1,21 @@
-# AgentForge Clinical Co-Pilot
+# Moran OpenEMR
 
-AgentForge Clinical Co-Pilot is an OpenEMR-integrated clinical chart assistant. This repository is an OpenEMR fork plus a standalone Co-Pilot stack built with Next.js and FastAPI.
+A fork of [OpenEMR](https://github.com/openemr/openemr) that adds **AgentForge Clinical Co-Pilot**: a read-only, source-backed chart assistant that clinicians launch from inside OpenEMR, plus a document-evidence workflow and a separate adversarial security platform that continuously attacks the assistant to prove it stays inside its guardrails.
 
-The product goal is narrow and practical: a clinician launches Co-Pilot from OpenEMR, authenticates through SMART/OAuth, selects an authorized patient, asks chart questions, and receives concise source-backed answers with citations. The MVP is read-only and refuses treatment, diagnosis, medication-change, order, or care-plan recommendations.
+Everything in this repository runs on synthetic data. Do not point the demo model path at real PHI.
 
-This is a synthetic-data demo. Do not use the current OpenRouter demo model path with real PHI.
+## Why This Project Is Interesting
+
+Most "AI in the EHR" demos are a chat box bolted onto a FHIR endpoint. This fork treats the assistant as a regulated clinical system and builds the surrounding engineering to match:
+
+- **The EHR stays authoritative.** Patient identity, clinician identity, ACLs, and every FHIR resource remain inside OpenEMR. Co-Pilot authenticates through OpenEMR's own SMART/OAuth flow and validates bearer tokens against OpenEMR's JWKS. The model never sees a patient it is not authorized for and cannot choose one on its own.
+- **Every answer is verifiable.** The model only receives a selected-patient evidence bundle and must return citation IDs. A deterministic verifier rejects unknown citations, cross-patient citations, source URL mismatches, and any treatment, diagnosis, medication-change, order, or care-plan recommendation before the UI ever renders the answer. Source links re-read the live FHIR resource and re-check authorization on click.
+- **Documents become evidence, not just text.** Scanned lab reports and intake forms go through extraction with bounding-box citations, a side-by-side human review screen, and an explicit approval step. Only approved, high-confidence facts can be written back to OpenEMR, and that write path is idempotent with round-trip read verification.
+- **Safety is tested adversarially, on purpose.** `security/adversarial/` is a standalone FastAPI/LangGraph operator platform that runs authenticated black-box attacks against the deployed Co-Pilot API: cross-patient PHI probes, prompt injection (direct, indirect, multi-turn), identity hijacking, tool misuse, cost amplification, citation manipulation. Verdicts, traces, and reports are persisted and replayed as a CI regression gate.
+- **Cost and scale are designed in, not bolted on.** Structured questions are answered from verified FHIR objects without an LLM; simple summaries route to the cheapest eval-approved model; only broad note synthesis reaches a stronger model under strict token caps. Patient-scoped vector search uses hashed identifiers and encrypted payloads, and vector hits are re-hydrated from FHIR before they enter model context so stale index text never becomes the evidence of record.
+- **It is deployed and measurable.** The full stack (OpenEMR fork, Co-Pilot web, Co-Pilot API, adversarial operator) runs on Railway with readiness gates, a 50-case deterministic eval suite that fails CI on regression, security-header and dependency-manifest checks on the OpenEMR surface, and a recorded cost analysis.
+
+The thesis is simple: a clinical assistant is only useful if a clinician can trust it in the 90 seconds between rooms, and trust is an engineering property you can test.
 
 ## Live Demo
 
@@ -14,144 +25,99 @@ This is a synthetic-data demo. Do not use the current OpenRouter demo model path
 | Co-Pilot web | https://copilot-web-production.up.railway.app |
 | Co-Pilot API | https://copilot-api-production-9f84.up.railway.app |
 | API readiness | https://copilot-api-production-9f84.up.railway.app/readyz |
-| Week 3 adversarial operator | https://adversarial-production.up.railway.app |
+| Adversarial operator | https://adversarial-production.up.railway.app |
 
-Use the deployed OpenEMR demo clinician credentials from Railway variables. Do not commit credentials or API keys to the repo.
+Demo clinician credentials live in Railway variables. No credentials or API keys are committed to this repo.
 
-## Submission Artifacts
+A representative walkthrough: log in to OpenEMR, open the top-level `Co-Pilot` entry, complete the SMART authorization prompt, pick a seeded patient, ask *"What should I know before seeing this patient?"*, click through a citation to the source record, then ask *"What medication changes should I make?"* and watch the read-only refusal. From the same screen, `Open document workflow` uploads a synthetic lab or intake document and shows extraction, bounding-box source preview, approval, and the approved facts appearing as chat evidence.
 
-| Requirement | Artifact |
-|---|---|
-| Final submission packet | [SUBMISSION.md](SUBMISSION.md) |
-| Forked OpenEMR repo with setup guide, architecture overview, and deployed link | This [README.md](README.md) |
-| Audit document with one-page summary and findings | [AUDIT.md](AUDIT.md) |
-| User document and use cases | [USERS.md](USERS.md) |
-| Agent architecture document with one-page summary | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Guided codebase walkthrough | [WALKTHROUGH.md](WALKTHROUGH.md) |
-| Patient dashboard migration defense | [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) |
-| Week 2 architecture design | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Week 3 threat model | [THREAT_MODEL.md](THREAT_MODEL.md) |
-| Week 3 product spec | [WEEK3_PRODUCT_SPEC.md](security/docs/WEEK3_PRODUCT_SPEC.md) |
-| Week 3 evidence packet | [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
-| Web vulnerability scanner knowledge base | [site_vulnerability_knowledge_base.json](security/adversarial/knowledge/site_vulnerability_knowledge_base.json), summarized in [WEEK3_EVIDENCE_PACKET.md](security/docs/WEEK3_EVIDENCE_PACKET.md) |
-| Early submission readiness checklist | [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) |
-| Demo video plan and walkthrough checklist | [DEMO_PLAN.md](DEMO_PLAN.md) and [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) |
-| Eval dataset, test suite, and results | [EVAL_DATASET.md](EVAL_DATASET.md) |
-| AI cost analysis | [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) |
+Live working/limited/blocked capability status is available in the web app at `/status`.
 
-## What To Show In Final Submission
-
-The final walkthrough should prove the complete product path, not just a standalone chat screen.
-
-1. Open deployed OpenEMR.
-2. Log in as the demo clinician.
-3. Launch the top-level `Co-Pilot` entry.
-4. Complete the OpenEMR SMART/OAuth authorization flow if prompted.
-5. Confirm Co-Pilot shows an authenticated clinician session.
-6. Select a seeded patient from the top patient dropdown.
-7. Ask a broad chart question.
-8. Ask an unstructured-note question.
-9. Click citations/source links.
-10. Ask a treatment recommendation question and show the read-only refusal.
-11. Click `Open document workflow` and upload a synthetic intake/lab document.
-12. Show extraction, bounding-box source preview, approval, and approved document evidence in chat.
-
-Recommended demo prompts:
+## What The Fork Adds To OpenEMR
 
 ```text
-What should I know before seeing this patient?
-Summarize recent clinical notes for this patient.
-What adherence or social barriers are documented?
-Show current medications and allergies.
-What medication changes should I make?
-What social barriers are documented?
+interface/agentforge/copilot.php      OpenEMR -> Co-Pilot launch bridge (SMART iss/aud/launch context)
+interface/main/tabs/menu/...          Top-level and patient-context Co-Pilot menu entries
+library/globals.inc.php               Co-Pilot URL connector setting
+src/Services/Globals/...              Connector enum entries
+Dockerfile, railway.toml              Hardened Railway deployment of the fork
+
+copilot/
+  api/       FastAPI: auth, FHIR retrieval, vector search, chat, provider adapters, verifier,
+             document ingestion/extraction/review/write, eval gate
+  web/       Next.js: SMART auth, encrypted session cookie, same-origin API proxy,
+             patient selector, chat + citation UI, document review, /dashboard
+  worker/    ETL, prefetch, reindex, and embedding jobs
+  scripts/   Demo seeding, readiness checks, deployment helpers
+
+security/
+  adversarial/   Operator platform: attack corpus, target harness, judge, reports, UI
+  docs/          Product spec and evidence packet for the adversarial platform
 ```
 
-## Current Status
+The upstream OpenEMR tree is otherwise intact, including its own documentation ([DOCKER_README.md](DOCKER_README.md), [FHIR_README.md](FHIR_README.md), [API_README.md](API_README.md), [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-Live working/limited/blocked capability visibility is available in the web app at `/status`
-or from the `System status` link in the Co-Pilot header.
+## How A Question Is Answered
 
-Working in the deployed demo:
+```text
+Clinician browser
+  -> OpenEMR (Railway)
+  -> Co-Pilot bridge with SMART iss/aud/launch context
+  -> Co-Pilot web /api/auth/start
+  -> OpenEMR OAuth login and scope consent
+  -> Co-Pilot web /api/auth/callback -> encrypted HttpOnly copilot_session cookie
+  -> Co-Pilot same-origin /api/* proxy injects the bearer token
+  -> FastAPI validates the OpenEMR bearer token against JWKS
+  -> patient-scoped OpenEMR FHIR reads
+  -> selected-patient vector index/search in Postgres (encrypted payloads, hashed refs)
+  -> vector hits re-hydrated from live FHIR
+  -> LLM provider adapter (schema-declared tools, bounded loop)
+  -> verifier: citations, patient scope, source URLs, read-only policy
+  -> UI renders the verified answer, trace, and source links
+```
 
-- OpenEMR runs on Railway.
-- OpenEMR contains top-level and patient-context Co-Pilot launch points.
-- Co-Pilot web runs on Railway.
-- Co-Pilot API runs on Railway.
-- SMART/OAuth login and callback are wired through the web service.
-- The web service stores the OpenEMR bearer token in an encrypted HttpOnly session cookie.
-- Same-origin `/api/*` proxy requests inject the bearer token into API calls.
-- FastAPI validates OpenEMR bearer tokens against OpenEMR JWKS.
-- Patient dropdown lists seeded patients the clinician can access.
-- Chat retrieves patient-scoped OpenEMR FHIR evidence.
-- Answers include citations and source links.
-- Unsupported treatment recommendation requests are refused.
-- OpenRouter is enabled for synthetic demo data with `nvidia/nemotron-3-super-120b-a12b:free`.
-- Week 2 document workflow supports lab/intake upload, extraction, bounding-box citation preview, supervisor/worker handoff trace events, human approval, hybrid sparse+dense guideline evidence retrieval, executable evals, optional encrypted Postgres workflow persistence, durable source-key reuse after process restart, and approved document facts in chat evidence. Query retrieval now adds PHI-local sparse matching and an intent-aware reranker before model context, so newly approved facts can beat stale lab clusters and demographic questions do not fall back to unrelated labs. The committed synthetic scanned intake/lab images extract through SHA-256-pinned OCR fixtures when external OCR is offline, while configured OpenAI/OpenRouter OCR paths still run when enabled. The lab write adapter is idempotent and uses OpenEMR FHIR `Observation.create` with round-trip read verification when the same-origin web proxy supplies a SMART bearer token with `user/Observation.write`; the seeded example profiles now use real OpenEMR patient UUIDs for writeback, while missing FHIR config, missing SMART token, or OpenEMR authorization failures still fail closed and keep approved evidence retrievable.
+Agent execution is a bounded server-orchestrated loop: access check, evidence tools, encrypted cache lookup, patient-scoped vector search, source hydration, model answer generation, fallback if output fails schema or citation validation, and a final verifier. Verified answers are persisted to encrypted conversation rows, and PHI-safe audit events are written for every completion and source read. If audit persistence is required and unavailable, the API withholds the answer rather than leaking an unaudited one.
 
-Week 3 adversarial platform status:
+Reliability is intentionally bounded: OpenEMR FHIR, JWKS, token, and model-provider calls retry transient failures with short exponential backoff; authorization failures always fail closed; cache and vector outages degrade to live FHIR evidence with an audit limitation.
 
-- `security/adversarial/` contains a separate FastAPI/LangGraph/SQLite operator platform.
-- Seed attack cases cover cross-patient PHI, authorization/session confusion, unsafe clinical recommendations, direct prompt injection, multi-turn manipulation, state corruption, identity hijacking, indirect injection, tool misuse, cost amplification, and citation manipulation.
-- The deployed operator is live at https://adversarial-production.up.railway.app with persistent `/data` SQLite storage.
-- Synthetic clinician OAuth password-grant settings are configured through Railway secrets; tokens are minted at run time and accepted by the deployed Co-Pilot API.
-- The target harness runs authenticated black-box attacks against the Co-Pilot API and records observations, verdicts, traces, and reports in SQLite.
-- The latest deployed seed campaign covers 13 latest verdicts across the expanded Week 3 corpus. Human review dismissed the seeded-note missing-citation draft as a target-fixture coverage gap, not a confirmed live vulnerability. JSON and Markdown exports are available from each run row in the operator UI.
-- No AI-agent jailbreak or clinical-safety failure is currently confirmed from the synthetic seed campaign. The platform did confirm four OpenEMR web-surface findings against the owned Railway target, then remediated and retested them; final retest `sitescan_178030626aef` is down to one Info-only Railway edge `Server` header disclosure.
+Deeper design notes: [ARCHITECTURE.md](ARCHITECTURE.md), [DOCUMENT_WORKFLOW_ARCHITECTURE.md](DOCUMENT_WORKFLOW_ARCHITECTURE.md), [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md).
 
-Latest local verification, run on 2026-05-14:
+## Safety And PHI Guardrails
+
+- SMART/OAuth authorization through OpenEMR; bearer validation against OpenEMR JWKS.
+- Patient-scoped FHIR retrieval; the model cannot select a different patient, invent source IDs, run SQL, or override system rules from note text.
+- Read-only policy blocks treatment, medication-change, order, diagnosis, and care-plan requests.
+- Startup and readiness hard gates for PHI-mode configuration.
+- Encrypted evidence cache, conversation retention (30-day default cleanup), and vector index with hashed identifiers.
+- Durable PHI-safe audit events; nightly maintenance purges expired cache, vector, audit, conversation, and job rows.
+- Backend service-account path for reindex jobs so worker tasks never borrow a clinician session.
+- Provider routing flags separate demo egress from PHI-approved egress:
+  - `LLM_PROVIDER=openrouter` is allowed only with `OPENROUTER_DEMO_DATA_ONLY=true`.
+  - Real PHI to OpenAI or OpenRouter requires the explicit `ALLOW_PHI_TO_*`, `*_BAA_CONFIRMED`, and `*_DATA_POLICY_CONFIRMED` flags.
+
+The full threat model is in [THREAT_MODEL.md](THREAT_MODEL.md).
+
+## Verification
+
+Latest local run (2026-05-14):
 
 ```text
 pytest: 204 passed
 ruff: all checks passed
 mypy: success
-Week 2 eval: 50 passed, 0 failed with python -m app.w2_eval --enforce
-web lint: passed
-web build: passed
-git diff --check: passed
-```
-
-Latest Week 3 adversarial verification, run on 2026-05-14:
-
-```text
-adversarial pytest: 73 passed
-adversarial ruff: all checks passed
-adversarial mypy: success, no issues in 27 source files
+document workflow eval gate: 50 passed, 0 failed  (python -m app.w2_eval --enforce)
+web lint / build: passed
+adversarial pytest: 73 passed; ruff and mypy clean
 adversarial judge eval: 6 fixtures, 0 false positives, 0 false negatives
-deployed adversarial /readyz: 200
-deployed seed suite: 13 latest verdicts, seeded-note draft dismissed by human review, 0 confirmed AI-agent reports
-deployed UX smoke: loading state, risk posture, table scopes/captions, reduced-motion CSS, and 404 handling verified
 ```
 
-Latest deployed smoke checks, recorded after the 2026-05-14 Railway redeploy:
+Deployed smoke checks after the same redeploy: `/readyz` green with pgvector and document-workflow persistence enabled; OpenEMR serving HSTS, CSP frame-ancestors, X-Frame-Options, nosniff, and Referrer-Policy headers with Secure/HttpOnly/SameSite login cookies; dependency manifests return 403; the adversarial site scan is down to a single Info-level Railway edge `Server` header disclosure.
 
-```text
-production /readyz: ok
-openrouter_configured: true
-pgvector_backend: true
-OpenEMR final deploy 545a54f5-dc23-45bb-8e59-a15c1745f471: SUCCESS
-OpenEMR /: 200 after redirect to login page
-OpenEMR FHIR metadata: 200
-OpenEMR SMART/OIDC discovery URLs: all HTTPS
-OpenEMR dependency manifests: 403 for vendor/composer/installed.json, composer.lock, package-lock.json, yarn.lock
-OpenEMR login cookies: Secure, HttpOnly, SameSite
-OpenEMR security headers: HSTS, CSP frame-ancestors, X-Frame-Options, X-Content-Type-Options nosniff, Referrer-Policy
-OpenEMR final B2B retest sitescan_178030626aef: 20 requests, 1 Info finding for Railway edge Server header
-Co-Pilot web /: 200
-profile roster returns UUID-backed Margaret, James, Sofia, Robert, and Demo Patient
-bearer document upload/review/evidence/chat: passed
-document bbox/citation/source roundtrip: passed
-patient/guideline answer bundle separation: passed with guideline_rag in trace
-demo bearer write reaches OpenEMR and fails as 401 re-authorization, not as a demo-profile block
-web document panel markup: present
-document_workflow_persistence_enabled: true
-document_workflow_storage: true
-document_workflow_persistence_ready: true
-```
+CI runs the API/safety/eval gate (`.github/workflows/copilot-document-eval-gate.yml`) and the adversarial regression replay (`.github/workflows/adversarial-regression.yml`) on every push and pull request. `.github/branch-protection.json` records both as required checks.
 
 ## Demo Data
 
-The Railway seed script refreshes 15 synthetic MVP patients and then upserts the current Co-Pilot profile patients used by the example documents. Each MVP patient has demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent lab results, and 4 unstructured clinical notes exposed through FHIR `DocumentReference`. The profile seed keeps Elena Morrison intact and adds/updates UUID-backed records for Margaret Chen, James Whitaker, Sofia Reyes, Robert Kowalski, and Demo Patient.
+The seed scripts create 15 synthetic patients, each with demographics, 3 active problems, 2 active medications, 1 allergy, 3 recent lab results, and 4 unstructured clinical notes exposed through FHIR `DocumentReference`, plus the profile patients used by the example documents (Margaret Chen, James Whitaker, Sofia Reyes, Robert Kowalski, Demo Patient).
 
 | Public ID | Patient | Search |
 |---|---|---|
@@ -171,140 +137,32 @@ The Railway seed script refreshes 15 synthetic MVP patients and then upserts the
 | AF-MVP-014 | Victor Nguyen | `victor` |
 | AF-MVP-015 | Grace Bennett | `grace` |
 
-Refresh deployed Railway demo data:
-
 ```powershell
-.\copilot\scripts\seed-openemr-railway-demo-patient.ps1
+.\copilot\scripts\seed-openemr-railway-demo-patient.ps1   # deployed Railway data
+.\copilot\scripts\seed-openemr-demo-patient.ps1           # local data
 ```
-
-Refresh local demo data:
-
-```powershell
-.\copilot\scripts\seed-openemr-demo-patient.ps1
-```
-
-## System Architecture
-
-```text
-Clinician browser
-  -> OpenEMR Railway app
-  -> OpenEMR Co-Pilot bridge with SMART iss/aud/launch context
-  -> Co-Pilot web /api/auth/start
-  -> OpenEMR OAuth login and scope consent
-  -> Co-Pilot web /api/auth/callback
-  -> encrypted HttpOnly copilot_session cookie
-  -> Co-Pilot same-origin /api/* proxy
-  -> FastAPI validates OpenEMR bearer token
-  -> OpenEMR FHIR patient and evidence reads
-  -> selected-patient vector indexing/search in Postgres
-  -> optional external embedding/evidence ranking
-  -> LLM provider adapter
-  -> verifier checks selected-patient citations and read-only policy
-  -> UI renders cited answer, trace, and source links
-```
-
-Vector search is patient-scoped and lazy-indexed. On a chart question, the API searches the selected patient's vector index first. On a cold index, it fetches source evidence through OpenEMR FHIR, stores encrypted evidence payloads in Postgres, stores only hashed patient/resource references, embeds the searchable text, writes semantic relationship rows, and searches the selected patient's vector index. Vector hits are re-read from OpenEMR FHIR before entering the model context so stale index text does not become the final evidence source. Production should use `VECTOR_INDEX_BACKEND=pgvector`; the JSON backend remains a local/demo fallback. The demo deployment uses the local deterministic `hash` embedding provider so PHI does not leave the API for indexing. An OpenAI embedding provider is wired but requires the existing OpenAI PHI approval flags before real PHI can be sent out.
-
-Agent execution is a bounded server-orchestrated loop: access check, schema-declared evidence tools, encrypted cache lookup/write, patient-scoped vector search, source hydration, model answer generation, fallback if model output fails schema/citation validation, and final verifier. Verified answers are persisted to encrypted conversation/message rows, and PHI-safe audit events are written for chat completions and source reads. Nightly maintenance repairs PHI storage schema and purges expired cache/vector/audit/conversation/job rows. It can run as a Railway cron worker from `copilot/api/railway.worker.toml`; on the current single-service demo it is also wired as a guarded in-process API scheduler. Background patient reindex uses a backend OpenEMR service-account path and must not borrow a clinician OAuth session.
-
-Reliability behavior is intentionally bounded. OpenEMR FHIR, JWKS, token, OpenAI, and OpenRouter calls retry transient 408/409/425/429/5xx and network timeout failures with short exponential backoff. Authorization failures still fail closed. Evidence-cache and vector-index outages degrade to live selected-patient OpenEMR FHIR evidence with an audit limitation. If audit persistence is required and unavailable, the API withholds the answer and returns an explicit failure final event instead of leaking an unaudited answer.
-
-Scaling posture is cost-aware instead of model-maximalist. Common structured questions should be answered from verified FHIR/evidence objects without an LLM; simple summaries route to the lowest-cost eval-approved model; broad note synthesis and verifier retries can use a stronger approved model with strict token caps. Redis is a production add for multi-replica hot-path state such as JWKS/session validation, roster prefetch, idempotency keys, distributed locks, tenant rate limits, and job progress fanout, while Postgres remains the encrypted source for evidence, audit, vectors, conversations, and approved facts. The detailed latency, Redis, and 1k/10k clinician scaling plan is in [ARCHITECTURE.md](ARCHITECTURE.md) and [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md).
-
-Repository layout:
-
-```text
-.
-  OpenEMR fork files
-  interface/agentforge/copilot.php      OpenEMR launch bridge
-  interface/main/tabs/menu/...          Co-Pilot menu entries
-  library/globals.inc.php               Co-Pilot URL connector setting
-
-  copilot/
-    api/       FastAPI auth, FHIR retrieval, chat, provider adapters, verifier
-    web/       Next.js SMART auth, proxy, patient dropdown, chat UI
-    worker/    Future ETL, prefetch, reindex, and embedding jobs
-    scripts/   Demo seeding and readiness utilities
-```
-
-## Agent Flow
-
-The assistant is constrained to a selected patient and source-backed chart evidence.
-
-1. The user chooses a patient from the authorized dropdown.
-2. The API retrieves OpenEMR FHIR evidence for the question.
-3. Evidence is normalized into `EvidenceObject` records with source URLs.
-4. The model receives only the selected-patient evidence bundle.
-5. The model returns an answer plus cited evidence IDs.
-6. The verifier rejects unknown citations, cross-patient citations, source URL mismatches, and treatment recommendations.
-7. The UI displays only verified final answers.
-
-The model cannot choose a different patient ID, invent source IDs, call arbitrary SQL, or override system rules from clinical note text.
-
-## Safety And PHI Guardrails
-
-Current deployment is for synthetic data only.
-
-Implemented controls:
-
-- SMART/OAuth authorization through OpenEMR.
-- OpenEMR bearer validation against JWKS.
-- Server-side role/request user context.
-- Patient-scoped FHIR retrieval.
-- Source links re-read OpenEMR FHIR resources and re-check authorization.
-- Read-only MVP policy blocks treatment, medication-change, order, diagnosis, and care-plan requests.
-- API startup/readiness hard gates for PHI-mode configuration.
-- Encrypted metadata/audit and evidence-cache primitives.
-- Patient-scoped vector index with encrypted evidence payloads and hashed identifiers.
-- Optional production `pgvector` backend with local JSON fallback.
-- Vector hits are refreshed through OpenEMR FHIR before model context assembly.
-- Encrypted evidence cache scoped to patient plus clinician/session context.
-- Encrypted conversation/message retention with 30-day default cleanup.
-- Durable PHI-safe audit events for chat completions and source reads.
-- Job status and semantic relationship tables for reindex/ETL visibility.
-- Nightly maintenance job for expired cache/vector/audit/conversation/job retention cleanup.
-- Backend service-account reindex path for worker jobs.
-- Bounded retry/backoff for OpenEMR, JWKS/token, and model-provider calls.
-- Explicit degraded-mode audit limitations for cache/vector failures.
-- Frontend chat stream timeout and malformed-event handling so requests do not appear stalled.
-- Model/provider routing flags separate demo egress from PHI-approved egress.
-- No API keys should be committed; provider keys belong only in Railway env vars.
-
-Provider policy:
-
-- `LLM_PROVIDER=openrouter` is currently allowed only with `OPENROUTER_DEMO_DATA_ONLY=true`.
-- Real PHI requires a reviewed provider path with BAA/data-policy confirmation flags.
-- OpenAI support is implemented but disabled unless `ALLOW_PHI_TO_OPENAI`, `OPENAI_BAA_CONFIRMED`, and `OPENAI_DATA_POLICY_CONFIRMED` are explicitly true.
-- OpenRouter must not be used for real PHI unless `ALLOW_PHI_TO_OPENROUTER`, `OPENROUTER_BAA_CONFIRMED`, and `OPENROUTER_DATA_POLICY_CONFIRMED` are explicitly true.
 
 ## Local Development
 
 ### OpenEMR
 
-Start the local OpenEMR development stack:
-
 ```powershell
 cd docker/development-easy
-$env:Path = 'C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\Docker\Docker\resources;C:\Program Files\Docker\cli-plugins;' + $env:Path
 docker compose up --detach --wait
 ```
 
-Local OpenEMR:
-
 ```text
-URL: http://localhost:8300/
-Login: admin / pass
-FHIR metadata: http://localhost:8300/apis/default/fhir/metadata
+URL:            http://localhost:8300/
+Login:          admin / pass
+FHIR metadata:  http://localhost:8300/apis/default/fhir/metadata
 ```
 
-Register a local-only OpenEMR OAuth client for password-grant smoke tests:
+Register a local-only OAuth client for password-grant smoke tests (production uses the SMART authorization-code flow through the web service):
 
 ```powershell
 cd copilot
 .\scripts\register-openemr-dev-client.ps1
 ```
-
-Password grant is local development only. Production uses SMART authorization-code flow through the web service.
 
 ### API
 
@@ -315,29 +173,16 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8001
 ```
 
-API checks:
+Checks:
 
 ```powershell
-cd copilot/api
 .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe -m ruff check app tests
 .\.venv\Scripts\python.exe -m mypy app tests
+.\.venv\Scripts\python.exe -m app.w2_eval --enforce
 ```
 
-Optional live OpenEMR smoke:
-
-```powershell
-cd copilot/api
-$env:RUN_LIVE_OPENEMR='1'
-$env:OPENEMR_BASE_URL='http://localhost:8300'
-$env:OPENEMR_FHIR_BASE_URL='http://localhost:8300/apis/default/fhir'
-$env:OPENEMR_CLIENT_ID='<printed by register-openemr-dev-client.ps1>'
-$env:OPENEMR_CLIENT_SECRET='<printed by register-openemr-dev-client.ps1>'
-$env:OPENEMR_DEV_USERNAME='admin'
-$env:OPENEMR_DEV_PASSWORD='pass'
-$env:OPENEMR_TLS_VERIFY='false'
-.\.venv\Scripts\python.exe -m pytest tests\test_live_openemr_smoke.py -q
-```
+Optional live-OpenEMR smoke: set `RUN_LIVE_OPENEMR=1` plus the `OPENEMR_*` variables printed by `register-openemr-dev-client.ps1`, then run `pytest tests\test_live_openemr_smoke.py -q`.
 
 ### Web
 
@@ -347,40 +192,28 @@ npm install
 npm run dev -- --port 3001
 ```
 
-Web checks:
+Checks: `npm audit --audit-level=moderate`, `npm run build`, `npm run test:e2e -- --project=chromium`.
 
-```powershell
-cd copilot/web
-npm audit --audit-level=moderate
-npm run build
-npm run test:e2e -- --project=chromium
-```
+### Adversarial platform
+
+See [security/adversarial/README.md](security/adversarial/README.md) for running the operator locally and replaying the regression suite against a local Co-Pilot target.
 
 ## Railway Deployment
 
-Deploy the OpenEMR fork from the repository root:
-
 ```powershell
-railway up --service openemr
-```
-
-Deploy Co-Pilot services:
-
-```powershell
+railway up --service openemr                                   # OpenEMR fork, from repo root
 railway up --service copilot-api .\copilot\api --path-as-root
 railway up --service copilot-web .\copilot\web --path-as-root
-```
-
-Enable and verify durable document workflow persistence on the deployed API:
-
-```powershell
-railway login
 .\copilot\scripts\enable-railway-document-workflow-persistence.ps1 -LinkProject
 ```
 
-The script sets `DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true`, deploys `copilot-api`, and verifies `/readyz` plus `/api/capabilities` both report `document_workflow_persistence_ready=true`. The deployed smoke checks poll quietly with bounded retries so Railway rollout lag does not create noisy manual retry logs.
+Run the PHI/readiness gate before any production-style deploy:
 
-If Windows file locks or ignored folders block `railway up`, stage only the service files into a temp directory and deploy that staged folder with `--no-gitignore --path-as-root`.
+```powershell
+.\copilot\scripts\phi-readiness-check.ps1
+```
+
+Health checks: OpenEMR `GET /meta/health/readyz`, API `GET /readyz`, web `GET /`.
 
 Key API variables:
 
@@ -398,29 +231,21 @@ OPENEMR_OAUTH_TOKEN_URL=https://<openemr-domain>/oauth2/default/token
 OPENEMR_JWKS_URL=https://<openemr-domain>/oauth2/default/jwk
 OPENEMR_JWT_ISSUER=https://<openemr-domain>/oauth2/default
 OPENEMR_JWT_AUDIENCE=<smart-client-id>
-OPENEMR_TLS_VERIFY=true
-OPENEMR_API_LOG_OPTION=1
-OPENEMR_DEV_PASSWORD_GRANT=false
 OPENEMR_CLIENT_ID=<smart-client-id>
 OPENEMR_CLIENT_SECRET=<smart-client-secret>
+OPENEMR_TLS_VERIFY=true
 LLM_PROVIDER=mock
-EMBEDDING_PROVIDER=none
 VECTOR_SEARCH_ENABLED=true
+VECTOR_INDEX_BACKEND=pgvector
 VECTOR_EMBEDDING_PROVIDER=hash
-VECTOR_EMBEDDING_DIMENSIONS=256
-VECTOR_SEARCH_LIMIT=6
-VECTOR_CANDIDATE_LIMIT=200
 EVIDENCE_CACHE_ENABLED=true
-EVIDENCE_CACHE_TTL_SECONDS=300
 DOCUMENT_WORKFLOW_PERSISTENCE_ENABLED=true
 AGENT_LOOP_MAX_STEPS=10
 NIGHTLY_MAINTENANCE_ENABLED=true
-NIGHTLY_MAINTENANCE_HOUR_UTC=8
 OPENROUTER_API_KEY=
 OPENROUTER_LLM_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 OPENROUTER_DEMO_DATA_ONLY=false
 ALLOW_PHI_TO_OPENROUTER=false
-ALLOW_PHI_TO_LOCAL=false
 ```
 
 Key web variables:
@@ -436,65 +261,31 @@ OPENEMR_TOKEN_AUTH_METHOD=client_secret_basic
 COPILOT_SESSION_SECRET=<at-least-32-random-bytes>
 ```
 
-Run the PHI/readiness gate before production-style deploys:
+The full variable list and operational notes are in [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md).
 
-```powershell
-.\copilot\scripts\phi-readiness-check.ps1
-```
-
-Health checks:
-
-```text
-OpenEMR: GET /meta/health/readyz
-API:     GET /readyz
-Web:     GET /
-```
-
-## Final Submission Checklist
-
-Before submitting:
-
-- Rotate any provider key that was pasted into chat or logs.
-- Confirm no secrets are committed.
-- Confirm Railway variables, not files, hold provider keys and session secrets.
-- Confirm `/readyz` is green.
-- Confirm OpenEMR launch to Co-Pilot works from the deployed app.
-- Confirm patient dropdown lists the seeded patients.
-- Confirm a Nemotron/OpenRouter answer returns for synthetic data.
-- Confirm unstructured notes are included in answers.
-- Confirm source links open the readable evidence viewer, with raw JSON available behind details.
-- Confirm treatment recommendations are refused.
-- Record the required 35-minute walkthrough video with audible narration.
-- Include repo URL, deployed URLs, and video URL in the AgentForge submission.
-
-## Reference Documents
-
-The root README is the source of truth for final submission. The remaining Markdown files are supporting references:
+## Documentation
 
 | Document | Purpose |
 |---|---|
-| [SUBMISSION.md](SUBMISSION.md) | Final submission links, artifact map, verification snapshot, demo checklist, and caveats |
-| [PRODUCTION_DEMO_EVIDENCE.md](PRODUCTION_DEMO_EVIDENCE.md) | Earlier deployed walkthrough screenshots and proof notes |
-| [EARLY_SUBMISSION_CHECKLIST.md](EARLY_SUBMISSION_CHECKLIST.md) | Week 2 early submission blockers, smoke path, and deployment checklist |
-| [DEMO_PLAN.md](DEMO_PLAN.md) | Demo script and talk track |
-| [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) | Manual scan/extract/approve/retrieve demo for Margaret Chen |
-| [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Longer deployment notes and environment checklists |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Deeper architecture plan and future-state design |
-| [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) | Week 2 multimodal document, worker graph, RAG, eval gate, and risk design |
-| [WALKTHROUGH.md](WALKTHROUGH.md) | Learning guide for Co-Pilot files, request flows, data patterns, and debugging paths |
-| [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) | Surprise challenge defense for the Next.js patient dashboard migration |
-| [USERS.md](USERS.md) | Primary user, supporting users, use cases, MVP non-goals, and Week 3 operator workflows |
-| [MVP_STATUS.md](MVP_STATUS.md) | Historical MVP status and roadmap notes |
-| [EVAL_PLAN.md](EVAL_PLAN.md) | Eval and fixture plan |
-| [EVAL_DATASET.md](EVAL_DATASET.md) | Eval dataset, automated test coverage, and latest results |
-| [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) | Actual recorded dev AI spend and production cost projections |
-| [AUDIT.md](AUDIT.md) | OpenEMR audit notes |
-| [PLANNING.md](PLANNING.md) | Index of planning artifacts |
-
-Upstream OpenEMR documentation remains in the original directories, including [DOCKER_README.md](DOCKER_README.md), [FHIR_README.md](FHIR_README.md), [API_README.md](API_README.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Co-Pilot architecture, OpenEMR placement, data-intensive patterns, scaling plan |
+| [DOCUMENT_WORKFLOW_ARCHITECTURE.md](DOCUMENT_WORKFLOW_ARCHITECTURE.md) | Multimodal document ingestion, worker graph, RAG, eval gate, and risk design |
+| [THREAT_MODEL.md](THREAT_MODEL.md) | Threat model for the Co-Pilot and the adversarial platform |
+| [security/docs/ADVERSARIAL_PRODUCT_SPEC.md](security/docs/ADVERSARIAL_PRODUCT_SPEC.md) | Adversarial security platform spec |
+| [security/docs/ADVERSARIAL_EVIDENCE_PACKET.md](security/docs/ADVERSARIAL_EVIDENCE_PACKET.md) | Adversarial campaign evidence, findings, and remediation record |
+| [AUDIT.md](AUDIT.md) | OpenEMR security, performance, architecture, and data-quality audit |
+| [USERS.md](USERS.md) | Target users, use cases, non-goals, and operator workflows |
+| [WALKTHROUGH.md](WALKTHROUGH.md) | Guided tour of the Co-Pilot code, request flows, and debugging paths |
+| [PATIENT_DASHBOARD_MIGRATION.md](PATIENT_DASHBOARD_MIGRATION.md) | Next.js reimplementation of the OpenEMR patient dashboard on FHIR |
+| [EVAL_PLAN.md](EVAL_PLAN.md) / [EVAL_DATASET.md](EVAL_DATASET.md) | Eval design, dataset, automated coverage, and latest results |
+| [AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) | Recorded dev AI spend and production cost projections |
+| [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Local and Railway deployment details |
+| [MARGARET_CHEN_DOCUMENT_DEMO.md](MARGARET_CHEN_DOCUMENT_DEMO.md) | Manual scan/extract/approve/retrieve walkthrough |
+| [MVP_AUTH_SCOPE.md](MVP_AUTH_SCOPE.md) | Local-demo auth scope and production-auth exclusions |
+| [OPENEMR_VERSION_PIN.md](OPENEMR_VERSION_PIN.md) | Upstream OpenEMR version and commit this fork tracks |
+| [eli5.md](eli5.md) | OpenEMR codebase orientation |
 
 ## License
 
-This fork preserves OpenEMR's [GNU GPL v3](LICENSE) license. AgentForge additions are released under the same terms.
+This fork preserves OpenEMR's [GNU GPL v3](LICENSE) license. Additions in this repository are released under the same terms.
 
-OpenEMR upstream: https://github.com/openemr/openemr
+Upstream OpenEMR: https://github.com/openemr/openemr

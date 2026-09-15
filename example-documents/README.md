@@ -1,6 +1,6 @@
 # Example Documents
 
-These files are synthetic clinical examples for local development and submission testing. They
+These files are synthetic clinical examples for local development and integration testing. They
 are not real patient records and should still be handled as PHI-shaped data.
 
 ## Current Coverage
@@ -10,7 +10,7 @@ are not real patient records and should still be handled as PHI-shaped data.
 - `*.png`: scanned/image-style examples. The local deterministic pipeline intentionally fails
   closed for image files until an OCR or vision provider is configured.
 - `p01-chen-*`: Margaret Chen synthetic examples used for the manual durable-storage
-  demo and Week 2 golden cases.
+  demo and Phase 2 golden cases.
 
 ## Verification
 

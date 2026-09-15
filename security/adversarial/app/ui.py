@@ -1,4 +1,4 @@
-"""FastAPI operator UI for Week 3 adversarial runs."""
+"""FastAPI operator UI for Phase 3 adversarial runs."""
 
 from __future__ import annotations
 
@@ -234,7 +234,7 @@ def create_app() -> FastAPI:
             </header>
             <section class="hero command-slab">
               <div class="hero-primary">
-                <p class="eyebrow">Week 3 adversarial command // synthetic target</p>
+                <p class="eyebrow">Phase 3 adversarial command // synthetic target</p>
                 <h1 class="{recommendation_class}">{escape(recommendation)}</h1>
                 <p class="hero-copy">A controlled black-box campaign surface for deployed clinical Co-Pilot risk, synthetic patient scope, and deterministic Judge evidence.</p>
                 <dl class="target-list">

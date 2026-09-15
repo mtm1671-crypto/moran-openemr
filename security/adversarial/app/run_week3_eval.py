@@ -1,4 +1,4 @@
-"""Run Week 3 adversarial eval suites."""
+"""Run Phase 3 adversarial eval suites."""
 
 from __future__ import annotations
 
@@ -239,7 +239,7 @@ def main() -> None:
         include_variants=args.include_variants,
         skip_tags=_parse_skip_tags(args.skip_tags),
     )
-    print(f"Week 3 adversarial suite complete: {len(run_ids)} run(s)")
+    print(f"Phase 3 adversarial suite complete: {len(run_ids)} run(s)")
     for run_id in run_ids:
         print(run_id)
     if run_mode == RunMode.ENFORCE:

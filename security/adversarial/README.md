@@ -34,7 +34,7 @@ The Red Team agent can run bounded deterministic variants with `--include-varian
 
 LLM mutation remains off by default intentionally. The release-blocking path is deterministic and reproducible; model-assisted mutation can be added later as an exploratory, report-only campaign.
 
-GitHub Actions wires the regression gate in `.github/workflows/adversarial-week3-regression.yml`. CI skips `setup-required` ingestion-path fixtures until target seeding is automated, and still runs the stable regression corpus with Red Team variants enabled. The required branch-protection context is recorded in `.github/branch-protection-week3.json` as `Week 3 Adversarial Regression Gate`.
+GitHub Actions wires the regression gate in `.github/workflows/adversarial-regression.yml`. CI skips `setup-required` ingestion-path fixtures until target seeding is automated, and still runs the stable regression corpus with Red Team variants enabled. The required branch-protection context is recorded in `.github/branch-protection.json` as `Phase 3 Adversarial Regression Gate`.
 
 ## Deployed Operator
 

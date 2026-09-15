@@ -1,10 +1,10 @@
-# Week 3 Product Spec
+# Adversarial Security Platform: Product Spec
 
-This is the canonical product/specification document for the Week 3 adversarial AI security platform. It consolidates the prior PRD, build goals, final product plan, architecture notes, system-design notes, and production-readiness notes.
+This is the canonical product/specification document for the Phase 3 adversarial AI security platform. It consolidates the prior PRD, build goals, final product plan, architecture notes, system-design notes, and production-readiness notes.
 
 ## Purpose
 
-The Week 3 platform is an outside-in adversarial evaluation system for the AgentForge Clinical Co-Pilot. It runs bounded, synthetic, allowlisted attacks against local or deployed Co-Pilot targets, captures observable evidence, judges whether the target behaved safely, and turns confirmed failures into regression artifacts and vulnerability reports.
+The Phase 3 platform is an outside-in adversarial evaluation system for the AgentForge Clinical Co-Pilot. It runs bounded, synthetic, allowlisted attacks against local or deployed Co-Pilot targets, captures observable evidence, judges whether the target behaved safely, and turns confirmed failures into regression artifacts and vulnerability reports.
 
 It is separate from the Clinical Co-Pilot runtime. The Co-Pilot remains the target. The adversarial platform is the security control plane.
 
@@ -116,14 +116,14 @@ Variant replay is enabled with `--include-variants`. This expands each approved 
 
 ## Acceptance Criteria
 
-- Deployed target URL is recorded in the submission packet.
+- Deployed target URL is recorded in the release notes.
 - At least three attack categories have seed cases and run evidence.
 - At least one agent role runs live against the deployed target.
 - Threat model and user docs describe healthcare-specific risks and users.
 - Operator UI shows run state, verdicts, traces, exports, coverage, findings, scans, and audit log.
 - Confirmed vulnerability reports include severity, healthcare impact domain, reproduction, observed vs expected behavior, remediation, status, and fix validation.
 - Local quality gates pass: pytest, Ruff, mypy, Judge eval, and `git diff --check`.
-- GitHub Actions runs the Week 3 regression replay gate against a local Co-Pilot target with Red Team variants enabled and setup-required ingestion cases excluded until their target fixtures are automated.
+- GitHub Actions runs the Phase 3 regression replay gate against a local Co-Pilot target with Red Team variants enabled and setup-required ingestion cases excluded until their target fixtures are automated.
 
 ## Current Implementation Boundary
 
@@ -143,4 +143,4 @@ The MVP is a bounded single-pass graph per case with suite-level prioritization 
 | Run store | `security/adversarial/app/run_store.py` |
 | Site scanner | `security/adversarial/app/site_scanner.py`, `security/adversarial/app/site_scan_workflow.py` |
 | Raw eval corpus | `security/adversarial/evals/week3/` |
-| Evidence packet | `security/docs/WEEK3_EVIDENCE_PACKET.md` |
+| Evidence packet | `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md` |

@@ -1,4 +1,4 @@
-"""Week 2 document ingestion, extraction, review, and write routes.
+"""Phase 2 document ingestion, extraction, review, and write routes.
 
 Documents are treated as staged evidence. Extraction can propose facts, but a
 human review decision is required before lab facts are written to OpenEMR.
@@ -69,7 +69,7 @@ from app.telemetry import emit_telemetry_event
 from app.w2_graph import W2GraphState, handoff_trace_events, supervisor_route
 from app.w2_observability import observe_async_step
 
-router = APIRouter(prefix="/api/documents", tags=["week2-documents"])
+router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
 @router.post(

@@ -128,7 +128,7 @@ Expected result: 15 synthetic patients are searchable. Start with `mo` for Elena
 
 OpenEMR's official image is large but well-maintained and matches the local development setup. Building from scratch would re-implement Apache/PHP/MariaDB plumbing for no clinical benefit. The fork overlay is intentionally narrow: only the Co-Pilot launch/navigation files and fork-identifying docs are copied into the official runtime image.
 
-## Railway Services (Co-Pilot stack — Thursday Early Submission)
+## Railway Services (Co-Pilot stack)
 
 MVP service shape:
 
@@ -209,7 +209,7 @@ railway up --service copilot-web .\copilot\web --path-as-root
 railway domain --service copilot-web
 ```
 
-Enable and verify durable Week 2 document workflow persistence on `copilot-api`:
+Enable and verify durable Phase 2 document workflow persistence on `copilot-api`:
 
 ```powershell
 railway login
@@ -438,4 +438,4 @@ Before calling the MVP deployable:
 - A cold patient index can be built through `POST /api/patients/{patient_id}/reindex` using the backend service account.
 - Chat evidence includes vector search and source hydration before the model context is built.
 - A chat completion writes encrypted conversation/message rows and a PHI-safe audit event.
-- Railway URL is recorded in `MVP_STATUS.md`.
+- Railway URL is recorded in the root `README.md`.

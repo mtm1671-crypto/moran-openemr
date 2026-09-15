@@ -154,16 +154,13 @@ These files are not the main product UI, but they prove the system can be defend
 | File | What it does |
 |---|---|
 | `ARCHITECTURE.md` | High-level architecture, safety model, data-intensive scaling patterns, provider strategy. |
-| `W2_ARCHITECTURE.md` | Week 2 production-shape design: document ingestion, worker graph, RAG, evals, observability, scaling risks. |
+| `DOCUMENT_WORKFLOW_ARCHITECTURE.md` | Phase 2 production-shape design: document ingestion, worker graph, RAG, evals, observability, scaling risks. |
 | `AI_COST_ANALYSIS.md` | Dev spend, model-routing economics, cost projections at 100/1k/10k/100k users. |
 | `AUDIT.md` | OpenEMR audit notes and key findings. |
-| `USERS.md` | Target users, use cases, and Week 3 operator workflows. |
+| `USERS.md` | Target users, use cases, and Phase 3 operator workflows. |
 | `EVAL_DATASET.md` | Eval dataset scope and results. |
-| `DEMO_PLAN.md` | How to record or perform the live walkthrough. |
-| `PRODUCTION_DEMO_EVIDENCE.md` | Evidence checklist for proving the deployed flow works. |
 | `DEPLOYMENT_RUNBOOK.md` | Deployment and operational steps. |
-| `EARLY_SUBMISSION_CHECKLIST.md` | Earlier readiness checklist and smoke path. |
-| `SUBMISSION.md` | Final submission packet pointer. |
+| `THREAT_MODEL.md` | Threat model for the Co-Pilot and the adversarial security platform. |
 
 ## Config And Guardrails
 
@@ -220,8 +217,8 @@ Read in this order:
 6. `copilot/api/app/verifier.py` to see why answers pass or fail.
 7. `copilot/api/app/persistence.py` to learn what gets stored and encrypted.
 8. `copilot/api/app/vector_store.py` to learn how derived semantic search works.
-9. `copilot/api/app/document_ingestion.py` and `observation_writer.py` for Week 2 document/lab write flow.
-10. `AI_COST_ANALYSIS.md` and `W2_ARCHITECTURE.md` for production scaling and cost thinking.
+9. `copilot/api/app/document_ingestion.py` and `observation_writer.py` for Phase 2 document/lab write flow.
+10. `AI_COST_ANALYSIS.md` and `DOCUMENT_WORKFLOW_ARCHITECTURE.md` for production scaling and cost thinking.
 
 ## Debugging Heuristics
 

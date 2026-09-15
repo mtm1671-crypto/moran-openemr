@@ -1,4 +1,4 @@
-# AgentForge Week 2 Optional Judge Prompt
+# Optional LLM Judge Prompt
 
 You are evaluating a clinical co-pilot answer against source evidence. Use only the
 provided case, retrieved evidence, citations, and final answer. Do not use outside

@@ -12,15 +12,15 @@ Verification is deliberately strict. The final answer must cite selected-patient
 
 The PHI posture is local-first and metadata-conscious. Conversations, message records, audit events, caches, and vector chunks live in Postgres with encryption controls and retention boundaries. Logs use allowlisted metadata rather than raw chart text. Cache and vector failures degrade to live FHIR evidence where safe; authorization, audit, verifier, and configuration failures stop the request. The verification strategy combines unit tests, API tests, Playwright smoke tests, PHI readiness checks, static typing/linting, dependency audits, and deterministic eval cases covering patient scoping, prompt injection, treatment-refusal behavior, stale evidence, cache failover, vector failover, and source-link authorization.
 
-The known tradeoff is that the MVP favors reliability and auditability over maximal autonomy. It can summarize, retrieve, and cite evidence quickly, but it does not write to the chart, make clinical decisions, or replace clinician judgment. That constraint is intentional for the final AgentForge submission: the product demonstrates an agentic workflow that is useful in a live OpenEMR environment while keeping the clinical risk boundary narrow and testable.
+The known tradeoff is that the MVP favors reliability and auditability over maximal autonomy. It can summarize, retrieve, and cite evidence quickly, but it does not write to the chart, make clinical decisions, or replace clinician judgment. That constraint is intentional for the final AgentForge release: the product demonstrates an agentic workflow that is useful in a live OpenEMR environment while keeping the clinical risk boundary narrow and testable.
 
-## Week 3 Adversarial Platform
+## Phase 3 Adversarial Platform
 
-Week 3 adds a separate adversarial security platform under `security/adversarial/`. It is not part of the clinical runtime. It is an outside-in FastAPI/LangGraph/SQLite operator service that runs allowlisted synthetic attacks against local or deployed Co-Pilot targets, records redacted public evidence, stores sensitive observations and report details in a private findings database, and exposes run state, verdicts, traces, reports, and exports for security review.
+Phase 3 adds a separate adversarial security platform under `security/adversarial/`. It is not part of the clinical runtime. It is an outside-in FastAPI/LangGraph/SQLite operator service that runs allowlisted synthetic attacks against local or deployed Co-Pilot targets, records redacted public evidence, stores sensitive observations and report details in a private findings database, and exposes run state, verdicts, traces, reports, and exports for security review.
 
 The platform has its own bounded graph: Orchestrator prioritizes cases by open failures and coverage gaps, Red Team uses approved seed cases or bounded variants, Target Runner executes black-box HTTP requests, Judge applies deterministic safety checks, Documentation drafts findings, Regression Store captures replay candidates, and Stop Policy records why a run completed or halted. Deployed/Railway operator startup fails closed without `ADVERSARIAL_OPERATOR_TOKEN`.
 
-Detailed Week 3 product and evidence notes live in `security/docs/WEEK3_PRODUCT_SPEC.md` and `security/docs/WEEK3_EVIDENCE_PACKET.md`; this root file remains the top-level architecture entry point for both the Clinical Co-Pilot and the adversarial control plane.
+Detailed Phase 3 product and evidence notes live in `security/docs/ADVERSARIAL_PRODUCT_SPEC.md` and `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md`; this root file remains the top-level architecture entry point for both the Clinical Co-Pilot and the adversarial control plane.
 
 ## Architecture Diagram
 

@@ -311,7 +311,7 @@ def test_dashboard_and_run_detail_expose_coverage_and_exports(
 
     markdown_export = client.get("/runs/run_ui_1.md")
     assert markdown_export.status_code == 200
-    assert "Week 3 Adversarial Run run_ui_1" in markdown_export.text
+    assert "Phase 3 Adversarial Run run_ui_1" in markdown_export.text
 
 
 def test_site_scan_rejects_out_of_scope_target(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 ## Summary
 
-The surprise challenge asks for a modern-framework reimplementation of the OpenEMR patient dashboard without redesigning the clinical experience or changing OpenEMR's backend. This repository implements that as a new Next.js route at `/dashboard` inside the existing Co-Pilot web service. The dashboard uses the same SMART/OAuth session as Co-Pilot, calls OpenEMR's FHIR API as the data layer, and renders a deterministic patient summary view: patient header, allergies, problem list, medications, prescriptions, care team, and recent labs.
+The patient dashboard exercise asks for a modern-framework reimplementation of the OpenEMR patient dashboard without redesigning the clinical experience or changing OpenEMR's backend. This repository implements that as a new Next.js route at `/dashboard` inside the existing Co-Pilot web service. The dashboard uses the same SMART/OAuth session as Co-Pilot, calls OpenEMR's FHIR API as the data layer, and renders a deterministic patient summary view: patient header, allergies, problem list, medications, prescriptions, care team, and recent labs.
 
 The framework choice is **Next.js + React + TypeScript**. We chose it because the existing Co-Pilot web app already runs on Next.js, already has SMART/OAuth login, already stores the OpenEMR bearer token in an encrypted HttpOnly cookie, and already deploys on Railway. Reusing that foundation lets the dashboard modernization stay focused on the presentation layer. React's component model maps naturally to patient dashboard cards, TypeScript gives safer parsing of loosely shaped FHIR JSON than ad hoc template code, and Playwright can test the full browser flow.
 

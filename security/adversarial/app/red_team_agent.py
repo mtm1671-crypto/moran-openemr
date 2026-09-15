@@ -1,4 +1,4 @@
-"""Bounded Red Team Agent for approved Week 3 attack variants."""
+"""Bounded Red Team Agent for approved Phase 3 attack variants."""
 
 from __future__ import annotations
 

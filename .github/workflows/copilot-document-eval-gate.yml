@@ -1,11 +1,11 @@
-name: Co-Pilot Week 2 Gate
+name: Co-Pilot Document Eval Gate
 
 on:
   pull_request:
     paths:
       - "copilot/**"
       - "example-documents/**"
-      - ".github/workflows/copilot-week2-gate.yml"
+      - ".github/workflows/copilot-document-eval-gate.yml"
   push:
     branches:
       - main
@@ -13,10 +13,10 @@ on:
     paths:
       - "copilot/**"
       - "example-documents/**"
-      - ".github/workflows/copilot-week2-gate.yml"
+      - ".github/workflows/copilot-document-eval-gate.yml"
 
 jobs:
-  week2-gate:
+  phase2-gate:
     name: API, Safety, and Eval Gate
     runs-on: ubuntu-latest
     defaults:
@@ -55,14 +55,14 @@ jobs:
       - name: Unit and integration tests
         run: python -m pytest
 
-      - name: Week 2 hard-gate eval
+      - name: Phase 2 hard-gate eval
         run: python -m app.w2_eval --enforce
 
       - name: Upload eval artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: week2-eval-results
+          name: phase2-eval-results
           path: |
             copilot/api/evals/w2_latest_results.jsonl
             copilot/api/evals/w2_baseline.json

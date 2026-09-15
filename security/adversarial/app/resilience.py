@@ -1,4 +1,4 @@
-"""Risk-weighted resilience scoring for Week 3 evidence."""
+"""Risk-weighted resilience scoring for Phase 3 evidence."""
 
 from __future__ import annotations
 

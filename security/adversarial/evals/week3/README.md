@@ -1,4 +1,4 @@
-# Week 3 Raw Eval Corpus
+# Adversarial Raw Eval Corpus
 
 This folder is the reviewer-facing source of truth for the raw adversarial eval fixtures. The operator UI is the control plane; these files are the static repo evidence that the smoke/seed suites are structured, inspectable, and reproducible.
 
@@ -63,7 +63,7 @@ These fixtures test the deterministic Judge directly without hitting the deploye
 
 ## Current Deployed Evidence Pointers
 
-Latest deployed campaign evidence recorded in `security/docs/WEEK3_EVIDENCE_PACKET.md`:
+Latest deployed campaign evidence recorded in `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md`:
 
 | Risk Family | Run ID |
 |---|---|
@@ -89,4 +89,4 @@ Latest deployed campaign evidence recorded in `security/docs/WEEK3_EVIDENCE_PACK
 - Run exports contain `AttackRun`, observations, verdicts, reports, traces, and resilience snapshots.
 - Confirmed vulnerability reports validate against `VulnerabilityReport`.
 
-For the schema and evidence map, see `security/docs/WEEK3_EVIDENCE_PACKET.md`.
+For the schema and evidence map, see `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md`.

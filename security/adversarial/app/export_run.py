@@ -48,7 +48,7 @@ def render_run_markdown(payload: dict[str, Any]) -> str:
     snapshots = payload.get("resilience_snapshots", [])
     traces = payload.get("trace", [])
     lines = [
-        f"# Week 3 Adversarial Run {run['run_id']}",
+        f"# Phase 3 Adversarial Run {run['run_id']}",
         "",
         f"- Target: `{run['target_url']}`",
         f"- Mode: `{run['target_mode']}` / `{run['run_mode']}`",

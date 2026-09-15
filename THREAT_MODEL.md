@@ -1,4 +1,4 @@
-# Week 3 Threat Model: AgentForge Adversarial AI Security Platform
+# Threat Model: AgentForge Clinical Co-Pilot and Adversarial Security Platform
 
 ## Executive Summary
 
@@ -21,7 +21,7 @@ The final goal is a platform a hospital security leader could understand and tru
 | OpenEMR | `https://openemr-production-f5ed.up.railway.app` | Source EHR, OAuth issuer, FHIR/API surface, clinician UI |
 | Co-Pilot web | `https://copilot-web-production.up.railway.app` | Browser experience and SMART launch flow |
 | Co-Pilot API | `https://copilot-api-production-9f84.up.railway.app` | Chat, evidence retrieval, document workflow, writeback boundary |
-| Adversarial operator | `https://adversarial-production.up.railway.app` | Week 3 scanner/eval/reporting control plane |
+| Adversarial operator | `https://adversarial-production.up.railway.app` | Phase 3 scanner/eval/reporting control plane |
 
 Out of scope: real PHI, arbitrary third-party targets, brute force, destructive testing, broad fuzzing, and unapproved active exploitation.
 
@@ -59,7 +59,7 @@ Release-blocking verdicts must be supported by black-box evidence: HTTP status, 
 
 ## Current Highest-Risk Findings
 
-The 2026-05-13 OpenEMR Railway scans found confirmed web-surface issues documented in `security/docs/WEEK3_EVIDENCE_PACKET.md`:
+The 2026-05-13 OpenEMR Railway scans found confirmed web-surface issues documented in `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md`:
 
 - OAuth/OpenID discovery advertises plaintext `http://` issuer and endpoint URLs.
 - OpenEMR session cookies are missing `Secure`; one session cookie is also missing `HttpOnly`.
@@ -74,8 +74,8 @@ Human approval is required before adding a new attack category, treating inconcl
 
 ## Repo Evidence
 
-- Week 3 product spec: `security/docs/WEEK3_PRODUCT_SPEC.md`.
-- Week 3 evidence packet: `security/docs/WEEK3_EVIDENCE_PACKET.md`.
+- Phase 3 product spec: `security/docs/ADVERSARIAL_PRODUCT_SPEC.md`.
+- Phase 3 evidence packet: `security/docs/ADVERSARIAL_EVIDENCE_PACKET.md`.
 - Raw eval corpus index: `security/adversarial/evals/week3/README.md`.
 
-This root file exists so the final submission has the PRD-required `./THREAT_MODEL.md` entry point.
+This root file is the top-level threat model entry point; the detailed spec and evidence live under `security/docs/`.

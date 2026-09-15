@@ -1,6 +1,6 @@
 """FHIR Observation write adapter for approved extracted lab facts.
 
-This is the narrow write boundary for Week 2. Extraction does not mutate the
+This is the narrow write boundary for Phase 2. Extraction does not mutate the
 chart directly; only reviewed lab facts proposed for OpenEMR Observations reach
 this adapter.
 """
@@ -199,7 +199,7 @@ def build_observation_resource(fact: ExtractedFact, *, patient_id: str | None = 
         "note": [
             {
                 "text": (
-                    "Imported from Week 2 document review with "
+                    "Imported from Phase 2 document review with "
                     f"source citation {fact.citation.field_or_chunk_id}."
                 )
             }

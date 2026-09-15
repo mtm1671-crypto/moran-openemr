@@ -1,4 +1,4 @@
-"""Typed contracts for Week 3 adversarial runs."""
+"""Typed contracts for Phase 3 adversarial runs."""
 
 from __future__ import annotations
 

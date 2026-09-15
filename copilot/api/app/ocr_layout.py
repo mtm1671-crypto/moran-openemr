@@ -36,7 +36,7 @@ class DocumentLayout:
 def extract_layout(content: bytes, content_type: str) -> DocumentLayout:
     """Extract reviewable text lines with deterministic normalized bounding boxes.
 
-    The Week 2 implementation deliberately keeps bounding boxes owned by the layout
+    The Phase 2 implementation deliberately keeps bounding boxes owned by the layout
     layer, not the LLM. For submitted example PDFs/forms this can decode embedded
     text directly. Real OCR can replace this function without changing downstream schemas.
     """

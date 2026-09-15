@@ -2,7 +2,7 @@
 
 ## Pricing Snapshot
 
-Pricing changes over time, so this analysis records the assumptions used for the final submission package on 2026-05-04.
+Pricing changes over time, so this analysis records the assumptions used for the release package on 2026-05-04.
 
 Sources:
 
@@ -29,7 +29,7 @@ Relevant prices used:
 
 The current deployed synthetic-data demo can use `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. That path is useful for demo economics, but it is not counted as a production PHI path. Real PHI should use a HIPAA-appropriate provider path with the required contractual controls, or a self-hosted model environment.
 
-The Week 2 document flow adds OCR/extraction/review work, but the current submitted slice uses deterministic synthetic text/PDF extraction and does not add paid model calls by default.
+The Phase 2 document flow adds OCR/extraction/review work, but the current submitted slice uses deterministic synthetic text/PDF extraction and does not add paid model calls by default.
 
 ## Actual Development AI Spend
 
@@ -39,11 +39,11 @@ Reasoning:
 
 - Automated API tests default to the mock provider and deterministic fixtures.
 - Local vector tests default to hash embeddings unless OpenAI embeddings are explicitly configured.
-- Week 2 document extraction tests use deterministic synthetic fixtures.
+- Phase 2 document extraction tests use deterministic synthetic fixtures.
 - The deployed demo configuration uses OpenRouter's free Nemotron model for synthetic data.
 - No provider billing export is committed to the repository.
 
-This excludes any personal ChatGPT/Codex subscription cost, human engineering time, and Railway infrastructure spend. Before final upload, check the OpenAI/OpenRouter/Railway dashboards; if any paid provider calls were made outside the repo-tracked paths, replace this line with the dashboard total and attach the screenshot/export in the submission notes.
+This excludes any personal ChatGPT/Codex subscription cost, human engineering time, and Railway infrastructure spend. Before final upload, check the OpenAI/OpenRouter/Railway dashboards; if any paid provider calls were made outside the repo-tracked paths, replace this line with the dashboard total and attach the screenshot/export in the release notes.
 
 ## Workload Assumptions
 
@@ -147,13 +147,13 @@ Using the routed production mix above gives a more realistic target:
 - Keep OpenRouter and open-source hosted models available for synthetic-data economics and eval comparison, but do not enable them for real PHI until contractual and data-policy gates pass.
 - Record provider, model, token counts, cache-hit flags, latency, verifier outcome, and estimated cost for every model call.
 
-## Week 3 Adversarial Eval Cost Projection
+## Phase 3 Adversarial Eval Cost Projection
 
 The adversarial platform is designed to keep release-blocking checks mostly deterministic. Seed and regression runs use HTTP target execution plus deterministic Judge rules by default, so the expected metered AI cost is `$0.00` unless optional Red Team generation or advisory LLM judging is explicitly enabled.
 
 The current local adversarial verification is 73 deterministic pytest tests, a 6-fixture Judge eval gate, and a 44-run local regression replay with Red Team variants enabled. These do not make provider calls. At scale, the relevant cost driver is optional model-assisted mutation/judging, not the default scanner path.
 
-The Week 3 runtime budget caps one adversarial case at:
+The Phase 3 runtime budget caps one adversarial case at:
 
 ```text
 max_provider_cost_usd_per_case = $0.25
@@ -180,7 +180,7 @@ Expected spend for deterministic seed/regression mode:
 | 10,000 | $0 | Infrastructure and target rate limits become the concern. |
 | 100,000 | $0 | Requires queueing, batching, retention policy, and scheduled target windows. |
 
-Cost controls for Week 3:
+Cost controls for Phase 3:
 
 - Keep LLM attack mutation and advisory judging off by default.
 - Run `report-only` for exploratory campaigns and reserve `enforce` for stable regression suites.

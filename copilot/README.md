@@ -14,7 +14,7 @@ copilot/
 
 Use the root README for:
 
-- deployed URLs and final submission checklist
+- deployed URLs and verification snapshot
 - demo patient list and seed commands
 - local API/web setup
 - Railway deployment commands and env vars

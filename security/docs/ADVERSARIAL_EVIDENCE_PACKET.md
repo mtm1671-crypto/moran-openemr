@@ -1,6 +1,6 @@
-# Week 3 Evidence Packet
+# Adversarial Security Platform: Evidence Packet
 
-This is the canonical reviewer packet for the Week 3 adversarial platform. It consolidates the prior submission checklist, rubric grade, schema evidence map, vulnerability report register, OpenEMR scan evidence, demo script, social draft, web-vulnerability knowledge-base summary, rules of engagement template, and production-readiness notes.
+This is the canonical reviewer packet for the Phase 3 adversarial platform. It consolidates the prior release checklist, rubric grade, schema evidence map, vulnerability report register, OpenEMR scan evidence, demo script, social draft, web-vulnerability knowledge-base summary, rules of engagement template, and production-readiness notes.
 
 ## Links
 
@@ -9,7 +9,7 @@ This is the canonical reviewer packet for the Week 3 adversarial platform. It co
 | Adversarial operator | `https://adversarial-production.up.railway.app` |
 | Co-Pilot API target | `https://copilot-api-production-9f84.up.railway.app` |
 | OpenEMR target | `https://openemr-production-f5ed.up.railway.app` |
-| Product spec | `security/docs/WEEK3_PRODUCT_SPEC.md` |
+| Product spec | `security/docs/ADVERSARIAL_PRODUCT_SPEC.md` |
 | Root threat model | `THREAT_MODEL.md` |
 | Raw eval corpus index | `security/adversarial/evals/week3/README.md` |
 | Site scanner knowledge base | `security/adversarial/knowledge/site_vulnerability_knowledge_base.json` |
@@ -32,14 +32,14 @@ Railway variable check on 2026-05-14 confirmed `ADVERSARIAL_OPERATOR_TOKEN` is s
 ## Ready Now
 
 - Root `THREAT_MODEL.md` covers healthcare attack categories, failure definitions, scope, trust boundaries, and repo evidence.
-- `USERS.md` covers Clinical Co-Pilot users plus Week 3 operator/security workflows.
-- `ARCHITECTURE.md` is the top-level architecture entry point and includes the Week 3 adversarial control plane.
-- `security/docs/WEEK3_PRODUCT_SPEC.md` is the canonical Week 3 product/spec document.
+- `USERS.md` covers Clinical Co-Pilot users plus Phase 3 operator/security workflows.
+- `ARCHITECTURE.md` is the top-level architecture entry point and includes the Phase 3 adversarial control plane.
+- `security/docs/ADVERSARIAL_PRODUCT_SPEC.md` is the canonical Phase 3 product/spec document.
 - `security/adversarial/` contains the outside-in FastAPI/LangGraph/SQLite platform.
 - `security/adversarial/evals/week3/cases/` contains the expanded seed corpus.
 - `security/adversarial/evals/week3/README.md` indexes raw seed cases and Judge fixtures.
-- `.github/workflows/adversarial-week3-regression.yml` runs the PR/push Week 3 regression gate against a local Co-Pilot target with Red Team variants enabled.
-- `.github/branch-protection-week3.json` records `Week 3 Adversarial Regression Gate` as a required protected-branch check alongside the Week 2 gate.
+- `.github/workflows/adversarial-regression.yml` runs the PR/push Phase 3 regression gate against a local Co-Pilot target with Red Team variants enabled.
+- `.github/branch-protection.json` records `Phase 3 Adversarial Regression Gate` as a required protected-branch check alongside the Phase 2 gate.
 - Authorized site scanning uses client/project/scope records seeded from `ADVERSARIAL_ALLOWED_HOSTS`.
 - Public exports redact raw target observations, reproduction details, passive scan evidence, and remediation specifics.
 - Private findings storage keeps raw observations, full report details, and scan evidence when configured.
@@ -159,12 +159,12 @@ Still needed before broader client/team use:
 6. Show source-backed citations and open one source/evidence link.
 7. Ask `What medication changes should I make?` and show refusal.
 8. Switch to the adversarial operator dashboard.
-9. Show expanded Week 3 campaign coverage.
+9. Show expanded Phase 3 campaign coverage.
 10. Show the Red Team variant trace or explain `--include-variants`: generated child cases retain `parent_case_id`, mutation rationale, and deterministic replay.
 11. Explain the four resolved OpenEMR web-surface findings, the original scan ids, and final retest scan `sitescan_178030626aef`.
 12. Close with the architecture: Orchestrator, Red Team, Target Runner, Judge, Documentation Agent, Regression Store, Stop Policy, CI regression gate, and observability.
 
-Mention local verification: `73 passed`, Ruff passed, mypy passed, Judge eval passed, and the local Week 3 regression replay ran 44 stable cases/variants in enforce mode.
+Mention local verification: `73 passed`, Ruff passed, mypy passed, Judge eval passed, and the local Phase 3 regression replay ran 44 stable cases/variants in enforce mode.
 
 ## Social Post Draft
 
@@ -176,7 +176,6 @@ Synthetic data only. Next step: remediate, replay, and keep the adversarial suit
 
 ## Remaining Work
 
-- Paste the final uploaded demo video URL into `SUBMISSION.md`.
 - Add target fixture setup for uploaded-document and seeded-note cases before treating those as full ingestion-path attacks.
 - Add named-user SSO/OIDC.
 - Decide whether to accept or further mask the residual Info-only Railway edge `Server` header disclosure.

@@ -4,7 +4,7 @@
     "strict": true,
     "contexts": [
       "API, Safety, and Eval Gate",
-      "Week 3 Adversarial Regression Gate"
+      "Adversarial Regression Gate"
     ]
   },
   "enforce_admins": true,

@@ -1,4 +1,4 @@
-name: AgentForge Week 3 Regression Gate
+name: Adversarial Regression Gate
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
       - "copilot/api/**"
       - "security/adversarial/**"
       - "security/docs/**"
-      - ".github/workflows/adversarial-week3-regression.yml"
+      - ".github/workflows/adversarial-regression.yml"
       - "THREAT_MODEL.md"
       - "ARCHITECTURE.md"
       - "AI_COST_ANALYSIS.md"
@@ -18,14 +18,14 @@ on:
       - "copilot/api/**"
       - "security/adversarial/**"
       - "security/docs/**"
-      - ".github/workflows/adversarial-week3-regression.yml"
+      - ".github/workflows/adversarial-regression.yml"
       - "THREAT_MODEL.md"
       - "ARCHITECTURE.md"
       - "AI_COST_ANALYSIS.md"
 
 jobs:
-  week3-regression:
-    name: Week 3 Adversarial Regression Gate
+  phase3-regression:
+    name: Adversarial Regression Gate
     runs-on: ubuntu-latest
     env:
       APP_ENV: local
@@ -40,8 +40,8 @@ jobs:
       ADVERSARIAL_TARGET_MODE: local
       ADVERSARIAL_LOCAL_TARGET_URL: http://127.0.0.1:8001
       ADVERSARIAL_ALLOWED_HOSTS: 127.0.0.1,localhost
-      ADVERSARIAL_SQLITE_PATH: ${{ runner.temp }}/week3-runs.sqlite
-      ADVERSARIAL_PRIVATE_SQLITE_PATH: ${{ runner.temp }}/week3-private.sqlite
+      ADVERSARIAL_SQLITE_PATH: ${{ runner.temp }}/phase3-runs.sqlite
+      ADVERSARIAL_PRIVATE_SQLITE_PATH: ${{ runner.temp }}/phase3-private.sqlite
 
     steps:
       - name: Checkout
@@ -113,12 +113,12 @@ jobs:
         working-directory: security/adversarial
         run: python -m app.run_week3_eval --target local --suite regression --enforce --include-variants --skip-tags setup-required
 
-      - name: Upload Week 3 regression artifacts
+      - name: Upload Phase 3 regression artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: week3-regression-artifacts
+          name: phase3-regression-artifacts
           path: |
-            ${{ runner.temp }}/week3-runs.sqlite
-            ${{ runner.temp }}/week3-private.sqlite
+            ${{ runner.temp }}/phase3-runs.sqlite
+            ${{ runner.temp }}/phase3-private.sqlite
             ${{ runner.temp }}/copilot-api.log
